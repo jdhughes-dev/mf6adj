@@ -59,8 +59,6 @@ def basic_freyberg():
             f.write("1 1 {0} 1.0  {1}\n".format(kij,rval))
         f.write("end performance_measure\n\n")
 
-
-
     import mf6adj
     os.chdir(new_d)
     adj = mf6adj.Mf6Adj("test.adj",os.path.split(lib_name)[1])

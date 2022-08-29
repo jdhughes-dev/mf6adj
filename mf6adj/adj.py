@@ -6,7 +6,7 @@ import pandas as pd
 import modflowapi
 import flopy
 
-from .pm import PerfMeasLocationRecord,PerfMeas
+from .pm import PerfMeasRecord,PerfMeas
 
 DT_FMT = "%Y-%m-%d %H:%M:%S"
 
@@ -87,7 +87,6 @@ class Mf6Adj(object):
                             break
 
                 # parse a new performance measure block
-
                 elif line.lower().strip().startswith("begin performance_measure"):
                     raw = line.lower().strip().split()
                     if len(raw) != 5:
@@ -96,8 +95,9 @@ class Mf6Adj(object):
                     if raw[3].strip().lower() != "type":
                         raise Exception("4th entry on line {0} should be 'type', not '{1}'".format(count,raw[3]))
                     pm_type = raw[4].strip().lower()
+                    if pm_type not in ["direct","residual"]:
+                        raise Exception("unrecognized PM type:'{0}', should be 'direct' or 'residual'")
                     pm_entries = []
-
                     while True:
                         line2 = f.readline()
                         count += 1
@@ -120,6 +120,21 @@ class Mf6Adj(object):
                                 raise Exception(
                                     "performance measure {0} line {1} has too few entries, need at least 5".format(
                                         pm_name, line2))
+                            weight = None
+                            if pm_type == "direct":
+                                if len(raw) != 6:
+                                    raise Exception(
+                                        "direct performance measure {0} line {1} has wrong number of entries, should be 6".format(
+                                            pm_name, line2))
+                                weight = float(raw[5])
+                            obsval = None
+                            if pm_type == "residual":
+                                if len(raw) != 7:
+                                    raise Exception(
+                                        "residual performance measure {0} line {1} has wrong number of entries, should be 7".format(
+                                            pm_name, line2))
+                                weight = float(raw[5])
+                                obsval = float(raw[6])
 
                             kij = []
                             for i in range(3):
@@ -135,10 +150,12 @@ class Mf6Adj(object):
                                 nn = np.where(nuser == n)[0]
                                 if nn.shape[0] != 1:
                                     raise Exception("node num {0} not in reduced node num".format(n))
-                                pm_entries.append(PerfMeasLocationRecord(kper,kstp,nn,k,i,j))
+                                pm_entries.append(PerfMeasRecord(kper,kstp,nn,k=k,i=i,j=j,weight=weight,obsval=obsval))
                             else:
                                 pm_entries.append(
-                                    PerfMeasLocationRecord(kper,kstp,n - 1,k,i,j))
+                                    PerfMeasRecord(kper,kstp,n - 1,k=k,i=i,j=j,weight=weight,obsval=obsval))
+
+
 
                         else:
                             raise NotImplementedError("only structured grids currently supported")

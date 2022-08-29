@@ -1,3 +1,3 @@
 
 from .adj import Mf6Adj
-from .pm import PerfMeas,PerfMeasLocationRecord
+from .pm import PerfMeas,PerfMeasRecord
