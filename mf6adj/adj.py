@@ -6,6 +6,8 @@ import pandas as pd
 import modflowapi
 import flopy
 
+from .pm import PerfMeasLocationRecord,PerfMeas
+
 DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 class Mf6Adj(object):
@@ -31,6 +33,129 @@ class Mf6Adj(object):
         self._lib_name = lib_name
         self._flow_dir = "."
         self._gwf = self._initialize_gwf(lib_name,self._flow_dir)
+
+        self._performance_measures = []
+
+
+
+    def _read_adj_file(self,):
+
+        # clear any existing PMs
+        self._performance_measures = []
+
+        """read the cts input file
+
+                """
+        # used to detect location-pak duplicates
+        current_period = -1
+        current_entries = []
+
+        addr = ["NODEUSER", self._gwf_name.upper(), "DIS"]
+        wbaddr = self._gwf.get_var_address(*addr)
+        nuser = self._gwf.get_value(wbaddr)
+
+        addr = ["NODEREDUCED", self._gwf_name.upper(), "DIS"]
+        wbaddr = self._gwf.get_var_address(*addr)
+        nred = self._gwf.get_value(wbaddr)
+
+        with open(self.cts_filename, 'r') as f:
+            count = 0
+            while True:
+                line = f.readline()
+                count += 1
+                # eof
+                if line == "":
+                    break
+
+                # skip empty lines or comment lines
+                if len(line.strip()) == 0 or line.strip()[0] == "#":
+                    continue
+
+                # read the options block
+                if line.lower().strip().startswith("begin options"):
+                    while True:
+                        line2 = f.readline()
+                        count += 1
+
+                        if line2 == "":
+                            raise EOFError("EOF while reading options")
+                        elif len(line.strip()) == 0 or line.strip()[0] == "#":
+                            continue
+                        elif line2.lower().strip().startswith("begin"):
+                            raise Exception("a new begin block found while parsing options")
+                        elif line2.lower().strip().startswith("end options"):
+                            break
+
+                # parse a new performance measure block
+
+                elif line.lower().strip().startswith("begin performance_measure"):
+                    raw = line.lower().strip().split()
+                    if len(raw) != 5:
+                        raise Exception("wrong number of entries on 'begin performance_measure' line number {0}: '{1}'".format(count,line))
+                    pm_name = raw[2].strip().lower()
+                    if raw[3].strip().lower() != "type":
+                        raise Exception("4th entry on line {0} should be 'type', not '{1}'".format(count,raw[3]))
+                    pm_type = raw[4].strip().lower()
+                    pm_entries = []
+
+                    while True:
+                        line2 = f.readline()
+                        count += 1
+                        if line2 == "":
+                            raise EOFError("EOF while reading performance_measure block '{0}'".format(line))
+                        elif len(line.strip()) == 0 or line.strip()[0] == "#":
+                            continue
+                        elif line2.lower().strip().startswith("begin"):
+                            raise Exception("a new begin block found while parsing performance_measure block '{0}'".format(line))
+                        elif line2.lower().strip().startswith("end performance_measure"):
+                            break
+
+                        raw = line2.lower().strip().split()
+                        kper = int(raw[0]) - 1
+                        kstp = int (raw[1]) - 1
+                        #todo: check limits of kper, kstp
+
+                        if self.is_structured:
+                            if len(raw) < 5:
+                                raise Exception(
+                                    "performance measure {0} line {1} has too few entries, need at least 5".format(
+                                        pm_name, line2))
+
+                            kij = []
+                            for i in range(3):
+                                try:
+                                    kij.append(int(raw[i + 2]) - 1)
+                                except:
+                                    raise Exception("error casting k-i-j info on line {0}: '{1}'".format(count, line2))
+
+                            # convert to node number
+                            n = self._structured_mg.get_node([kij])[0] + 1
+                            # if there is a reduced node scheme
+                            if len(nuser) > 1:
+                                nn = np.where(nuser == n)[0]
+                                if nn.shape[0] != 1:
+                                    raise Exception("node num {0} not in reduced node num".format(n))
+                                pm_entries.append(PerfMeasLocationRecord(kper,kstp,nn,k,i,j))
+                            else:
+                                pm_entries.append(
+                                    PerfMeasLocationRecord(kper,kstp,n - 1,k,i,j))
+
+                        else:
+                            raise NotImplementedError("only structured grids currently supported")
+                    if len(pm_entries) != 0:
+                        raise Exception("no entries found for PM {0}".format(pm_name))
+
+
+                    if pm_name in [pm._name for pm in self._performance_measures]:
+                        raise Exception("PM {0} multiply defined".format(pm_name))
+                    self._performance_measures.append(PerfMeas(pm_name,pm_type,pm_entries))
+
+
+                else:
+                    raise Exception("unrecognized adj file input on line {0}: '{1}'".format(count, line))
+        if len(self._performance_measures) == 0:
+            raise Exception("no PMs found in adj file")
+
 
     @staticmethod
     def get_model_names_from_mfsim(sim_ws):

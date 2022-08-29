@@ -52,12 +52,12 @@ def basic_freyberg():
         f.write("begin performance_measure pm1 type direct\n")
         for kij in kijs:
             f.write("1 1 "+kij+"\n")
-        f.write("end performance_measure pm1\n\n")
+        f.write("end performance_measure\n\n")
 
         f.write("begin performance_measure pm2 type residual\n")
         for rval,kij in zip(rvals,kijs):
-            f.write("1 1 {0} 1.0  {1}\n".format(rvals,kij))
-        f.write("end performance_measure pm1\n\n")
+            f.write("1 1 {0} 1.0  {1}\n".format(kij,rval))
+        f.write("end performance_measure\n\n")
 
 
 
