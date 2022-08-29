@@ -47,6 +47,13 @@ class Mf6Adj(object):
 
         self._read_adj_file()
 
+        self._amat = {}
+        self._head = {}
+        self._head_old = {}
+
+        self._kperkstp = []
+        self._deltat = {}
+
 
 
     def _read_adj_file(self,):
@@ -170,7 +177,6 @@ class Mf6Adj(object):
                     if len(pm_entries) == 0:
                         raise Exception("no entries found for PM {0}".format(pm_name))
 
-
                     if pm_name in [pm._name for pm in self._performance_measures]:
                         raise Exception("PM {0} multiply defined".format(pm_name))
                     self._performance_measures.append(PerfMeas(pm_name,pm_type,pm_entries))
@@ -230,13 +236,18 @@ class Mf6Adj(object):
         print("...starting flow solution at {0}".format(sim_start.strftime(DT_FMT)))
         # get current sim time
         ctime = self._gwf.get_current_time()
-        ctimes = [0.0]
         # get ending sim time
         etime = self._gwf.get_end_time()
         # max number of iterations
         max_iter = self._gwf.get_value(self._gwf.get_var_address("MXITER", "SLN_1"))
         # let's do it!
         num_fails = 0
+
+        self._amat = {}
+        self._head = {}
+        self._kperkstp = []
+        self._deltat = {}
+
         while ctime < etime:
             sol_start = datetime.now()
             # the length of this sim time
@@ -273,6 +284,17 @@ class Mf6Adj(object):
             self._gwf.finalize_time_step()
             # update current sim time
             ctime = self._gwf.get_current_time()
+            dt1 = self._gwf.get_time_step()
+            amat = self._gwf.get_value(self._gwf.get_var_address("AMAT", "SLN_1"))
+            kper,kstp = stress_period - 1,time_step - 1
+            kperkstp = (kper,kstp)
+            self._amat[kperkstp] = amat
+            head = self._gwf.get_value(self._gwf.get_var_address("X", self._gwf_name.upper()))
+            self._head[kperkstp] = head
+            head_old = self._gwf.get_value(self._gwf.get_var_address("XOLD", self._gwf_name.upper()))
+            self._head_old[kperkstp] = head_old
+            self._kperkstp.append((kperkstp))
+            self._deltat[(kper,kstp)] = dt1
 
         sim_end = datetime.now()
         td = (sim_end - sim_start).total_seconds() / 60.0
@@ -280,6 +302,12 @@ class Mf6Adj(object):
         if num_fails > 0:
             print("...failed to converge {0} times".format(num_fails))
         print("\n")
+
+    def solve_adjoint(self):
+        if len(self._kperkstp) == 0:
+            raise Exception("need to call solve_gwf() first")
+        for pm in self._performance_measures:
+            pm.solve_adjoint(self._kperkstp,self._deltat,self._amat,self._head,self._head_old)
 
     def _initialize_gwf(self,lib_name,flow_dir):
         # instantiate the flow model api

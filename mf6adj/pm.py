@@ -32,6 +32,10 @@ class PerfMeas(object):
 		self._type = type.lower().strip()
 		self._entries = entries
 
+	def solve_adjoint(self,kperkstp,deltat_dict,amat_dict,head_dict,head_old_dict):
+		pass
+
+
 
 # class PerfMeasDirect(PerfMeas):
 # 	def __init__(self,name,type,entries):
