@@ -51,7 +51,7 @@ def basic_freyberg():
         f.write("\nbegin options\n\nend options\n\n")
         f.write("begin performance_measure pm1 type direct\n")
         for kij in kijs:
-            f.write("1 1 "+kij+"\n")
+            f.write("1 1 "+kij+" 1.0 \n")
         f.write("end performance_measure\n\n")
 
         f.write("begin performance_measure pm2 type residual\n")

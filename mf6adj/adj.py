@@ -34,7 +34,18 @@ class Mf6Adj(object):
         self._flow_dir = "."
         self._gwf = self._initialize_gwf(lib_name,self._flow_dir)
 
+        self._structured_mg = None
+        self.is_structured = True  # hard coded for now...
+        if self.is_structured:
+            nlay = self._gwf.get_value(self._gwf.get_var_address("NLAY", self._gwf_name.upper(), "DIS"))[0]
+            nrow = self._gwf.get_value(self._gwf.get_var_address("NROW", self._gwf_name.upper(), "DIS"))[0]
+            ncol = self._gwf.get_value(self._gwf.get_var_address("NCOL", self._gwf_name.upper(), "DIS"))[0]
+            self._structured_mg = flopy.discretization.StructuredGrid(nrow=nrow,
+                                                                      ncol=ncol,
+                                                                      nlay=nlay)
         self._performance_measures = []
+
+        self._read_adj_file()
 
 
 
@@ -43,7 +54,7 @@ class Mf6Adj(object):
         # clear any existing PMs
         self._performance_measures = []
 
-        """read the cts input file
+        """read the adj input file
 
                 """
         # used to detect location-pak duplicates
@@ -58,7 +69,7 @@ class Mf6Adj(object):
         wbaddr = self._gwf.get_var_address(*addr)
         nred = self._gwf.get_value(wbaddr)
 
-        with open(self.cts_filename, 'r') as f:
+        with open(self.adj_filename, 'r') as f:
             count = 0
             while True:
                 line = f.readline()
@@ -150,16 +161,13 @@ class Mf6Adj(object):
                                 nn = np.where(nuser == n)[0]
                                 if nn.shape[0] != 1:
                                     raise Exception("node num {0} not in reduced node num".format(n))
-                                pm_entries.append(PerfMeasRecord(kper,kstp,nn,k=k,i=i,j=j,weight=weight,obsval=obsval))
+                                pm_entries.append(PerfMeasRecord(kper,kstp,nn,k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
                             else:
                                 pm_entries.append(
-                                    PerfMeasRecord(kper,kstp,n - 1,k=k,i=i,j=j,weight=weight,obsval=obsval))
-
-
-
+                                    PerfMeasRecord(kper,kstp,n - 1,k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
                         else:
                             raise NotImplementedError("only structured grids currently supported")
-                    if len(pm_entries) != 0:
+                    if len(pm_entries) == 0:
                         raise Exception("no entries found for PM {0}".format(pm_name))
 
 
@@ -243,7 +251,6 @@ class Mf6Adj(object):
             time_step = self._gwf.get_value(self._gwf.get_var_address("KSTP", "TDIS"))[0]
             # solve until converged
             while kiter < max_iter:
-                # balance the cts flows based on current extraction rates in the RHS
                 convg = self._gwf.solve(1)
                 if convg:
                     td = (datetime.now() - sol_start).total_seconds() / 60.0
