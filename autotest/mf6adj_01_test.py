@@ -36,8 +36,36 @@ def basic_freyberg():
     os.system("mf6")
     os.chdir("..")
 
-    import mf6adj
+    kijs = []
+    with open(os.path.join(new_d,"head.obs"),'r') as f:
+        f.readline()
+        for line in f:
+            if line.strip().lower().startswith("end"):
+                break
+            raw = line.strip().split()
+            kijs.append(" ".join(raw[2:]))
 
+    np.random.seed(11111)
+    rvals = np.random.random(len(kijs)) + 36
+    with open(os.path.join(new_d,"test.adj"),'w') as f:
+        f.write("\nbegin options\n\nend options\n\n")
+        f.write("begin performance_measure pm1 type direct\n")
+        for kij in kijs:
+            f.write("1 1 "+kij+"\n")
+        f.write("end performance_measure pm1\n\n")
+
+        f.write("begin performance_measure pm2 type residual\n")
+        for rval,kij in zip(rvals,kijs):
+            f.write("1 1 {0} 1.0  {1}\n".format(rvals,kij))
+        f.write("end performance_measure pm1\n\n")
+
+
+
+    import mf6adj
+    os.chdir(new_d)
+    adj = mf6adj.Mf6Adj("test.adj",os.path.split(lib_name)[1])
+    adj.solve_gwf()
+    os.chdir("..")
 
 
 if __name__ == "__main__":
