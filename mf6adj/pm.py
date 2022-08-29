@@ -32,8 +32,30 @@ class PerfMeas(object):
 		self._type = type.lower().strip()
 		self._entries = entries
 
-	def solve_adjoint(self,kperkstp,deltat_dict,amat_dict,head_dict,head_old_dict):
+	def solve_adjoint(self, kperkstp, deltat_dict, amat_dict, head_dict, head_old_dict,gwf):
+		nnodes = PerfMeas.get_value_from_gwf(gwf_name,"DIS","NODES",gwf)
+		top = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","TOP",gwf)
+		botm = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","BOT",gwf)
+		area = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","AREA",gwf)
+		#todo: decide if storage is needed...
+	
+
+	def _drhsdh(self, gwf):
 		pass
+
+	def _dFdh(self, gwf):
+		pass
+
+	@staticmethod
+	def get_value_from_gwf( gwf_name, pak_name,prop_name, gwf):
+		gwf.get_value(gwf.get_var_address(prop_name, pak_name, gwf_name))
+
+	@staticmethod
+	def get_ptr_from_gwf(gwf_name, pak_name, prop_name, gwf):
+		gwf.get_value_ptr(gwf.get_var_address(prop_name, pak_name, gwf_name))
+
+
+
 
 
 
