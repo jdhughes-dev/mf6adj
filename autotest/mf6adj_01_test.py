@@ -64,6 +64,7 @@ def basic_freyberg():
     adj = mf6adj.Mf6Adj("test.adj",os.path.split(lib_name)[1])
     adj.solve_gwf()
     adj.solve_adjoint()
+    adj.finalize()
     os.chdir("..")
 
 

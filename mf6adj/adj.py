@@ -43,6 +43,7 @@ class Mf6Adj(object):
             self._structured_mg = flopy.discretization.StructuredGrid(nrow=nrow,
                                                                       ncol=ncol,
                                                                       nlay=nlay)
+
         self._performance_measures = []
 
         self._read_adj_file()
@@ -53,6 +54,7 @@ class Mf6Adj(object):
 
         self._kperkstp = []
         self._deltat = {}
+        self._iss = {}
 
 
 
@@ -247,6 +249,7 @@ class Mf6Adj(object):
         self._head = {}
         self._kperkstp = []
         self._deltat = {}
+        self._iss = {}
 
         while ctime < etime:
             sol_start = datetime.now()
@@ -293,8 +296,10 @@ class Mf6Adj(object):
             self._head[kperkstp] = head
             head_old = self._gwf.get_value(self._gwf.get_var_address("XOLD", self._gwf_name.upper()))
             self._head_old[kperkstp] = head_old
-            self._kperkstp.append((kperkstp))
+            self._kperkstp.append(kperkstp)
             self._deltat[(kper,kstp)] = dt1
+            iss = self._gwf.get_value(self._gwf.get_var_address("ISS", self._gwf_name.upper()))
+            self._iss[kperkstp] = iss
 
         sim_end = datetime.now()
         td = (sim_end - sim_start).total_seconds() / 60.0
@@ -307,7 +312,7 @@ class Mf6Adj(object):
         if len(self._kperkstp) == 0:
             raise Exception("need to call solve_gwf() first")
         for pm in self._performance_measures:
-            pm.solve_adjoint(self._kperkstp,self._deltat,self._amat,self._head,self._head_old, self._gwf)
+            pm.solve_adjoint(self._kperkstp,self._iss, self._deltat,self._amat,self._head,self._head_old, self._gwf, self._gwf_name)
 
     def _initialize_gwf(self,lib_name,flow_dir):
         # instantiate the flow model api
