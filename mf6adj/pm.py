@@ -38,7 +38,7 @@ class PerfMeas(object):
 	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, sat_dict, gwf, gwf_name):
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name,"DIS","NODES",gwf)[0]
 
-		d_amat_k = self._d_amat_k(gwf_name, gwf, sat_dict)
+
 		# top = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","TOP",gwf)
 		# botm = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","BOT",gwf)
 		# area = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","AREA",gwf)
@@ -58,6 +58,9 @@ class PerfMeas(object):
 		ja = PerfMeas.get_value_from_gwf(gwf_name, "CON", "JA", gwf) - 1
 		for itime,kk in enumerate(kperkstp[::-1]):
 			print(kk)
+
+			d_amat_k = self._d_amat_k(gwf_name, gwf, sat_dict[kk])
+
 			# get the derv of the PM WRT head
 			dFdh = self._dFdh(kk, gwf_name, gwf, kperkstp,deltat_dict,head_dict)
 			if iss[kk] == 0: #transient
@@ -75,7 +78,7 @@ class PerfMeas(object):
 
 
 	@staticmethod
-	def _derv_cond(k1,k2,cl1,cl2,area):
+	def _derv_cond(k1,k2,cl1,cl2,width,height1,height2):
 		return - 2.0 * cl1 * area / ((cl1 + cl2 * k1 / k2) ** 2)
 
 	def _d_amat_k(self,gwf_name,gwf, sat):
@@ -87,10 +90,8 @@ class PerfMeas(object):
 		cl1 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL1", gwf)
 		cl2 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL2", gwf)
 		hwva = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "HWVA", gwf)
-
 		top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
 		bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
-
 		d_mat_k11 = np.zeros(nnodes)
 		d_mat_k33 = np.zeros(nnodes)
 
