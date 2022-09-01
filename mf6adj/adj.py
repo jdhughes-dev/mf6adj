@@ -55,6 +55,7 @@ class Mf6Adj(object):
         self._kperkstp = []
         self._deltat = {}
         self._iss = {}
+        self._sat = {}
 
 
 
@@ -250,6 +251,7 @@ class Mf6Adj(object):
         self._kperkstp = []
         self._deltat = {}
         self._iss = {}
+        self._sat = {}
 
         while ctime < etime:
             sol_start = datetime.now()
@@ -300,6 +302,8 @@ class Mf6Adj(object):
             self._deltat[(kper,kstp)] = dt1
             iss = self._gwf.get_value(self._gwf.get_var_address("ISS", self._gwf_name.upper()))
             self._iss[kperkstp] = iss
+            sat = self._gwf.get_value(self._gwf.get_var_address("SAT",self._gwf_name,"NPF"))
+            self._sat[(kper,kstp)] = sat
 
         sim_end = datetime.now()
         td = (sim_end - sim_start).total_seconds() / 60.0
@@ -312,7 +316,7 @@ class Mf6Adj(object):
         if len(self._kperkstp) == 0:
             raise Exception("need to call solve_gwf() first")
         for pm in self._performance_measures:
-            pm.solve_adjoint(self._kperkstp,self._iss, self._deltat,self._amat,self._head,self._head_old, self._gwf, self._gwf_name)
+            pm.solve_adjoint(self._kperkstp,self._iss, self._deltat,self._amat,self._head,self._head_old, self._sat, self._gwf, self._gwf_name)
 
     def _initialize_gwf(self,lib_name,flow_dir):
         # instantiate the flow model api

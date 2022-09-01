@@ -35,14 +35,16 @@ class PerfMeas(object):
 		self._type = type.lower().strip()
 		self._entries = entries
 
-	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict,gwf, gwf_name):
+	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, sat_dict, gwf, gwf_name):
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name,"DIS","NODES",gwf)[0]
 
-		d_amat_k = self._d_amat_k(gwf_name, gwf)
+		d_amat_k = self._d_amat_k(gwf_name, gwf, sat_dict)
 		# top = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","TOP",gwf)
 		# botm = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","BOT",gwf)
 		# area = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","AREA",gwf)
-		# hwva = PerfMeas.get_ptr_from_gwf(gwf_name,"CON","HWVA",gwf)
+
+		#print(hwva)
+		#exit()
 		# storage = np.zeros(nnodes)
 		# try:
 		# 	storage = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "SS", gwf)
@@ -73,10 +75,10 @@ class PerfMeas(object):
 
 
 	@staticmethod
-	def _derv_cond(k1,k2,w1,w2,d1,d2):
-		return - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
+	def _derv_cond(k1,k2,cl1,cl2,area):
+		return - 2.0 * cl1 * area / ((cl1 + cl2 * k1 / k2) ** 2)
 
-	def _d_amat_k(self,gwf_name,gwf):
+	def _d_amat_k(self,gwf_name,gwf, sat):
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
 		ihc = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IHC", gwf)
 		ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
@@ -84,8 +86,8 @@ class PerfMeas(object):
 		jas = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JAS", gwf) - 1
 		cl1 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL1", gwf)
 		cl2 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL2", gwf)
+		hwva = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "HWVA", gwf)
 
-		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
 		top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
 		bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
 
@@ -95,21 +97,32 @@ class PerfMeas(object):
 		#jwhite 30 aug 2022 - dont know how to support horizontal aniso in unstructured...
 
 		k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
-		K33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
+		k33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
 
 		for node in range(nnodes):
 			start_ia = ia[node]+1
 			end_ia = ia[node+1]
+			height1 = sat[node] * (top[node] - bot[node])
 			for ii in range(start_ia,end_ia):
 				mnode = ja[ii]
+				height2 = sat[mnode] * (top[mnode] - bot[mnode])
 				jj = jas[ii]
 				iihc = ihc[jj]
-				print(node,iihc)
+				#print(node,jj,iihc,ihc.shape,hwva.shape)
 				if iihc == 0: # vertical con
-					pass
+					#todo: deal with upstream weigthing
+					#todo: deal with water table
+					interface_area = hwva[jj]
+					d_mat_k33[node] = PerfMeas._derv_cond(k33[node],k33[mnode],cl1[jj],cl2[jj],interface_area)
 				else: #horizontal con
-					d_mat_k11[node] = PerfMeas._derv_cond(k11[node],k11[mnode],)
-
+					width = hwva[jj]
+					# todo: deal with water table
+					# todo: deal with upstream weighting?
+					narea = (top[node] - bot[node]) / 2.
+					marea = (top[mnode] - bot[mnode]) / 2.0
+					interface_area = (narea + marea) / 2.0
+					d_mat_k11[node] = PerfMeas._derv_cond(k11[node],k11[mnode],cl1[jj],cl2[jj],interface_area)
+		return d_mat_k11,d_mat_k33
 
 	def _drhsdh(self, gwf_name,gwf, dt):
 		top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
