@@ -12,7 +12,14 @@ DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 class Mf6Adj(object):
     def __init__(self, adj_filename, lib_name, is_structured=True):
-  
+
+        """todo:
+
+        check for unsupported horizontal conductance formulation
+        check for unsupported vertical conductance formulation
+        check for unsupported aniso options
+        check for unsupported xt3d option
+        """
         if not os.path.exists(adj_filename):
             raise Exception("adj_filename '{0}' not found".format(adj_filename))
         self.adj_filename = adj_filename
@@ -316,7 +323,7 @@ class Mf6Adj(object):
         if len(self._kperkstp) == 0:
             raise Exception("need to call solve_gwf() first")
         for pm in self._performance_measures:
-            pm.solve_adjoint(self._kperkstp,self._iss, self._deltat,self._amat,self._head,self._head_old, self._sat, self._gwf, self._gwf_name)
+            pm.solve_adjoint(self._kperkstp,self._iss, self._deltat,self._amat,self._head,self._head_old, self._sat, self._gwf, self._gwf_name, self._structured_mg)
 
     def _initialize_gwf(self,lib_name,flow_dir):
         # instantiate the flow model api
