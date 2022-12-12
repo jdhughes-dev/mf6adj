@@ -36,6 +36,7 @@ class PerfMeas(object):
 		self._type = type.lower().strip()
 		self._entries = entries
 
+
 	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, sat_dict, gwf, gwf_name,mg_structured):
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name,"DIS","NODES",gwf)[0]
 
@@ -91,8 +92,9 @@ class PerfMeas(object):
 					f.write("{0},{1:15.6E}\n".format(n,v))
 
 
-
 	def _dadk(self,gwf_name,gwf, sat):
+		"""partial of A matrix WRT K
+		"""
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
 		ihc = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IHC", gwf)
 		ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1

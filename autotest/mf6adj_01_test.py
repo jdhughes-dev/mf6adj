@@ -51,12 +51,14 @@ def basic_freyberg():
         f.write("\nbegin options\n\nend options\n\n")
         f.write("begin performance_measure pm1 type direct\n")
         for kij in kijs:
-            f.write("1 1 "+kij+" 1.0 \n")
+            for kper in range(25):
+                f.write("{0} 1 {1} 1.0 \n".format(kper+1,kij))
         f.write("end performance_measure\n\n")
 
         f.write("begin performance_measure pm2 type residual\n")
         for rval,kij in zip(rvals,kijs):
-            f.write("1 1 {0} 1.0  {1}\n".format(kij,rval))
+            for kper in range(25):
+                f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,kij,rval))
         f.write("end performance_measure\n\n")
 
     import mf6adj
