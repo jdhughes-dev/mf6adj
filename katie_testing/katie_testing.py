@@ -1759,7 +1759,7 @@ def twod_ss_homo_head_at_point():
     minval = min(list_S_per)
     maxval = max(list_S_per)
     contour_intervals = np.linspace(minval, maxval, 5)
-    plot_colorbar_sensitivity(x, y, S_adj, S_per, contour_intervals, 'snglhdtest_colorbar_sensitivity.png')
+    #plot_colorbar_sensitivity(x, y, S_adj, S_per, contour_intervals, 'snglhdtest_colorbar_sensitivity.png')
 
     # then calculate mfadj for head at point
     print('now calculating mfadj sensitivity from jeremy script')

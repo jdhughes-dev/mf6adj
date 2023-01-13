@@ -75,6 +75,11 @@ class PerfMeas(object):
 
 	def save_array(self,filetag,avec,gwf_name,gwf,structured_mg):
 		nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","NODEUSER",gwf)
+		nnodes = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NODES", gwf)
+		
+		# if not a reduced node scheme
+		if len(nodeuser) == 1:
+			nodeuser = np.arange(nnodes)
 		if structured_mg is not None:
 			kijs = structured_mg.get_lrc(list(nodeuser-1))
 
