@@ -248,7 +248,7 @@ def plot_contour(x, y, l_anal, l_num, contour_intervals, fname):
     ax = fig.add_subplot(1, 1, 1, aspect="equal")
     c1 = ax.contour(x, y, l_anal, contour_intervals, colors="black", linestyles='solid')
     c2 = ax.contour(x, y, l_num, contour_intervals, colors="black", linestyles='dashed')
-    plt.clabel(c2, fmt="%1.1f")
+    plt.clabel(c2, fmt="%d")
     h1, _ = c1.legend_elements()
     h2, _ = c2.legend_elements()
     ax.legend([h1[0], h2[0]], ["Analytical", "Numerical (MF6-ADJ)"],
@@ -261,14 +261,15 @@ def plot_colorbar_2plts(x, y, l_anal, l_num, contour_intervals, fname):
     ax = axes[0]
     ax.set_title("Analytical", fontsize=16)
     modelmap = flopy.plot.PlotMapView(model=gwf, ax=ax)
-    pa = modelmap.plot_array(l_anal)
+    pa = modelmap.plot_array(l_anal, vmin=-.08, vmax=0)
     linecollection = modelmap.plot_grid(lw=0.5, color="0.5")
     contours = modelmap.contour_array(
         l_anal,
         levels=contour_intervals,
         colors="white",
     )
-    ax.clabel(contours, fmt="%1.1f")
+    # ax.clabel(contours, fmt="%1.1f")
+    plt.clabel(contours, fmt="%d")
     cb = plt.colorbar(pa, shrink=1.0, ax=ax)
 
     # second subplot
@@ -276,14 +277,14 @@ def plot_colorbar_2plts(x, y, l_anal, l_num, contour_intervals, fname):
     ax.set_title("Numerical (MF6-ADJ)", fontsize=16)
     modelmap = flopy.plot.PlotMapView(model=gwf, ax=ax, layer=Nlay - 1)
     linecollection = modelmap.plot_grid(lw=0.5, color="0.5")
-    pa = modelmap.plot_array(l_num)
+    pa = modelmap.plot_array(l_num, vmin=-.08, vmax=0)
     contours = modelmap.contour_array(
         l_num,
         levels=contour_intervals,
         colors="white",
     )
     ax.clabel(contours, fmt="%1.1f")
-    cb = plt.colorbar(pa, shrink=1.0, ax=ax)
+    cbcb = plt.colorbar(pa, shrink=1.0, ax=ax)
     plt.savefig('{0}'.format(fname))
 
 def plot_colorbar_3plts(x, y, l_anal, l_num,lnum2, contour_intervals, fname):
@@ -1252,7 +1253,7 @@ def twod_ss_hetero_coarsegrid():
         print(f.write('{:2.4E}\n'.format(list_S_per[i])))
     f.close()
 
-def twod_ss_homo_finegrid_head_at_point():
+def twod_ss_homo_head_at_point():
     global name
     global N
     global L
@@ -1269,7 +1270,7 @@ def twod_ss_homo_finegrid_head_at_point():
     epsilon = 1.0e-05
     tf = 1.0
     h1 = 100
-    N = 50
+    N = 10
     L = 100.0
     H = 1.0
     k = 10.0
@@ -1319,6 +1320,13 @@ def twod_ss_homo_finegrid_head_at_point():
         save_flows=True,
         newtonoptions="NEWTON UNDER_RELAXATION",
     )
+    #
+    # # ### Create the storage (`STO`) Package
+    # sto = flopy.mf6.ModflowGwfsto(
+    #     gwf,
+    #     steady_state={0: True},
+    #     ss_confined_only=True,
+    # )
 
     # ### Create the discretization (`DIS`) Package
     idm = np.ones((Nlay, N, N))
@@ -1346,12 +1354,10 @@ def twod_ss_homo_finegrid_head_at_point():
     # ### Create the constant head (`CHD`) Package
     chd_rec = []
     layer = 0
-    for row_col in range(0, N):
-        chd_rec.append(((layer, row_col, 0), h1))
-        chd_rec.append(((layer, row_col, N - 1), h1))
-        if row_col != 0 and row_col != N - 1:
-            chd_rec.append(((layer, 0, row_col), h1))
-            chd_rec.append(((layer, N - 1, row_col), h1))
+    for row in range(Nrow):
+        chd_rec.append(((layer, row, 0), 0))
+        chd_rec.append(((layer, row, Ncol - 1), 100))
+
     chd = flopy.mf6.ModflowGwfchd(
         gwf,
         stress_period_data=chd_rec,
@@ -1364,7 +1370,7 @@ def twod_ss_homo_finegrid_head_at_point():
     list_ch = [ra[item][0] for item in range(len(ra))]
 
     # # ### Create the well (`WEL`) Package
-    wel_rec = [(Nlay - 1, int(N / 2), int(N / 2), q)]
+    wel_rec = [(Nlay - 1, int(N / 2), int(N / 2)-1, q)]
     wel = flopy.mf6.ModflowGwfwel(
         gwf,
         stress_period_data=wel_rec,
@@ -1485,24 +1491,24 @@ def twod_ss_homo_finegrid_head_at_point():
     except:
         raise RuntimeError
 
-    # then calculate analytical solution for head at point
-    print('now calculating analytical adjoint state')
-    lam_anal = get_analytical_adj_state(50, 50, 50, 50)
+    # # then calculate analytical solution for head at point
+    # print('now calculating analytical adjoint state')
+    # lam_anal = get_analytical_adj_state(int(L / 2), int(L / 2), 50, 50)
 
     # then calculate mohamed solution for head at point
     print('now calculating mohamed adjoint state')
-    lam = SolveAdjointHeadAtPoint(0,24,23,len(IA) - 1)
+    lam = SolveAdjointHeadAtPoint(0,int(N / 2),int(N / 2)-1,len(IA) - 1)
 
-    # now make the comparison plot and save
-    lam_3d = np.reshape(lam, (Nlay, Nrow, Ncol))
-    x = np.linspace(0, L1, Ncol)
-    y = np.linspace(0, L2, Nrow)
-    y = y[::-1]
-    minval = min(lam)
-    maxval = max(lam)
-    contour_intervals = np.linspace(minval, maxval, 10)
-    plot_contour(x, y, lam_anal, lam_3d[0], contour_intervals, '{0}_contour.png'.format(name))
-    plot_colorbar_2plts(x, y, lam_anal, lam_3d[0], contour_intervals, '{0}_colorbar.png'.format(name))
+    # # now make the comparison plot and save
+    # lam_3d = np.reshape(lam, (Nlay, Nrow, Ncol))
+    # x = np.linspace(0, L1, Ncol)
+    # y = np.linspace(0, L2, Nrow)
+    # y = y[::-1]
+    # minval = min(lam)
+    # maxval = max(lam)
+    # contour_intervals = np.linspace(minval, maxval, 10)
+    # plot_contour(x, y, lam_anal, lam_3d[0], contour_intervals, '{0}_contour.png'.format(name))
+    # plot_colorbar_2plts(x, y, lam_anal, lam_3d[0], contour_intervals, '{0}_colorbar.png'.format(name))
 
     h2 = gwf.output.head().get_alldata()[-1]
     hh = np.reshape(h2[0], (Nlay * Nrow * Ncol))
@@ -1511,8 +1517,9 @@ def twod_ss_homo_finegrid_head_at_point():
     # print('{:.40f}'.format(J_head(0,49,49, h2)))
     list_S_adj = lam_dAdk_h(lam, d_mat_k123, hh)
 
-    # then calculate perturbation for head at point
+    # # then calculate perturbation for head at point
     print('now calculating perturbation sensitivity')
+
     count = 0
     for index_sens in list_triplets[0:105]:
         count += 1
@@ -1620,13 +1627,13 @@ def twod_ss_homo_finegrid_head_at_point():
             time.append(end_time)
             h2 = gwf.output.head().get_alldata()[-1]
             hh = np.reshape(h2[0], (Nlay * Nrow * Ncol))
-            J_constant = h2[0,49,49]
+            J_constant = h2[0,int(N / 2),int(N / 2)-1]
             print(J_constant)
             break
     # now set epsilon
     f_sens = open("sens_per_single_head.dat", "w")
     list_S_per = []
-    epsilon = 1
+    epsilon = .1
     count = 0
     for index_sens in list_triplets:
         count += 1
@@ -1734,13 +1741,14 @@ def twod_ss_homo_finegrid_head_at_point():
             time.append(end_time)
             h2 = gwf.output.head().get_alldata()[-1]
             hh = np.reshape(h2[0], (Nlay * Nrow * Ncol))
-            J = h2[0,49,49]
+            J = h2[0,int(N / 2),int(N / 2)-1]
             sens = (J - J_constant) / epsilon
             list_S_per.append(sens)
             print(f_sens.write('{:2.4E}\n'.format(sens)))
     f_sens.close()
 
     array_S_adj = np.array(list_S_adj)
+
     array_S_per = np.array(list_S_per)
     S_adj = np.reshape(array_S_adj, (Nlay, Nrow, Ncol))
     S_per = np.reshape(array_S_per, (Nlay, Nrow, Ncol))
@@ -1748,9 +1756,9 @@ def twod_ss_homo_finegrid_head_at_point():
     x = np.linspace(0, L1, Ncol)
     y = np.linspace(0, L2, Nrow)
     y = y[::-1]
-    minval = min(list_S_adj)
-    maxval = max(list_S_adj)
-    contour_intervals = np.linspace(minval, maxval, 10)
+    minval = min(list_S_per)
+    maxval = max(list_S_per)
+    contour_intervals = np.linspace(minval, maxval, 5)
     plot_colorbar_sensitivity(x, y, S_adj, S_per, contour_intervals, 'snglhdtest_colorbar_sensitivity.png')
 
     # then calculate mfadj for head at point
@@ -1759,12 +1767,10 @@ def twod_ss_homo_finegrid_head_at_point():
     with open("test.adj",'w') as f:
         f.write("\nbegin options\n\nend options\n\n")
         f.write("begin performance_measure pm1 type direct\n")
-        for kij in kijs:
-            for kper in range(25):
-                f.write("1 49 49 1.0 \n")
+        f.write("1 1 1 {0} {1} 1.0 \n".format(int(N / 2),int(N / 2)-1))
         f.write("end performance_measure\n\n")
 
-    adj = mf6adj.Mf6Adj("test.adj", os.path.split(lib_name)[1])
+    adj = mf6adj.Mf6Adj("test.adj", lib_name)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -1791,4 +1797,4 @@ def twod_ss_homo_finegrid_head_at_point():
 if __name__ == "__main__":
     # twod_ss_homo_finegrid()
     # twod_ss_hetero_coarsegrid()
-    twod_ss_homo_finegrid_head_at_point()
+    twod_ss_homo_head_at_point()
