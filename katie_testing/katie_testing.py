@@ -133,7 +133,7 @@ def SolveAdjointHeadAtPoint(k, j, i, ncells):
     return lam
 
 def SolveAdjointAveragedHead(ncells):
-    rhs =  dFdh_avraged_head(ncells, gwf, CELLAREA)
+    rhs =  dFdh_avraged_head(ncells)
     A = csr_matrix((MAT[0], JA_p, IA_p), shape=(len(IA) - 1, len(IA) - 1)).toarray()
     # At = A.transpose()
     lam = spsolve(A, rhs)
@@ -145,6 +145,7 @@ def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
     return - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
 
 def d_amat_k():
+
     d_mat_k11 = np.zeros(len(MAT[0]))
     d_mat_k22 = np.zeros(len(MAT[0]))
     d_mat_k33 = np.zeros(len(MAT[0]))
@@ -221,6 +222,7 @@ def d_amat_k():
             d_mat_k22[IA_p[nn]] = - sum2
             d_mat_k33[IA_p[nn]] = - sum3
             d_mat_k123[IA_p[nn]] = d_mat_k11[IA_p[nn]] + d_mat_k22[IA_p[nn]] + d_mat_k33[IA_p[nn]]
+
     return d_mat_k11, d_mat_k22, d_mat_k33, d_mat_k123
 
 
@@ -231,7 +233,10 @@ def lam_dAdk_h(lam, dAdk, h):
         sum2 = 0.0
         for j in range(IAC[k]):
             sum1 += dAdk[IA_p[k] + j] * h[JA_p[IA_p[k] + j]]
+            # print(dAdk[IA_p[k] + j])
+            # print(h[JA_p[IA_p[k] + j]])
         sum1 = lam[k] * sum1
+
         for j in list(range(IAC[k]))[1:]:
             (kk, jj, ii) = gwf.modelgrid.get_lrc(JA_p[IA_p[k] + j])[0]
             if (kk, jj, ii) in list_ch:
@@ -332,11 +337,12 @@ def plot_colorbar_3plts(x, y, l_anal, l_num,lnum2, contour_intervals, fname):
     cb = plt.colorbar(pa, shrink=1.0, ax=ax)
     plt.savefig('{0}'.format(fname))
 
-def plot_colorbar_sensitivity(x, y, Sadj, Sper, contour_intervals, fname):
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6), constrained_layout=True)
+def plot_colorbar_sensitivity(x, y, Sadj, Sper,S_jdub, contour_intervals, fname):
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
     # first subplot
     ax = axes[0]
-    ax.set_title("MF6-ADJ", fontsize=16)
+    ax.set_title("Mohamed-ADJ", fontsize=16)
     modelmap = flopy.plot.PlotMapView(model=gwf, ax=ax)
     pa = modelmap.plot_array(Sadj)
     # quadmesh = modelmap.plot_bc("CHD")
@@ -363,8 +369,22 @@ def plot_colorbar_sensitivity(x, y, Sadj, Sper, contour_intervals, fname):
     )
     ax.clabel(contours, fmt="%2.2f")
     cb = plt.colorbar(pa, shrink=1.0, ax=ax)
-    plt.savefig('{0}'.format(fname))
 
+    # third subplot
+    ax = axes[2]
+    ax.set_title("MF6-ADJ", fontsize=16)
+    modelmap = flopy.plot.PlotMapView(model=gwf, ax=ax)
+    pa = modelmap.plot_array(S_jdub)
+    # quadmesh = modelmap.plot_bc("CHD")
+    linecollection = modelmap.plot_grid(lw=0.5, color="0.5")
+    contours = modelmap.contour_array(
+        S_jdub,
+        levels=contour_intervals,
+        colors="white",
+    )
+    ax.clabel(contours, fmt="%2.2f")
+    cb = plt.colorbar(pa, shrink=1.0, ax=ax)
+    plt.savefig('{0}'.format(fname))
 
 def twod_ss_homo_finegrid():
     global name
@@ -553,9 +573,9 @@ def twod_ss_homo_finegrid():
     time = []
     deltat = []
 
-    print('JA = ', JA)
-    print('IA = ', IA)
-    print('IAC = ', IAC)
+    # print('JA = ', JA)
+    # print('IA = ', IA)
+    # print('IAC = ', IAC)
 
     h = []
     MAT = []
@@ -573,7 +593,7 @@ def twod_ss_homo_finegrid():
             if has_converged:
                 iii += 1
                 if iii == 0:
-                    print('****************************************************************')
+                    # print('****************************************************************')
                     hi = mf6api.get_value_ptr(mf6api.get_var_address("XOLD", "%s" % name))
                     h.append([hi[item] for item in range(len(hi))])
                 break
@@ -936,9 +956,9 @@ def twod_ss_hetero_coarsegrid():
     time = []
     deltat = []
 
-    print('JA = ', JA)
-    print('IA = ', IA)
-    print('IAC = ', IAC)
+    # print('JA = ', JA)
+    # print('IA = ', IA)
+    # print('IAC = ', IAC)
 
     h = []
     MAT = []
@@ -1447,9 +1467,9 @@ def twod_ss_homo_head_at_point():
     time = []
     deltat = []
 
-    print('JA = ', JA)
-    print('IA = ', IA)
-    print('IAC = ', IAC)
+    # print('JA = ', JA)
+    # print('IA = ', IA)
+    # print('IAC = ', IAC)
 
     h = []
     MAT = []
@@ -1491,6 +1511,7 @@ def twod_ss_homo_head_at_point():
     except:
         raise RuntimeError
 
+
     # # then calculate analytical solution for head at point
     # print('now calculating analytical adjoint state')
     # lam_anal = get_analytical_adj_state(int(L / 2), int(L / 2), 50, 50)
@@ -1498,6 +1519,7 @@ def twod_ss_homo_head_at_point():
     # then calculate mohamed solution for head at point
     print('now calculating mohamed adjoint state')
     lam = SolveAdjointHeadAtPoint(0,int(N / 2),int(N / 2)-1,len(IA) - 1)
+    # print(lam)
 
     # # now make the comparison plot and save
     # lam_3d = np.reshape(lam, (Nlay, Nrow, Ncol))
@@ -1513,11 +1535,13 @@ def twod_ss_homo_head_at_point():
     h2 = gwf.output.head().get_alldata()[-1]
     hh = np.reshape(h2[0], (Nlay * Nrow * Ncol))
     d_mat_k11, d_mat_k22, d_mat_k33, d_mat_k123 = d_amat_k()
+    # print(d_mat_k11)
     # print('dJdk = ', lam_dAdk_h(lam, d_mat_k123, hh))
     # print('{:.40f}'.format(J_head(0,49,49, h2)))
+
     list_S_adj = lam_dAdk_h(lam, d_mat_k123, hh)
 
-    # # then calculate perturbation for head at point
+    # then calculate perturbation for head at point
     print('now calculating perturbation sensitivity')
 
     count = 0
@@ -1747,11 +1771,28 @@ def twod_ss_homo_head_at_point():
             print(f_sens.write('{:2.4E}\n'.format(sens)))
     f_sens.close()
 
-    array_S_adj = np.array(list_S_adj)
+    # then calculate mfadj for head at point
+    print('now calculating mfadj sensitivity from jeremy script')
 
+    with open("test.adj",'w') as f:
+        f.write("\nbegin options\n\nend options\n\n")
+        f.write("begin performance_measure pm1 type direct\n")
+        f.write("1 1 1 {0} {1} 1.0 \n".format(int(N / 2)+1,int(N / 2)))
+        f.write("end performance_measure\n\n")
+
+    adj = mf6adj.Mf6Adj("test.adj", lib_name)
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
+
+    #now plot up all three results
+    array_S_adj = np.array(list_S_adj)
     array_S_per = np.array(list_S_per)
+    array_S_jdub = np.loadtxt('result.dat')
+
     S_adj = np.reshape(array_S_adj, (Nlay, Nrow, Ncol))
     S_per = np.reshape(array_S_per, (Nlay, Nrow, Ncol))
+    S_jdub = np.reshape(array_S_jdub, (Nlay, Nrow, Ncol))
 
     x = np.linspace(0, L1, Ncol)
     y = np.linspace(0, L2, Nrow)
@@ -1759,21 +1800,7 @@ def twod_ss_homo_head_at_point():
     minval = min(list_S_per)
     maxval = max(list_S_per)
     contour_intervals = np.linspace(minval, maxval, 5)
-    #plot_colorbar_sensitivity(x, y, S_adj, S_per, contour_intervals, 'snglhdtest_colorbar_sensitivity.png')
-
-    # then calculate mfadj for head at point
-    print('now calculating mfadj sensitivity from jeremy script')
-
-    with open("test.adj",'w') as f:
-        f.write("\nbegin options\n\nend options\n\n")
-        f.write("begin performance_measure pm1 type direct\n")
-        f.write("1 1 1 {0} {1} 1.0 \n".format(int(N / 2),int(N / 2)-1))
-        f.write("end performance_measure\n\n")
-
-    adj = mf6adj.Mf6Adj("test.adj", lib_name)
-    adj.solve_gwf()
-    adj.solve_adjoint()
-    adj.finalize()
+    plot_colorbar_sensitivity(x, y, S_adj, S_per,S_jdub, contour_intervals, 'snglhdtest_colorbar_sensitivity.png')
 
     # f = open("sensitivity.dat", "w")
     # print(f.write('  analytical  MF6-ADJ  mf6adj  Perturbation\n'))
