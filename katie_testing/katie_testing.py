@@ -1788,11 +1788,13 @@ def twod_ss_homo_head_at_point():
     #now plot up all three results
     array_S_adj = np.array(list_S_adj)
     array_S_per = np.array(list_S_per)
-    array_S_jdub = np.loadtxt('result.dat')
+    # array_S_jdub = np.loadtxt('result.dat')
 
     S_adj = np.reshape(array_S_adj, (Nlay, Nrow, Ncol))
     S_per = np.reshape(array_S_per, (Nlay, Nrow, Ncol))
-    S_jdub = np.reshape(array_S_jdub, (Nlay, Nrow, Ncol))
+    # S_jdub = np.reshape(array_S_jdub, (Nlay, Nrow, Ncol))
+    S_jdub = np.loadtxt('k123_layer001.dat')
+    list_S_mf6adj = S_jdub.reshape(-1)
 
     x = np.linspace(0, L1, Ncol)
     y = np.linspace(0, L2, Nrow)
@@ -1800,28 +1802,697 @@ def twod_ss_homo_head_at_point():
     minval = min(list_S_per)
     maxval = max(list_S_per)
     contour_intervals = np.linspace(minval, maxval, 5)
-    plot_colorbar_sensitivity(x, y, S_adj, S_per,S_jdub, contour_intervals, 'snglhdtest_colorbar_sensitivity.png')
+    plot_colorbar_sensitivity(x, y, S_adj, S_per,S_jdub, contour_intervals, 'snglhdtest_homo.png')
 
-    # f = open("sensitivity.dat", "w")
-    # print(f.write('  analytical  MF6-ADJ  mf6adj  Perturbation\n'))
-    # print(f.write('-----------------------\n'))
-    # for i in range(len(list_S_adj)):
-    #     print(f.write('{:2.4E} '.format(list_S_adj[i])))
-    #     print(f.write('{:2.4E} '.format(list_S_adj[i])))
-    #     print(f.write('{:2.4E} '.format(list_S_adj[i])))
-    #     print(f.write('{:2.4E}\n'.format(list_S_per[i])))
-    # f.close()
+    f = open("sensitivity.dat", "w")
+    print(f.write('Mohamed-ADJ  Perturbation  MF6-ADJ\n'))
+    print(f.write('-----------------------\n'))
+    for i in range(len(list_S_adj)):
+        print(f.write('{:2.4E} '.format(list_S_adj[i])))
+        print(f.write('{:2.4E} '.format(list_S_per[i])))
+        print(f.write('{:2.4E} \n'.format(list_S_mf6adj[i])))
+    f.close()
 
-    #then run perturbation method for head integral
+def twod_ss_hetero_head_at_point():
+    global name
+    global N
+    global L
+    global L1
+    global L2
+    global T
+    global D
+    global Nlay
+    global Nrow
+    global Ncol
+    global epsilon
 
-    #then calculate mohamed solution for head at a point
+    name = "snglhdtest"
+    epsilon = 1.0e-05
+    tf = 1.0
+    h1 = 100
+    N = 11
+    L = 100.0
+    H = 1.0
+    k = 10.0
+    q = -300.0
+    T = k * H
+    L1 = L2 = L
+    D = L1 * L2
+    Nlay = 1
+    Nrow = Ncol = N
+    delrow = delcol = L / (N - 1)
+    bot = np.linspace(-H / Nlay, -H, Nlay)  # botm
 
-    #then run perturbation method for head at a point
+    # first set up model for analytical solution comparison
+    # ### Create the FloPy simulation object
+    sim = flopy.mf6.MFSimulation(
+        sim_name=name,
+        exe_name=mf6_bin,
+        version="mf6",
+        sim_ws=".",
+        memory_print_option="ALL"
+    )
 
-    #then run jeremy solution for head at a point
+    # ### Create the Flopy `TDIS` object
+    tdis = flopy.mf6.ModflowTdis(
+        sim,
+        pname="tdis",
+        time_units="DAYS",
+        nper=1,
+        perioddata=[(tf, 1, 1.0)]
+    )
+
+    # ### Create the Flopy `IMS` Package object
+    ims = flopy.mf6.ModflowIms(
+        sim,
+        pname="ims",
+        complexity="SIMPLE",
+        linear_acceleration="BICGSTAB",
+    )
+
+    # Create the Flopy groundwater flow (gwf) model object
+    model_nam_file = f"{name}.nam"
+    global gwf
+    gwf = flopy.mf6.ModflowGwf(
+        sim,
+        modelname=name,
+        model_nam_file=model_nam_file,
+        save_flows=True,
+        newtonoptions="NEWTON UNDER_RELAXATION",
+    )
+    #
+    # # ### Create the storage (`STO`) Package
+    # sto = flopy.mf6.ModflowGwfsto(
+    #     gwf,
+    #     steady_state={0: True},
+    #     ss_confined_only=True,
+    # )
+
+    # ### Create the discretization (`DIS`) Package
+    idm = np.ones((Nlay, N, N))
+    dis = flopy.mf6.ModflowGwfdis(
+        gwf,
+        nlay=Nlay,
+        nrow=N,
+        ncol=N,
+        delr=delrow,
+        delc=delcol,
+        top=0.0,
+        botm=bot,
+        idomain=idm
+    )
+
+    # ### Create the initial conditions (`IC`) Package
+    start = h1 * np.ones((Nlay, N, N))
+    ic = flopy.mf6.ModflowGwfic(gwf, pname="ic", strt=start)
+
+    # ### Create the storage (`STO`) Package
+    sto = flopy.mf6.ModflowGwfsto(
+        gwf,
+    )
+
+    # ### Create the constant head (`CHD`) Package
+    chd_rec = []
+    layer = 0
+    for row in range(Nrow):
+        chd_rec.append(((layer, row, 0), 0))
+        chd_rec.append(((layer, row, Ncol - 1), 100))
+
+    chd = flopy.mf6.ModflowGwfchd(
+        gwf,
+        stress_period_data=chd_rec,
+    )
+
+    iper = 0
+    ra = chd.stress_period_data.get_data(key=iper)
+    ra
+    global list_ch
+    list_ch = [ra[item][0] for item in range(len(ra))]
+
+    # # ### Create the well (`WEL`) Package
+    wel_rec = [(Nlay - 1, int(N / 2), int(N / 2)-1, q)]
+    wel = flopy.mf6.ModflowGwfwel(
+        gwf,
+        stress_period_data=wel_rec,
+    )
+
+    # ### Create the output control (`OC`) Package
+    headfile = f"{name}.hds"
+    head_filerecord = [headfile]
+    budgetfile = f"{name}.cbb"
+    budget_filerecord = [budgetfile]
+    saverecord = [("HEAD", "ALL"), ("BUDGET", "ALL")]
+    printrecord = [("HEAD", "ALL")]
+    oc = flopy.mf6.ModflowGwfoc(
+        gwf,
+        saverecord=saverecord,
+        head_filerecord=head_filerecord,
+        budget_filerecord=budget_filerecord,
+        printrecord=printrecord,
+    )
+
+    # ### Create the node property flow (`NPF`) Package
+    list_cond = [8.5113804,
+                 7.0794578,
+                 9.1201084,
+                 8.7096359,
+                 12.0226443,
+                 10.4712855,
+                 7.7624712,
+                 8.7096359,
+                 12.8824955,
+                 13.1825674,
+                 9.7723722,
+                 8.5113804,
+                 8.1283052,
+                 11.4815362,
+                 9.5499259,
+                 13.1825674,
+                 11.4815362,
+                 8.9125094,
+                 10.9647820,
+                 11.4815362,
+                 11.2201845,
+                 12.3026877,
+                 8.7096359,
+                 9.5499259,
+                 10.7151931,
+                 11.4815362,
+                 10.4712855,
+                 9.7723722,
+                 9.5499259,
+                 7.0794578,
+                 10.0000000,
+                 7.0794578,
+                 9.7723722,
+                 11.2201845,
+                 12.0226443,
+                 12.3026877,
+                 8.3176377,
+                 8.3176377,
+                 7.0794578,
+                 13.8038426,
+                 12.3026877,
+                 12.5892541,
+                 8.5113804,
+                 10.7151931,
+                 9.5499259,
+                 10.9647820,
+                 10.2329299,
+                 12.8824955,
+                 8.1283052,
+                 11.7489755,
+                 10.7151931,
+                 14.1253754,
+                 10.0000000,
+                 7.2443596,
+                 12.0226443,
+                 8.3176377,
+                 10.2329299,
+                 8.5113804,
+                 8.7096359,
+                 9.1201084,
+                 12.8824955,
+                 12.8824955,
+                 12.5892541,
+                 9.1201084,
+                 7.0794578,
+                 13.4896288,
+                 10.0000000,
+                 9.3325430,
+                 13.4896288,
+                 10.0000000,
+                 12.0226443,
+                 10.7151931,
+                 10.9647820,
+                 7.7624712,
+                 9.3325430,
+                 9.3325430,
+                 13.1825674,
+                 7.4131024,
+                 13.8038426,
+                 7.4131024,
+                 7.7624712,
+                 9.5499259,
+                 8.5113804,
+                 7.0794578,
+                 10.4712855,
+                 12.5892541,
+                 12.0226443,
+                 8.5113804,
+                 13.1825674,
+                 9.3325430,
+                 7.5857758,
+                 10.4712855,
+                 8.7096359,
+                 11.7489755,
+                 7.2443596,
+                 10.2329299,
+                 8.7096359,
+                 13.8038426,
+                 12.0226443,
+                 7.0794578,
+                 14.1253754,
+                 7.0794578,
+                 7.0794578,
+                 12.3026877,
+                 10.7151931,
+                 12.0226443,
+                 9.3325430,
+                 10.9647820,
+                 9.1201084,
+                 8.3176377,
+                 13.1825674,
+                 9.5499259,
+                 8.1283052,
+                 11.4815362,
+                 11.4815362,
+                 9.1201084,
+                 14.1253754,
+                 13.1825674,
+                 13.4896288,
+                 8.9125094,
+                 10.2329299
+                 ]
+
+    array_cond = np.array(list_cond)
+    array_cond_3D = np.reshape(array_cond, (Nlay, Nrow, Ncol))
+    for kk in range(Nlay):
+        for jj in range(Nrow):
+            for ii in range(Ncol):
+                if (kk, jj, ii) in list_ch:
+                    array_cond_3D[kk][jj][ii] = k
+
+    kkk = np.array(array_cond_3D)
+
+    npf = flopy.mf6.ModflowGwfnpf(
+        gwf,
+        icelltype=1,
+        k=kkk,
+    )
+
+    list_triplets = []
+    for nn in range(Nlay * Nrow * Ncol):
+        list_triplets.append(gwf.modelgrid.get_lrc(nn))
+
+    # # ### Write the datasets and run to make sure it works
+    sim.write_simulation()
+    sim.run_simulation()
+
+    # now run with API
+    mf6api = modflowapi.ModflowApi(lib_name)
+    mf6api.initialize()
+    current_time = mf6api.get_current_time()
+    end_time = mf6api.get_end_time()
+    max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
+    global CELLAREA
+    global IA_p
+    global JA_p
+    global IA
+    global MAT
+    global IAC
+    global K22
+    global K11
+    global DELC
+    global DELR
+    global CELLTOP
+    global CELLBOT
+    CELLAREA = np.array(mf6api.get_value_ptr(mf6api.get_var_address("AREA", "%s/DIS" % name)))
+    DELR = np.array(mf6api.get_value_ptr(mf6api.get_var_address("DELR", "%s/DIS" % name)))
+    DELC = np.array(mf6api.get_value_ptr(mf6api.get_var_address("DELC", "%s/DIS" % name)))
+    CELLTOP = np.array(mf6api.get_value_ptr(mf6api.get_var_address("TOP", "%s/DIS" % name)))
+    CELLBOT = np.array(mf6api.get_value_ptr(mf6api.get_var_address("BOT", "%s/DIS" % name)))
+    JA = np.array(mf6api.get_value_ptr(mf6api.get_var_address("JA", "%s/CON" % name)))
+    IA = np.array(mf6api.get_value_ptr(mf6api.get_var_address("IA", "%s/CON" % name)))
+    JA_p = np.subtract(JA, 1)
+    IA_p = np.subtract(IA, 1)
+    IAC = np.array([IA[i + 1] - IA[i] for i in range(len(IA) - 1)])
+    SAT = np.array(mf6api.get_value_ptr(mf6api.get_var_address("SAT", "%s/NPF" % name)))
+    K11 = np.array(mf6api.get_value_ptr(mf6api.get_var_address("K11", "%s/NPF" % name)))
+    K22 = np.array(mf6api.get_value_ptr(mf6api.get_var_address("K22", "%s/NPF" % name)))
+    K33 = np.array(mf6api.get_value_ptr(mf6api.get_var_address("K33", "%s/NPF" % name)))
+    NODES = np.array(mf6api.get_value_ptr(mf6api.get_var_address("NODES", "%s/CON" % name)))[0]
+
+    head = []
+    amat = []
+    time = []
+    deltat = []
+
+    # print('JA = ', JA)
+    # print('IA = ', IA)
+    # print('IAC = ', IAC)
+
+    h = []
+    MAT = []
+    iii = -1
+    # Solving Forward MF6 Model
+    while current_time < end_time:
+        time.append(current_time)
+        dt = mf6api.get_time_step()
+        mf6api.prepare_time_step(dt)
+        kiter = 0
+        mf6api.prepare_solve(1)
+        while kiter < max_iter:
+            has_converged = mf6api.solve(1)
+            kiter += 1
+            if has_converged:
+                iii += 1
+                if iii == 0:
+                    print('****************************************************************')
+                    hi = mf6api.get_value_ptr(mf6api.get_var_address("XOLD", "%s" % name))
+                    h.append([hi[item] for item in range(len(hi))])
+                break
+        mf6api.finalize_solve(1)
+        mf6api.finalize_time_step()
+        current_time = mf6api.get_current_time()
+        dt1 = mf6api.get_time_step()
+        deltat.append(dt1)
+        amat = mf6api.get_value_ptr(mf6api.get_var_address("AMAT", "SLN_1"))
+        MAT.append([amat[item] for item in range(len(amat))])
+        rhs = mf6api.get_value_ptr(mf6api.get_var_address("RHS", "SLN_1"))
+        head = mf6api.get_value_ptr(mf6api.get_var_address("X", "%s" % name))
+        h.append([head[item] for item in range(len(head))])
+        head_old = mf6api.get_value_ptr(mf6api.get_var_address("XOLD", "%s" % name))
+        if not has_converged:
+            print("model did not converge")
+            break
+    try:
+        mf6api.finalize()
+        success = True
+    except:
+        raise RuntimeError
+
+
+    # # then calculate analytical solution for head at point
+    # print('now calculating analytical adjoint state')
+    # lam_anal = get_analytical_adj_state(int(L / 2), int(L / 2), 50, 50)
+
+    # then calculate mohamed solution for head at point
+    print('now calculating mohamed adjoint state')
+    lam = SolveAdjointHeadAtPoint(0,int(N / 2),int(N / 2)-1,len(IA) - 1)
+    # print(lam)
+
+    # # now make the comparison plot and save
+    # lam_3d = np.reshape(lam, (Nlay, Nrow, Ncol))
+    # x = np.linspace(0, L1, Ncol)
+    # y = np.linspace(0, L2, Nrow)
+    # y = y[::-1]
+    # minval = min(lam)
+    # maxval = max(lam)
+    # contour_intervals = np.linspace(minval, maxval, 10)
+    # plot_contour(x, y, lam_anal, lam_3d[0], contour_intervals, '{0}_contour.png'.format(name))
+    # plot_colorbar_2plts(x, y, lam_anal, lam_3d[0], contour_intervals, '{0}_colorbar.png'.format(name))
+
+    h2 = gwf.output.head().get_alldata()[-1]
+    hh = np.reshape(h2[0], (Nlay * Nrow * Ncol))
+    d_mat_k11, d_mat_k22, d_mat_k33, d_mat_k123 = d_amat_k()
+    # print(d_mat_k11)
+    # print('dJdk = ', lam_dAdk_h(lam, d_mat_k123, hh))
+    # print('{:.40f}'.format(J_head(0,49,49, h2)))
+
+    list_S_adj = lam_dAdk_h(lam, d_mat_k123, hh)
+
+    # then calculate perturbation for head at point
+    print('now calculating perturbation sensitivity')
+
+    count = 0
+    for index_sens in list_triplets[0:105]:
+        count += 1
+        kkk = np.array(array_cond_3D)
+        if index_sens[0] in list_ch:
+            # print(f_sens.write('{:2.4E}\n'.format(0.0)))
+            pass
+        else:
+            kkk[index_sens[0][0]][index_sens[0][1]][index_sens[0][2]] += epsilon
+            npf = flopy.mf6.ModflowGwfnpf(
+                gwf,
+                icelltype=1,
+                k=kkk,
+            )
+
+            # # ### Write the datasets
+            sim.write_simulation()
+
+            # ### API-----------------------------------------------------------------
+            mf6api = modflowapi.ModflowApi(lib_name)
+            mf6api.initialize()
+            current_time = mf6api.get_current_time()
+            end_time = mf6api.get_end_time()
+            max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
+            AREA = mf6api.get_value_ptr(mf6api.get_var_address("AREA", "%s/DIS" % name))
+            DELR_ = mf6api.get_value_ptr(mf6api.get_var_address("DELR", "%s/DIS" % name))
+            DELC_ = mf6api.get_value_ptr(mf6api.get_var_address("DELC", "%s/DIS" % name))
+            DELR = np.array([DELR_[item] for item in range(len(DELR_))])
+            DELC = np.array([DELC_[item] for item in range(len(DELC_))])
+            TOP = mf6api.get_value_ptr(mf6api.get_var_address("TOP", "%s/DIS" % name))
+            BOT = mf6api.get_value_ptr(mf6api.get_var_address("BOT", "%s/DIS" % name))
+            JA_ = mf6api.get_value_ptr(mf6api.get_var_address("JA", "%s/CON" % name))
+            IA_ = mf6api.get_value_ptr(mf6api.get_var_address("IA", "%s/CON" % name))
+            SAT_ = mf6api.get_value_ptr(mf6api.get_var_address("SAT", "%s/NPF" % name))
+            SAT = np.array([SAT_[item] for item in range(len(SAT_))])
+            K11_ = mf6api.get_value_ptr(mf6api.get_var_address("K11", "%s/NPF" % name))
+            K11 = np.array([K11_[item] for item in range(len(K11_))])
+            K22_ = mf6api.get_value_ptr(mf6api.get_var_address("K22", "%s/NPF" % name))
+            K22 = np.array([K22_[item] for item in range(len(K22_))])
+            K33_ = mf6api.get_value_ptr(mf6api.get_var_address("K33", "%s/NPF" % name))
+            K33 = np.array([K33_[item] for item in range(len(K33_))])
+            SAT_TH = np.array([SAT[item] * (TOP[item] - BOT[item]) for item in range(len(SAT))])  # Saturated thickness
+            NODES = mf6api.get_value_ptr(mf6api.get_var_address("NODES", "%s/CON" % name))
+
+            JA = np.array([JA_[item] for item in range(len(JA_))])
+            IA = np.array([IA_[item] for item in range(len(IA_))])
+            IAC = []
+            for i in range(len(IA) - 1):
+                IAC.append(IA[i + 1] - IA[i])
+
+            IAC = np.array([IAC[item] for item in range(len(IAC))])
+
+            CELLAREA = [AREA[item] for item in range(len(AREA))]
+            CELLTOP = [TOP[item] for item in range(len(TOP))]
+            CELLBOT = [BOT[item] for item in range(len(BOT))]
+
+            head = []
+            amat = []
+            time = []
+            deltat = []
+            JA_p = np.array([number - 1 for number in JA])
+            IA_p = np.array([number - 1 for number in IA])
+
+            h = []
+            MAT = []
+            iii = -1
+
+            while current_time < end_time:
+                time.append(current_time)
+                dt = mf6api.get_time_step()
+                mf6api.prepare_time_step(dt)
+                kiter = 0
+                mf6api.prepare_solve(1)
+                while kiter < max_iter:
+                    has_converged = mf6api.solve(1)
+                    kiter += 1
+                    if has_converged:
+                        iii += 1
+                        if iii == 0:
+                            print('****************************************************************')
+                            hi = mf6api.get_value_ptr(mf6api.get_var_address("XOLD", "%s" % name))
+                            h.append([hi[item] for item in range(len(hi))])
+                        break
+                mf6api.finalize_solve(1)
+                mf6api.finalize_time_step()
+                current_time = mf6api.get_current_time()
+                dt1 = mf6api.get_time_step()
+                deltat.append(dt1)
+                amat = mf6api.get_value_ptr(mf6api.get_var_address("AMAT", "SLN_1"))
+                MAT.append([amat[item] for item in range(len(amat))])
+                rhs = mf6api.get_value_ptr(mf6api.get_var_address("RHS", "SLN_1"))
+                head = mf6api.get_value_ptr(mf6api.get_var_address("X", "%s" % name))
+                h.append([head[item] for item in range(len(head))])
+                head_old = mf6api.get_value_ptr(mf6api.get_var_address("XOLD", "%s" % name))
+                if not has_converged:
+                    print("model did not converge")
+                    break
+            try:
+                mf6api.finalize()
+                success = True
+            except:
+                raise RuntimeError
+
+            # -----------------------------------------------------------------------------------------------------------------------
+            time.append(end_time)
+            h2 = gwf.output.head().get_alldata()[-1]
+            hh = np.reshape(h2[0], (Nlay * Nrow * Ncol))
+            J_constant = h2[0,int(N / 2),int(N / 2)-1]
+            print(J_constant)
+            break
+    # now set epsilon
+    f_sens = open("sens_per_single_head.dat", "w")
+    list_S_per = []
+    epsilon = .1
+    count = 0
+    for index_sens in list_triplets:
+        count += 1
+        kkk = np.array(array_cond_3D)
+        if index_sens[0] in list_ch:
+            print(f_sens.write('{:2.4E}\n'.format(0.0)))
+            list_S_per.append(0.)
+        else:
+            kkk[index_sens[0][0]][index_sens[0][1]][index_sens[0][2]] += epsilon
+            npf = flopy.mf6.ModflowGwfnpf(
+                gwf,
+                icelltype=1,
+                k=kkk,
+            )
+
+            # # ### Write the datasets
+            sim.write_simulation()
+
+            # ### API-----------------------------------------------------------------
+            mf6api = modflowapi.ModflowApi(lib_name)
+            mf6api.initialize()
+            current_time = mf6api.get_current_time()
+            end_time = mf6api.get_end_time()
+            max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
+            AREA = mf6api.get_value_ptr(mf6api.get_var_address("AREA", "%s/DIS" % name))
+            DELR_ = mf6api.get_value_ptr(mf6api.get_var_address("DELR", "%s/DIS" % name))
+            DELC_ = mf6api.get_value_ptr(mf6api.get_var_address("DELC", "%s/DIS" % name))
+            DELR = np.array([DELR_[item] for item in range(len(DELR_))])
+            DELC = np.array([DELC_[item] for item in range(len(DELC_))])
+            TOP = mf6api.get_value_ptr(mf6api.get_var_address("TOP", "%s/DIS" % name))
+            BOT = mf6api.get_value_ptr(mf6api.get_var_address("BOT", "%s/DIS" % name))
+            JA_ = mf6api.get_value_ptr(mf6api.get_var_address("JA", "%s/CON" % name))
+            IA_ = mf6api.get_value_ptr(mf6api.get_var_address("IA", "%s/CON" % name))
+            SAT_ = mf6api.get_value_ptr(mf6api.get_var_address("SAT", "%s/NPF" % name))
+            SAT = np.array([SAT_[item] for item in range(len(SAT_))])
+            K11_ = mf6api.get_value_ptr(mf6api.get_var_address("K11", "%s/NPF" % name))
+            K11 = np.array([K11_[item] for item in range(len(K11_))])
+            K22_ = mf6api.get_value_ptr(mf6api.get_var_address("K22", "%s/NPF" % name))
+            K22 = np.array([K22_[item] for item in range(len(K22_))])
+            K33_ = mf6api.get_value_ptr(mf6api.get_var_address("K33", "%s/NPF" % name))
+            K33 = np.array([K33_[item] for item in range(len(K33_))])
+            SAT_TH = np.array([SAT[item] * (TOP[item] - BOT[item]) for item in range(len(SAT))])  # Saturated thickness
+            NODES = mf6api.get_value_ptr(mf6api.get_var_address("NODES", "%s/CON" % name))
+
+            JA = np.array([JA_[item] for item in range(len(JA_))])
+            IA = np.array([IA_[item] for item in range(len(IA_))])
+            IAC = []
+            for i in range(len(IA) - 1):
+                IAC.append(IA[i + 1] - IA[i])
+
+            IAC = np.array([IAC[item] for item in range(len(IAC))])
+
+            CELLAREA = [AREA[item] for item in range(len(AREA))]
+            CELLTOP = [TOP[item] for item in range(len(TOP))]
+            CELLBOT = [BOT[item] for item in range(len(BOT))]
+
+            head = []
+            amat = []
+            time = []
+            deltat = []
+            JA_p = np.array([number - 1 for number in JA])
+            IA_p = np.array([number - 1 for number in IA])
+
+            h = []
+            MAT = []
+            iii = -1
+
+            while current_time < end_time:
+                time.append(current_time)
+                dt = mf6api.get_time_step()
+                mf6api.prepare_time_step(dt)
+                kiter = 0
+                mf6api.prepare_solve(1)
+                while kiter < max_iter:
+                    has_converged = mf6api.solve(1)
+                    kiter += 1
+                    if has_converged:
+                        iii += 1
+                        if iii == 0:
+                            print('****************************************************************')
+                            hi = mf6api.get_value_ptr(mf6api.get_var_address("XOLD", "%s" % name))
+                            h.append([hi[item] for item in range(len(hi))])
+                        break
+                mf6api.finalize_solve(1)
+                mf6api.finalize_time_step()
+                current_time = mf6api.get_current_time()
+                dt1 = mf6api.get_time_step()
+                deltat.append(dt1)
+                amat = mf6api.get_value_ptr(mf6api.get_var_address("AMAT", "SLN_1"))
+                MAT.append([amat[item] for item in range(len(amat))])
+                rhs = mf6api.get_value_ptr(mf6api.get_var_address("RHS", "SLN_1"))
+                head = mf6api.get_value_ptr(mf6api.get_var_address("X", "%s" % name))
+                h.append([head[item] for item in range(len(head))])
+                head_old = mf6api.get_value_ptr(mf6api.get_var_address("XOLD", "%s" % name))
+                if not has_converged:
+                    print("model did not converge")
+                    break
+            try:
+                mf6api.finalize()
+                success = True
+            except:
+                raise RuntimeError
+
+            # -----------------------------------------------------------------------------------------------------------------------
+            time.append(end_time)
+            h2 = gwf.output.head().get_alldata()[-1]
+            hh = np.reshape(h2[0], (Nlay * Nrow * Ncol))
+            J = h2[0,int(N / 2),int(N / 2)-1]
+            sens = (J - J_constant) / epsilon
+            list_S_per.append(sens)
+            print(f_sens.write('{:2.4E}\n'.format(sens)))
+    f_sens.close()
+
+    # then calculate mfadj for head at point
+    print('now calculating mfadj sensitivity from jeremy script')
+
+    with open("test.adj",'w') as f:
+        f.write("\nbegin options\n\nend options\n\n")
+        f.write("begin performance_measure pm1 type direct\n")
+        f.write("1 1 1 {0} {1} 1.0 \n".format(int(N / 2)+1,int(N / 2)))
+        f.write("end performance_measure\n\n")
+
+    adj = mf6adj.Mf6Adj("test.adj", lib_name)
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
+
+    #now plot up all three results
+    array_S_adj = np.array(list_S_adj)
+    array_S_per = np.array(list_S_per)
+    # array_S_jdub = np.loadtxt('result.dat')
+
+    S_adj = np.reshape(array_S_adj, (Nlay, Nrow, Ncol))
+    S_per = np.reshape(array_S_per, (Nlay, Nrow, Ncol))
+    # S_jdub = np.reshape(array_S_jdub, (Nlay, Nrow, Ncol))
+    S_jdub = np.loadtxt('k123_layer001.dat')
+    list_S_mf6adj = S_jdub.reshape(-1)
+
+    x = np.linspace(0, L1, Ncol)
+    y = np.linspace(0, L2, Nrow)
+    y = y[::-1]
+    minval = min(list_S_per)
+    maxval = max(list_S_per)
+    contour_intervals = np.linspace(minval, maxval, 5)
+    plot_colorbar_sensitivity(x, y, S_adj, S_per,S_jdub, contour_intervals, 'snglhdtest_hetero.png')
+
+    f = open("sensitivity.dat", "w")
+    print(f.write('Mohamed-ADJ  Perturbation  MF6-ADJ\n'))
+    print(f.write('-----------------------\n'))
+    for i in range(len(list_S_adj)):
+        print(f.write('{:2.4E} '.format(list_S_adj[i])))
+        print(f.write('{:2.4E} '.format(list_S_per[i])))
+        print(f.write('{:2.4E} \n'.format(list_S_mf6adj[i])))
+    f.close()
 
 
 if __name__ == "__main__":
     # twod_ss_homo_finegrid()
     # twod_ss_hetero_coarsegrid()
     twod_ss_homo_head_at_point()
+    twod_ss_hetero_head_at_point()
+
+    #now for unstructured grid test
+
+    #now for 3D test (this needs unconfined and confined approach)
+
+    #now for freyberg test ?

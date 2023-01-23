@@ -76,12 +76,11 @@ class PerfMeas(object):
 			dfdk33 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk33,head_dict[kk])
 			dfdk123 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk123,head_dict[kk])
 
-		np.savetxt('result.dat',dfdk123)
+		# np.savetxt('result.dat',dfdk123)
 		self.save_array("k11",dfdk11,gwf_name,gwf,mg_structured)
 		self.save_array("k22",dfdk22,gwf_name,gwf,mg_structured)
 		self.save_array("k33", dfdk33, gwf_name, gwf, mg_structured)
 		self.save_array("k123",dfdk123,gwf_name,gwf,mg_structured)
-
 
 	def save_array(self,filetag,avec,gwf_name,gwf,structured_mg):
 		nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","NODEUSER",gwf)
@@ -91,7 +90,7 @@ class PerfMeas(object):
 		if len(nodeuser) == 1:
 			nodeuser = np.arange(nnodes)
 		if structured_mg is not None:
-			kijs = structured_mg.get_lrc(list(nodeuser-1))
+			kijs = structured_mg.get_lrc(list(nodeuser))
 
 			arr = np.zeros((structured_mg.nlay,structured_mg.nrow,structured_mg.ncol))
 			for kij,v in zip(kijs,avec):
