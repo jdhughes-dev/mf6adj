@@ -50,20 +50,20 @@ class Mf6Adj(object):
             self._structured_mg = flopy.discretization.StructuredGrid(nrow=nrow,
                                                                       ncol=ncol,
                                                                       nlay=nlay)
-        else: 
-            ncpl = self._gwf.get_value(self._gwf.get_var_address("NCPL", self._gwf_name.upper(), "DIS"))
-            vertices = self._gwf.get_value(self._gwf.get_var_address("VERTICES", self._gwf_name.upper(), "DIS"))
-            # iverts = self._gwf.get_value(self._gwf.get_var_address("NVERTS", self._gwf_name.upper(), "DIS"))[0]
-            xy = self._gwf.get_value(self._gwf.get_var_address("CELLXY", self._gwf_name.upper(), "DIS"))
-            print(np.array(xy))
-            exit()
-            xcellcenters = self._gwf.get_value(self._gwf.get_var_address("NCPL", self._gwf_name.upper(), "DIS"))[0]
-            ycellcenters = self._gwf.get_value(self._gwf.get_var_address("NCPL", self._gwf_name.upper(), "DIS"))[0]
-            self._structured_mg = flopy.discretization.UnstructuredGrid(vertices=vertices,
-                                                                      iverts=iverts,
-                                                                      ncpl=ncpl,
-                                                                      xcenters=xcellcenters,
-                                                                      ycenters=ycellcenters)
+        # else: 
+        #     ncpl = self._gwf.get_value(self._gwf.get_var_address("NCPL", self._gwf_name.upper(), "DIS"))
+        #     vertices = self._gwf.get_value(self._gwf.get_var_address("VERTICES", self._gwf_name.upper(), "DIS"))
+        #     # iverts = self._gwf.get_value(self._gwf.get_var_address("NVERTS", self._gwf_name.upper(), "DIS"))[0]
+        #     xy = self._gwf.get_value(self._gwf.get_var_address("CELLXY", self._gwf_name.upper(), "DIS"))
+        #     print(np.array(xy))
+        #     exit()
+        #     xcellcenters = self._gwf.get_value(self._gwf.get_var_address("NCPL", self._gwf_name.upper(), "DIS"))[0]
+        #     ycellcenters = self._gwf.get_value(self._gwf.get_var_address("NCPL", self._gwf_name.upper(), "DIS"))[0]
+        #     self._structured_mg = flopy.discretization.UnstructuredGrid(vertices=vertices,
+        #                                                               iverts=iverts,
+        #                                                               ncpl=ncpl,
+        #                                                               xcenters=xcellcenters,
+        #                                                               ycenters=ycellcenters)
 
         self._performance_measures = []
 
@@ -80,10 +80,11 @@ class Mf6Adj(object):
 
 
 
-    def _read_adj_file(self,):
+    def _read_adj_file(self):
 
         # clear any existing PMs
         self._performance_measures = []
+
 
         """read the adj input file
 
@@ -217,31 +218,28 @@ class Mf6Adj(object):
                                             pm_name, line2))
                                 weight = float(raw[4])
                                 obsval = float(raw[3])
-                            exit()
-                            kij = []
-                            for i in range(3):
-                                try:
-                                    kij.append(int(raw[i + 2]) - 1)
-                                except:
-                                    raise Exception("error casting k-i-j info on line {0}: '{1}'".format(count, line2))
+ 
+                            try:
+                                n = int(raw[2])
+                            except:
+                                raise Exception("error casting node info info on line {0}: '{1}'".format(count, line2))
 
-                            # convert to node number
-                            n = self._structured_mg.get_node([kij])[0] + 1
                             # if there is a reduced node scheme
                             if len(nuser) > 1:
                                 nn = np.where(nuser == n)[0]
                                 if nn.shape[0] != 1:
                                     raise Exception("node num {0} not in reduced node num".format(n))
-                                pm_entries.append(PerfMeasRecord(kper,kstp,nn,k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
+                                pm_entries.append(PerfMeasRecord(kper,kstp,nn,weight=weight,obsval=obsval))
                             else:
                                 pm_entries.append(
-                                    PerfMeasRecord(kper,kstp,n - 1,k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
+                                    PerfMeasRecord(kper,kstp,n - 1,weight=weight,obsval=obsval))
+
                     if len(pm_entries) == 0:
                         raise Exception("no entries found for PM {0}".format(pm_name))
 
                     if pm_name in [pm._name for pm in self._performance_measures]:
                         raise Exception("PM {0} multiply defined".format(pm_name))
-                    self._performance_measures.append(PerfMeas(pm_name,pm_type,pm_entries))
+                    self._performance_measures.append(PerfMeas(pm_name,pm_type,pm_entries, self.is_structured))
 
 
                 else:

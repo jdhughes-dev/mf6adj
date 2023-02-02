@@ -31,10 +31,11 @@ class PerfMeasRecord(object):
 			self.obsval = float(obsval)
 class PerfMeas(object):
 
-	def __init__(self,name,type,entries):
+	def __init__(self,name,type,entries,is_structured):
 		self._name = name.lower().strip()
 		self._type = type.lower().strip()
 		self._entries = entries
+		self.is_structured = is_structured
 
 
 	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, sat_dict, gwf, gwf_name,mg_structured):
@@ -109,12 +110,12 @@ class PerfMeas(object):
 	def _dadk(self,gwf_name,gwf, sat):
 		"""partial of A matrix WRT K
 		"""
+
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
-		cellx = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "CELLX", gwf)
-		celly = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "CELLY", gwf)
-		chd =  PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf) -1
-		delr = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "DELR", gwf)
-		delc = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "DELC", gwf)	
+		chd1 =  PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf)
+		chd2 = 	PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_1", "NODELIST", gwf)
+		chd = np.append(chd1,chd2)-1
+		# chd = PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf) - 1
 		ihc = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IHC", gwf)
 		#IHC tells us whether connection is vertical (and if so, whether connection is above or below) or horizontal (and if so, whether it is a vertically staggered grid). 
 		#It is of size NJA (or number of connections)
@@ -135,6 +136,24 @@ class PerfMeas(object):
 		#bottom elevation for all nodes
 		iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
 		#array of number of connections per node (size ndoes)
+
+		if self.is_structured:
+			cellx = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "CELLX", gwf)
+			celly = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "CELLY", gwf)
+			# delr = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "DELR", gwf)
+			# delc = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "DELC", gwf)
+			xs = np.tile(cellx, len(celly))
+			ys = np.repeat(celly,len(cellx))	
+		else:
+			cellxy = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "CELLXY", gwf)
+			cellx = []
+			celly = []
+			for i in range(len(cellxy)):
+				cellx.append(cellxy[i][0])
+				celly.append(cellxy[i][1])
+			xs = np.tile(cellx, len(celly))
+			ys = np.repeat(celly,len(cellx))	
+
 		d_mat_k11 = np.zeros(ja.shape[0])
 		d_mat_k22 = np.zeros(ja.shape[0])
 		d_mat_k33 = np.zeros(ja.shape[0])
@@ -143,8 +162,7 @@ class PerfMeas(object):
 		k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
 		k22 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K22", gwf)
 		k33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
-		xs = np.tile(cellx, len(celly))
-		ys = np.repeat(celly,len(cellx))
+
 
 		for node in range(nnodes):
 			xnode = xs[node]
@@ -168,11 +186,12 @@ class PerfMeas(object):
 					mnode = ja[ii]
 					xmnode = xs[mnode]
 					ymnode = ys[mnode]
+					xdiff = xnode - xmnode
+					ydiff = ynode - ymnode
+
 					height2 = sat[mnode] * (top[mnode] - bot[mnode])
 					jj = jas[ii]
-					# print(jj)
 					iihc = ihc[jj]
-					# print(ihc[jj])
 					if iihc == 0: # vertical con
 						d_mat_k11[ia[node]+pp] = 0.
 						d_mat_k22[ia[node]+pp] = 0.
@@ -184,7 +203,7 @@ class PerfMeas(object):
 						sum2 += d_mat_k11[ia[node]+pp]
 						sum3 += d_mat_k22[ia[node]+pp]
 						pp+=1
-					elif xmnode ==xnode:
+					elif np.abs(xdiff) > np.abs(ydiff):
 						# d_mat_k11[jj] = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
 						d_mat_k11[ia[node]+pp] = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
 						d_mat_k33[ia[node]+pp] = 0.
@@ -194,7 +213,7 @@ class PerfMeas(object):
 						sum2 += d_mat_k11[ia[node]+pp]
 						sum3 += d_mat_k22[ia[node]+pp]
 						pp+=1
-					elif ymnode == ynode: #this is K22 in Mohamed's code
+					else: #this is K22 in Mohamed's code
 						# d_mat_k11[jj] = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
 						d_mat_k11[ia[node]+pp] = 0.
 						d_mat_k33[ia[node]+pp] = 0.
@@ -211,7 +230,6 @@ class PerfMeas(object):
 
 		# d_mat_k11 = sparse.csr_matrix((d_mat_k11, ja, ia), shape=(len(ia) - 1, len(ia) - 1))
 		# d_mat_k33 = sparse.csr_matrix((d_mat_k33, ja, ia), shape=(len(ia) - 1, len(ia) - 1))
-
 		return d_mat_k11,d_mat_k22,d_mat_k33, d_mat_k123
 
 	# @staticmethod
@@ -233,7 +251,10 @@ class PerfMeas(object):
 		#JA is an array containing all cells for which there is a connection (including self) for each node. it is of size NJA
 		iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
 		#array of number of connections per node (size ndoes)
-		chd =  PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf) -1
+		chd1 =  PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf)
+		chd2 = 	PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_1", "NODELIST", gwf)
+		chd = np.append(chd1,chd2)-1
+		# chd = PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf) - 1
 
 		my_list = []
 		for k in range(len(lamb)):

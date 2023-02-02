@@ -338,26 +338,34 @@ def plot_colorbar_3plts(x, y, l_anal, l_num,lnum2, contour_intervals, fname):
     cb = plt.colorbar(pa, shrink=1.0, ax=ax)
     plt.savefig('{0}'.format(fname))
 
-def plot_colorbar_sensitivity(x, y, Sadj, Sper,S_jdub, contour_intervals, fname):
+def plot_colorbar_sensitivity(x, y, Sadj, Sper,S_jdub, contour_intervals, fname, nodenumber = None, rowcol = None):
+    from matplotlib.patches import Polygon
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
-    # first subplot
-    ax = axes[0]
-    ax.set_title("Mohamed-ADJ", fontsize=16)
-    modelmap = flopy.plot.PlotMapView(model=gwf, ax=ax)
-    pa = modelmap.plot_array(Sadj)
-    # quadmesh = modelmap.plot_bc("CHD")
-    linecollection = modelmap.plot_grid(lw=0.5, color="0.5")
-    contours = modelmap.contour_array(
-        Sadj,
-        levels=contour_intervals,
-        colors="white",
-    )
-    ax.clabel(contours, fmt="%2.2f")
-    cb = plt.colorbar(pa, shrink=1.0, ax=ax)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), constrained_layout=True)
+    # # first subplot
+    # ax = axes[0]
+    # ax.set_title("Mohamed-ADJ", fontsize=16)
+    # modelmap = flopy.plot.PlotMapView(model=gwf, ax=ax)
+    # pa = modelmap.plot_array(Sadj)
+    # # quadmesh = modelmap.plot_bc("CHD")
+    # linecollection = modelmap.plot_grid(lw=0.5, color="0.5")
+    # contours = modelmap.contour_array(
+    #     Sadj,
+    #     levels=contour_intervals,
+    #     colors="white",
+    # )
+    # ax.clabel(contours, fmt="%2.2f")
+    # cb = plt.colorbar(pa, shrink=1.0, ax=ax)
+    # pa.set_clim(vmin=np.min(contour_intervals), vmax=np.max(contour_intervals))
+    # if nodenumber is not None:
+    #     verts = gwf.modelgrid.get_cell_vertices(nodenumber)
+    # else:
+    #     verts = gwf.modelgrid.get_cell_vertices(rowcol[0],rowcol[1])
+    # p = Polygon(verts, facecolor='k')
+    # ax.add_patch(p)
 
     # second subplot
-    ax = axes[1]
+    ax = axes[0]
     ax.set_title("Perturbation", fontsize=16)
     modelmap = flopy.plot.PlotMapView(model=gwf, ax=ax, layer=Nlay - 1)
     linecollection = modelmap.plot_grid(lw=0.5, color="0.5")
@@ -370,9 +378,16 @@ def plot_colorbar_sensitivity(x, y, Sadj, Sper,S_jdub, contour_intervals, fname)
     )
     ax.clabel(contours, fmt="%2.2f")
     cb = plt.colorbar(pa, shrink=1.0, ax=ax)
+    pa.set_clim(vmin=np.min(contour_intervals), vmax=np.max(contour_intervals))
+    if nodenumber is not None:
+        verts = gwf.modelgrid.get_cell_vertices(nodenumber)
+    else:
+        verts = gwf.modelgrid.get_cell_vertices(rowcol[0],rowcol[1])
+    p = Polygon(verts, facecolor='k')
+    ax.add_patch(p)
 
     # third subplot
-    ax = axes[2]
+    ax = axes[1]
     ax.set_title("MF6-ADJ", fontsize=16)
     modelmap = flopy.plot.PlotMapView(model=gwf, ax=ax)
     pa = modelmap.plot_array(S_jdub)
@@ -385,6 +400,13 @@ def plot_colorbar_sensitivity(x, y, Sadj, Sper,S_jdub, contour_intervals, fname)
     )
     ax.clabel(contours, fmt="%2.2f")
     cb = plt.colorbar(pa, shrink=1.0, ax=ax)
+    pa.set_clim(vmin=np.min(contour_intervals), vmax=np.max(contour_intervals))
+    if nodenumber is not None:
+        verts = gwf.modelgrid.get_cell_vertices(nodenumber)
+    else:
+        verts = gwf.modelgrid.get_cell_vertices(rowcol[0],rowcol[1])
+    p = Polygon(verts, facecolor='k')
+    ax.add_patch(p)
     plt.savefig('{0}'.format(fname))
 
 def twod_ss_homo_finegrid():
@@ -1553,7 +1575,7 @@ def twod_ss_homo_head_at_point():
             # print(f_sens.write('{:2.4E}\n'.format(0.0)))
             pass
         else:
-            kkk[index_sens[0][0]][index_sens[0][1]][index_sens[0][2]] += epsilon
+            kkk[index_sens[0][0]][index_sens[0][1]][index_sens[0][2]] += 0
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
                 icelltype=1,
@@ -1661,7 +1683,6 @@ def twod_ss_homo_head_at_point():
     epsilon = .1
     count = 0
     for index_sens in list_triplets:
-        count += 1
         kkk = np.array(array_cond_3D)
         if index_sens[0] in list_ch:
             print(f_sens.write('{:2.4E}\n'.format(0.0)))
@@ -1770,6 +1791,7 @@ def twod_ss_homo_head_at_point():
             sens = (J - J_constant) / epsilon
             list_S_per.append(sens)
             print(f_sens.write('{:2.4E}\n'.format(sens)))
+            count += 1
     f_sens.close()
 
     # then calculate mfadj for head at point
@@ -1803,7 +1825,7 @@ def twod_ss_homo_head_at_point():
     minval = min(list_S_per)
     maxval = max(list_S_per)
     contour_intervals = np.linspace(minval, maxval, 5)
-    plot_colorbar_sensitivity(x, y, S_adj, S_per,S_jdub, contour_intervals, 'snglhdtest_homo.png')
+    plot_colorbar_sensitivity(x, y, S_adj, S_per,S_jdub, contour_intervals, 'snglhdtest_homo.png', rowcol=[int(N / 2),int(N / 2)-1])
 
     f = open("sensitivity.dat", "w")
     print(f.write('Mohamed-ADJ  Perturbation  MF6-ADJ\n'))
@@ -1923,6 +1945,7 @@ def twod_ss_hetero_head_at_point():
         gwf,
         stress_period_data=chd_rec,
     )
+
 
     iper = 0
     ra = chd.stress_period_data.get_data(key=iper)
@@ -2099,7 +2122,6 @@ def twod_ss_hetero_head_at_point():
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
     sim.run_simulation()
-    exit()
 
     # now run with API
     mf6api = modflowapi.ModflowApi(lib_name)
@@ -2216,7 +2238,7 @@ def twod_ss_hetero_head_at_point():
 
     # then calculate perturbation for head at point
     print('now calculating perturbation sensitivity')
-    epsilon = .1
+    epsilon = 0
     count = 0
     for index_sens in list_triplets[0:105]:
         count += 1
@@ -2329,6 +2351,7 @@ def twod_ss_hetero_head_at_point():
             break
     # now for the rest
     f_sens = open("sens_per_single_head.dat", "w")
+    epsilon = 0.1
     list_S_per = []
     count = 0
     for index_sens in list_triplets:
@@ -2474,7 +2497,7 @@ def twod_ss_hetero_head_at_point():
     minval = min(list_S_per)
     maxval = max(list_S_per)
     contour_intervals = np.linspace(minval, maxval, 5)
-    plot_colorbar_sensitivity(x, y, S_adj, S_per,S_jdub, contour_intervals, 'snglhdtest_hetero.png')
+    plot_colorbar_sensitivity(x, y, S_adj, S_per,S_jdub, contour_intervals, 'snglhdtest_hetero.png', rowcol=[int(N / 2),int(N / 2)-1])
 
     f = open("sensitivity.dat", "w")
     print(f.write('Mohamed-ADJ  Perturbation  MF6-ADJ\n'))
@@ -2601,7 +2624,7 @@ def twod_ss_nested_homo_head_at_point():
     )
 
     chd_spd = []
-    chd_spd += [[0, i, 1.0] for i in [0, 7, 14, 18, 22, 26, 33]]
+    chd_spd += [[0, i, 0.0] for i in [0, 7, 14, 18, 22, 26, 33]]
     chd_spd = {0: chd_spd}
     chdl = flopy.mf6.ModflowGwfchd(
         gwf,
@@ -2610,19 +2633,19 @@ def twod_ss_nested_homo_head_at_point():
     )
 
     chd_spd = []
-    chd_spd += [[0, i, 0.0] for i in [6, 13, 17, 21, 25, 32, 39]]
+    chd_spd += [[0, i, 100.0] for i in [6, 13, 17, 21, 25, 32, 39]]
     chd_spd = {0: chd_spd}
     chdr = flopy.mf6.ModflowGwfchd(
         gwf,
         stress_period_data=chd_spd,
         filename="{}.right.chd".format(gwf.name),
     )
-    # # # ### Create the well (`WEL`) Package
-    # wel_rec = [(Nlay - 1, int(N / 2), int(N / 2)-1, q)]
-    # wel = flopy.mf6.ModflowGwfwel(
-    #     gwf,
-    #     stress_period_data=wel_rec,
-    # )
+    # # ### Create the well (`WEL`) Package
+    wel_rec = [(0, 80, q)]
+    wel = flopy.mf6.ModflowGwfwel(
+        gwf,
+        stress_period_data=wel_rec,
+    )
 
     # ### Create the output control (`OC`) Package
     headfile = f"{name}.hds"
@@ -2648,7 +2671,6 @@ def twod_ss_nested_homo_head_at_point():
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
     sim.run_simulation()
-    exit()
 
     # now run with API
     mf6api = modflowapi.ModflowApi(lib_name)
@@ -2720,8 +2742,7 @@ def twod_ss_nested_homo_head_at_point():
         deltat.append(dt1)
         CHD0 = mf6api.get_value_ptr(mf6api.get_var_address("NODELIST", "%s/CHD_0" % name))
         CHD1 = mf6api.get_value_ptr(mf6api.get_var_address("NODELIST", "%s/CHD_1" % name))
-        chd.append([CHD0[item] for item in range(len(CHD0))])
-        chd.append([CHD1[item] for item in range(len(CHD1))])
+        chd = np.append(CHD0,CHD1) - 1
         amat = mf6api.get_value_ptr(mf6api.get_var_address("AMAT", "SLN_1"))
         MAT.append([amat[item] for item in range(len(amat))])
         rhs = mf6api.get_value_ptr(mf6api.get_var_address("RHS", "SLN_1"))
@@ -2737,16 +2758,14 @@ def twod_ss_nested_homo_head_at_point():
     except:
         raise RuntimeError
 
-
     # # then calculate analytical solution for head at point
     # print('now calculating analytical adjoint state')
     # lam_anal = get_analytical_adj_state(int(L / 2), int(L / 2), 50, 50)
-
+    #
     # then calculate mohamed solution for head at point
     # print('now calculating mohamed adjoint state')
     # lam = SolveAdjointHeadAtPoint(0,int(N / 2),int(N / 2)-1,len(IA) - 1)
     # print(lam)
-    # exit()
 
     # # now make the comparison plot and save
     # lam_3d = np.reshape(lam, (Nlay, Nrow, Ncol))
@@ -2758,7 +2777,7 @@ def twod_ss_nested_homo_head_at_point():
     # contour_intervals = np.linspace(minval, maxval, 10)
     # plot_contour(x, y, lam_anal, lam_3d[0], contour_intervals, '{0}_contour.png'.format(name))
     # plot_colorbar_2plts(x, y, lam_anal, lam_3d[0], contour_intervals, '{0}_colorbar.png'.format(name))
-
+    #
     # h2 = gwf.output.head().get_alldata()[-1]
     # hh = np.reshape(h2[0], (Nlay * Nrow * Ncol))
     # d_mat_k11, d_mat_k22, d_mat_k33, d_mat_k123 = d_amat_k()
@@ -2766,13 +2785,10 @@ def twod_ss_nested_homo_head_at_point():
 
     # then calculate perturbation for head at point
     print('now calculating perturbation sensitivity')
-    epsilon = .1
     count = 0
     for index_sens in range(gwf.modelgrid.nnodes):
         count += 1
         if index_sens in chd:
-
-            # print(f_sens.write('{:2.4E}\n'.format(0.0)))
             pass
         else:
             k = npf.k.array
@@ -2874,25 +2890,25 @@ def twod_ss_nested_homo_head_at_point():
             # -----------------------------------------------------------------------------------------------------------------------
             time.append(end_time)
             h2 = gwf.output.head().get_alldata()[-1]
-            J_constant = h2[0,0,80]
+            J_constant = h2[0,0,79]
             break
 
     # now set epsilon
-    f_sens = open("sens_per_single_head.dat", "w")
+    f_sens = open("sens_per_nested.dat", "w")
+    epsilon = 0.001
     list_S_per = []
     count = 0
     for index_sens in range(gwf.modelgrid.nnodes):
-        count += 1
+        kkk = [10] * gwf.modelgrid.nnodes
         if index_sens in chd:
-            # print(f_sens.write('{:2.4E}\n'.format(0.0)))
-            pass
+            print(f_sens.write('{:2.4E}\n'.format(0.0)))
+            list_S_per.append(0.)
         else:
-            k = npf.k.array
-            k[0][index_sens] = k[0][index_sens] + epsilon
+            kkk[index_sens] += epsilon
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
                 icelltype=1,
-                k=k,
+                k=kkk,
             )
 
             # # ### Write the datasets
@@ -2905,10 +2921,6 @@ def twod_ss_nested_homo_head_at_point():
             end_time = mf6api.get_end_time()
             max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
             AREA = mf6api.get_value_ptr(mf6api.get_var_address("AREA", "%s/DIS" % name))
-            # DELR_ = mf6api.get_value_ptr(mf6api.get_var_address("DELR", "%s/DIS" % name))
-            # DELC_ = mf6api.get_value_ptr(mf6api.get_var_address("DELC", "%s/DIS" % name))
-            # DELR = np.array([DELR_[item] for item in range(len(DELR_))])
-            # DELC = np.array([DELC_[item] for item in range(len(DELC_))])
             TOP = mf6api.get_value_ptr(mf6api.get_var_address("TOP", "%s/DIS" % name))
             BOT = mf6api.get_value_ptr(mf6api.get_var_address("BOT", "%s/DIS" % name))
             JA_ = mf6api.get_value_ptr(mf6api.get_var_address("JA", "%s/CON" % name))
@@ -2986,13 +2998,14 @@ def twod_ss_nested_homo_head_at_point():
             # -----------------------------------------------------------------------------------------------------------------------
             time.append(end_time)
             h2 = gwf.output.head().get_alldata()[-1]
-            J = h2[0,0,80]
+            J = h2[0,0,79]
             sens = (J - J_constant) / epsilon
             list_S_per.append(sens)
             print(f_sens.write('{:2.4E}\n'.format(sens)))
+            count += 1
     f_sens.close()
 
-    # then calculate mfadj for head at point
+    # # then calculate mfadj for head at point
     print('now calculating mfadj sensitivity from jeremy script')
 
     with open("test.adj",'w') as f:
@@ -3007,33 +3020,32 @@ def twod_ss_nested_homo_head_at_point():
     adj.finalize()
 
     #now plot up all three results
-    array_S_adj = np.array(list_S_adj)
+    # array_S_adj = np.array(list_S_adj)
     array_S_per = np.array(list_S_per)
-    # array_S_jdub = np.loadtxt('result.dat')
+    array_S_jdub = pd.read_csv('k123.dat')
 
-    # S_adj = np.reshape(array_S_adj, (Nlay, Nrow, Ncol))
+    # # S_adj = np.reshape(array_S_adj, (Nlay, Nrow, Ncol))
     # S_per = np.reshape(array_S_per, (Nlay, Nrow, Ncol))
-    # S_jdub = np.reshape(array_S_jdub, (Nlay, Nrow, Ncol))
-    S_jdub = np.loadtxt('k123_layer001.dat')
-    # list_S_mf6adj = S_jdub.reshape(-1)
-
+    # S_jdub = np.reshape(array_S_jdub.value, (Nlay, Nrow, Ncol))
+    # # S_jdub = np.loadtxt('k123.dat')
+    # # list_S_mf6adj = S_jdub.reshape(-1)
+    #
     x = np.linspace(0, L1, Ncol)
     y = np.linspace(0, L2, Nrow)
     y = y[::-1]
-    minval = min(list_S_per)
-    maxval = max(list_S_per)
+    minval = min(array_S_per)
+    maxval = max(array_S_per)
     contour_intervals = np.linspace(minval, maxval, 5)
-    plot_colorbar_sensitivity(x, y, S_adj, S_per,S_jdub, contour_intervals, 'snglhdtest_nested_homo.png')
-    exit()
-    f = open("sensitivity.dat", "w")
-    print(f.write('Mohamed-ADJ  Perturbation  MF6-ADJ\n'))
+    plot_colorbar_sensitivity(x, y, array_S_per, array_S_per,array_S_jdub.value, contour_intervals, 'snglhdtest_nested_homo.png', nodenumber=79)
+    # exit()
+    f = open("sensitivity_nested.dat", "w")
+    print(f.write('Perturbation  MF6-ADJ\n'))
     print(f.write('-----------------------\n'))
-    for i in range(len(list_S_adj)):
-        # print(f.write('{:2.4E} '.format(list_S_adj[i])))
+    for i in range(len(list_S_per)):
+        # print(f.write('{:2.4E} '.format(list_S_per[i])))
         print(f.write('{:2.4E} '.format(list_S_per[i])))
-        print(f.write('{:2.4E} \n'.format(list_S_mf6adj[i])))
+        print(f.write('{:2.4E} \n'.format(array_S_jdub.value[i])))
     f.close()
-
 
 if __name__ == "__main__":
     # twod_ss_homo_finegrid()
@@ -3041,9 +3053,3 @@ if __name__ == "__main__":
     # twod_ss_homo_head_at_point()
     # twod_ss_hetero_head_at_point()
     twod_ss_nested_homo_head_at_point()
-
-    #now for unstructured grid test
-
-    #now for 3D test (this needs unconfined and confined approach)
-
-    #now for freyberg test ?
