@@ -111,11 +111,19 @@ class PerfMeas(object):
 		"""partial of A matrix WRT K
 		"""
 
+		is_chd = False
+		names = list(gwf.get_input_var_names())
+		if '{0}/CHD_0/NODELIST'.format(gwf_name.upper()) in names:
+			chd1 =  PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf) - 1
+			chd = np.array(chd1)
+			is_chd = True
+		if '{0}/CHD_1/NODELIST'.format(gwf_name.upper()) in names:
+			chd2 = 	PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_1", "NODELIST", gwf) - 1
+			chd = np.append(chd1,chd2)
+			is_chd = True
+
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
-		chd1 =  PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf)
-		chd2 = 	PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_1", "NODELIST", gwf)
-		chd = np.append(chd1,chd2)-1
-		# chd = PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf) - 1
+		ib = np.array(PerfMeas.get_value_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf)).reshape(-1)
 		ihc = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IHC", gwf)
 		#IHC tells us whether connection is vertical (and if so, whether connection is above or below) or horizontal (and if so, whether it is a vertically staggered grid). 
 		#It is of size NJA (or number of connections)
@@ -169,12 +177,19 @@ class PerfMeas(object):
 			ynode = ys[node]
 			start_ia = ia[node]+1
 			end_ia = ia[node+1]
-			if node in chd:
+			if ib[node]==0:	
 				for ij in range(iac[node]-1):
 					d_mat_k33[ia[node] + ij] = 0.
 					d_mat_k11[ia[node] + ij] = 0.
 					d_mat_k22[ia[node] + ij] = 0.
 					d_mat_k123[ia[node] + ij] = 0.
+			if is_chd:
+				if node in chd:
+					for ij in range(iac[node]-1):
+						d_mat_k33[ia[node] + ij] = 0.
+						d_mat_k11[ia[node] + ij] = 0.
+						d_mat_k22[ia[node] + ij] = 0.
+						d_mat_k123[ia[node] + ij] = 0.
 			else:
 				sum1 = 0.
 				sum2 = 0.
@@ -250,11 +265,19 @@ class PerfMeas(object):
 		ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
 		#JA is an array containing all cells for which there is a connection (including self) for each node. it is of size NJA
 		iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
-		#array of number of connections per node (size ndoes)
-		chd1 =  PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf)
-		chd2 = 	PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_1", "NODELIST", gwf)
-		chd = np.append(chd1,chd2)-1
-		# chd = PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf) - 1
+		ib = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf).reshape(-1)
+
+		is_chd = False
+		names = list(gwf.get_input_var_names())
+		if '{0}/CHD_0/NODELIST'.format(gwf_name.upper()) in names:
+			chd1 =  PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf) - 1
+			chd = np.array(chd1)
+			is_chd = True
+		if '{0}/CHD_1/NODELIST'.format(gwf_name.upper()) in names:
+			chd2 = 	PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_1", "NODELIST", gwf) - 1
+			chd = np.append(chd1,chd2)
+			is_chd = True
+
 
 		my_list = []
 		for k in range(len(lamb)):
@@ -265,7 +288,10 @@ class PerfMeas(object):
 
 			sum1 = lamb[k] * sum1
 			for j in list(range(iac[k]))[1:]:
-				if ja[ia[k] + j] in chd:
+				if is_chd:
+					if ja[ia[k] + j] in chd:
+						sum2 += 0.0
+				elif ib[ja[ia[k] + j]]==0:
 					sum2 += 0.0
 				else:
 					sum2 += lamb[ja[ia[k] + j]] * dAdk[ia[k] + j] * (head_dict[k] - head_dict[ja[ia[k] + j]])
@@ -308,4 +334,10 @@ class PerfMeas(object):
 	def get_ptr_from_gwf(gwf_name, pak_name, prop_name, gwf):
 		addr = gwf.get_var_address(prop_name, gwf_name, pak_name)
 		return gwf.get_value_ptr(addr)
+
+	# @staticmethod
+	# def get_input_var_names():
+	# 	return gwf.get_input_var_names()
+
+
 

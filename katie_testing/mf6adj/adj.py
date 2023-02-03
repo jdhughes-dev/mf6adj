@@ -11,7 +11,7 @@ from .pm import PerfMeasRecord,PerfMeas
 DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 class Mf6Adj(object):
-    def __init__(self, adj_filename, lib_name, is_structured=False):
+    def __init__(self, adj_filename, lib_name, is_structured):
 
         """todo:
 
@@ -42,7 +42,7 @@ class Mf6Adj(object):
         self._gwf = self._initialize_gwf(lib_name,self._flow_dir)
 
         self._structured_mg = None
-        self.is_structured = False  # hard coded for now...
+        self.is_structured = is_structured  # hard coded for now...
         if self.is_structured:
             nlay = self._gwf.get_value(self._gwf.get_var_address("NLAY", self._gwf_name.upper(), "DIS"))[0]
             nrow = self._gwf.get_value(self._gwf.get_var_address("NROW", self._gwf_name.upper(), "DIS"))[0]
@@ -50,20 +50,7 @@ class Mf6Adj(object):
             self._structured_mg = flopy.discretization.StructuredGrid(nrow=nrow,
                                                                       ncol=ncol,
                                                                       nlay=nlay)
-        # else: 
-        #     ncpl = self._gwf.get_value(self._gwf.get_var_address("NCPL", self._gwf_name.upper(), "DIS"))
-        #     vertices = self._gwf.get_value(self._gwf.get_var_address("VERTICES", self._gwf_name.upper(), "DIS"))
-        #     # iverts = self._gwf.get_value(self._gwf.get_var_address("NVERTS", self._gwf_name.upper(), "DIS"))[0]
-        #     xy = self._gwf.get_value(self._gwf.get_var_address("CELLXY", self._gwf_name.upper(), "DIS"))
-        #     print(np.array(xy))
-        #     exit()
-        #     xcellcenters = self._gwf.get_value(self._gwf.get_var_address("NCPL", self._gwf_name.upper(), "DIS"))[0]
-        #     ycellcenters = self._gwf.get_value(self._gwf.get_var_address("NCPL", self._gwf_name.upper(), "DIS"))[0]
-        #     self._structured_mg = flopy.discretization.UnstructuredGrid(vertices=vertices,
-        #                                                               iverts=iverts,
-        #                                                               ncpl=ncpl,
-        #                                                               xcenters=xcellcenters,
-        #                                                               ycenters=ycellcenters)
+
 
         self._performance_measures = []
 

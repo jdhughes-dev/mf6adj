@@ -348,7 +348,7 @@ def plot_colorbar_sensitivity(x, y, Sadj, Sper,S_jdub, contour_intervals, fname,
     # modelmap = flopy.plot.PlotMapView(model=gwf, ax=ax)
     # pa = modelmap.plot_array(Sadj)
     # # quadmesh = modelmap.plot_bc("CHD")
-    quadmesh = mapview.plot_ibound()
+    # quadmesh = modelmap.plot_ibound()
     # linecollection = modelmap.plot_grid(lw=0.5, color="0.5")
     # contours = modelmap.contour_array(
     #     Sadj,
@@ -372,7 +372,7 @@ def plot_colorbar_sensitivity(x, y, Sadj, Sper,S_jdub, contour_intervals, fname,
     linecollection = modelmap.plot_grid(lw=0.5, color="0.5")
     pa = modelmap.plot_array(Sper)
     # quadmesh = modelmap.plot_bc("CHD")
-    quadmesh = mapview.plot_ibound()
+    # quadmesh = modelmap.plot_ibound()
     contours = modelmap.contour_array(
         Sper,
         levels=contour_intervals,
@@ -394,7 +394,7 @@ def plot_colorbar_sensitivity(x, y, Sadj, Sper,S_jdub, contour_intervals, fname,
     modelmap = flopy.plot.PlotMapView(model=gwf, ax=ax)
     pa = modelmap.plot_array(S_jdub)
     # quadmesh = modelmap.plot_bc("CHD")
-    quadmesh = mapview.plot_ibound()
+    # quadmesh = modelmap.plot_ibound()
     linecollection = modelmap.plot_grid(lw=0.5, color="0.5")
     contours = modelmap.contour_array(
         S_jdub,
@@ -1806,7 +1806,7 @@ def twod_ss_homo_head_at_point():
         f.write("1 1 1 {0} {1} 1.0 \n".format(int(N / 2)+1,int(N / 2)))
         f.write("end performance_measure\n\n")
 
-    adj = mf6adj.Mf6Adj("test.adj", lib_name)
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, True)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -2478,7 +2478,7 @@ def twod_ss_hetero_head_at_point():
         f.write("1 1 1 {0} {1} 1.0 \n".format(int(N / 2)+1,int(N / 2)))
         f.write("end performance_measure\n\n")
 
-    adj = mf6adj.Mf6Adj("test.adj", lib_name)
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, True)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -3017,7 +3017,7 @@ def twod_ss_nested_homo_head_at_point():
         f.write("1 1 80 1.0 \n")
         f.write("end performance_measure\n\n")
 
-    adj = mf6adj.Mf6Adj("test.adj", lib_name)
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, False)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -3679,7 +3679,7 @@ def twod_ss_nested_hetero_head_at_point():
         f.write("1 1 80 1.0 \n")
         f.write("end performance_measure\n\n")
 
-    adj = mf6adj.Mf6Adj("test.adj", lib_name)
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, False)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -3702,7 +3702,7 @@ def twod_ss_nested_hetero_head_at_point():
     maxval = max(array_S_per)
     contour_intervals = np.linspace(minval, maxval, 5)
     plot_colorbar_sensitivity(x, y, array_S_per, array_S_per,array_S_jdub.value, contour_intervals, 'snglhdtest_nested_hetero.png', nodenumber=79)
-    # exit()
+
     f = open("sensitivity_nested_hetero.dat", "w")
     print(f.write('Perturbation  MF6-ADJ\n'))
     print(f.write('-----------------------\n'))
@@ -3967,7 +3967,7 @@ def freyberg_test():
         f.write("1 1 1 20 10 1.0 \n")
         f.write("end performance_measure\n\n")
 
-    adj = mf6adj.Mf6Adj("test.adj", lib_name)
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, True)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
