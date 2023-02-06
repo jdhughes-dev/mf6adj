@@ -555,7 +555,7 @@ def twod_ss_homo_finegrid():
     array_cond_3D = 10 * np.ones((Nlay, Nrow, Ncol))
     npf = flopy.mf6.ModflowGwfnpf(
         gwf,
-        icelltype=1,
+        icelltype=0,
         k=array_cond_3D,
         # alternative_cell_averaging='logarithmic'
         # alternative_cell_averaging='amt-lmk',
@@ -931,7 +931,7 @@ def twod_ss_hetero_coarsegrid():
 
     npf = flopy.mf6.ModflowGwfnpf(
         gwf,
-        icelltype=1,
+        icelltype=0,
         k=k,
     )
 
@@ -1053,7 +1053,7 @@ def twod_ss_hetero_coarsegrid():
             k[index_sens[0][0]][index_sens[0][1]][index_sens[0][2]] += epsilon
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
-                icelltype=1,
+                icelltype=0,
                 k=k,
             )
 
@@ -1171,7 +1171,7 @@ def twod_ss_hetero_coarsegrid():
             k[index_sens[0][0]][index_sens[0][1]][index_sens[0][2]] += epsilon
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
-                icelltype=1,
+                icelltype=0,
                 k=k,
             )
 
@@ -1442,7 +1442,7 @@ def twod_ss_homo_head_at_point():
     k= array_cond_3D
     npf = flopy.mf6.ModflowGwfnpf(
         gwf,
-        icelltype=1,
+        icelltype=0,
         k=array_cond_3D,
     )
 
@@ -1581,7 +1581,7 @@ def twod_ss_homo_head_at_point():
             k[index_sens[0][0]][index_sens[0][1]][index_sens[0][2]] += 0
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
-                icelltype=1,
+                icelltype=0,
                 k=k,
             )
 
@@ -1694,7 +1694,7 @@ def twod_ss_homo_head_at_point():
             k[index_sens[0][0]][index_sens[0][1]][index_sens[0][2]] += epsilon
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
-                icelltype=1,
+                icelltype=0,
                 k=k,
             )
 
@@ -2114,7 +2114,7 @@ def twod_ss_hetero_head_at_point():
 
     npf = flopy.mf6.ModflowGwfnpf(
         gwf,
-        icelltype=1,
+        icelltype=0,
         k=k,
     )
 
@@ -2253,7 +2253,7 @@ def twod_ss_hetero_head_at_point():
             k[index_sens[0][0]][index_sens[0][1]][index_sens[0][2]] += epsilon
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
-                icelltype=1,
+                icelltype=0,
                 k=k,
             )
 
@@ -2367,7 +2367,7 @@ def twod_ss_hetero_head_at_point():
             k[index_sens[0][0]][index_sens[0][1]][index_sens[0][2]] += epsilon
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
-                icelltype=1,
+                icelltype=0,
                 k=k,
             )
 
@@ -2530,9 +2530,10 @@ def twod_ss_nested_homo_head_at_point():
     N = 7
     L = 700.0
     H = 1.0
-    k = 1.0
+    kh = 100.0
+    epsilon = .1
     q = -300.0
-    T = k * H
+    T = kh * H
     L1 = L2 = L
     D = L1 * L2
     Nlay = 1
@@ -2564,6 +2565,8 @@ def twod_ss_nested_homo_head_at_point():
         pname="ims",
         complexity="SIMPLE",
         linear_acceleration="BICGSTAB",
+        outer_dvclose=0.0001,
+        inner_dvclose=0.00001,
     )
 
     # Create the Flopy groundwater flow (gwf) model object
@@ -2624,6 +2627,7 @@ def twod_ss_nested_homo_head_at_point():
     # ### Create the storage (`STO`) Package
     sto = flopy.mf6.ModflowGwfsto(
         gwf,
+        steady_state=True,
     )
 
     chd_spd = []
@@ -2667,9 +2671,10 @@ def twod_ss_nested_homo_head_at_point():
 
     npf = flopy.mf6.ModflowGwfnpf(
         gwf,
-        icelltype=1,
-        k=10.,
+        icelltype=0,
+        k=kh,
     )
+    org_k = [kh] * gwf.modelgrid.nnodes
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
@@ -2743,9 +2748,9 @@ def twod_ss_nested_homo_head_at_point():
         current_time = mf6api.get_current_time()
         dt1 = mf6api.get_time_step()
         deltat.append(dt1)
-        CHD0 = mf6api.get_value_ptr(mf6api.get_var_address("NODELIST", "%s/CHD_0" % name))
-        CHD1 = mf6api.get_value_ptr(mf6api.get_var_address("NODELIST", "%s/CHD_1" % name))
-        chd = np.append(CHD0,CHD1) - 1
+        CHD0 = np.array(mf6api.get_value_ptr(mf6api.get_var_address("NODELIST", "%s/CHD_0" % name))) - 1
+        CHD1 = np.array(mf6api.get_value_ptr(mf6api.get_var_address("NODELIST", "%s/CHD_1" % name))) - 1
+        chd = np.append(CHD0,CHD1)
         amat = mf6api.get_value_ptr(mf6api.get_var_address("AMAT", "SLN_1"))
         MAT.append([amat[item] for item in range(len(amat))])
         rhs = mf6api.get_value_ptr(mf6api.get_var_address("RHS", "SLN_1"))
@@ -2790,15 +2795,14 @@ def twod_ss_nested_homo_head_at_point():
     print('now calculating perturbation sensitivity')
     count = 0
     for index_sens in range(gwf.modelgrid.nnodes):
-        count += 1
         if index_sens in chd:
             pass
         else:
-            k = npf.k.array
+            k = org_k.copy()
             # k[0][index_sens] = k[0][index_sens] + epsilon
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
-                icelltype=1,
+                icelltype=0,
                 k=k,
             )
 
@@ -2898,19 +2902,20 @@ def twod_ss_nested_homo_head_at_point():
 
     # now set epsilon
     f_sens = open("sens_per_nested.dat", "w")
-    epsilon = 0.001
+    # epsilon = 0.0001
     list_S_per = []
     count = 0
     for index_sens in range(gwf.modelgrid.nnodes):
-        k = [10] * gwf.modelgrid.nnodes
+        k = org_k.copy()
         if index_sens in chd:
             print(f_sens.write('{:2.4E}\n'.format(0.0)))
             list_S_per.append(0.)
         else:
             k[index_sens] += epsilon
+
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
-                icelltype=1,
+                icelltype=0,
                 k=k,
             )
 
@@ -3004,8 +3009,8 @@ def twod_ss_nested_homo_head_at_point():
             J = h2[0,0,79]
             sens = (J - J_constant) / epsilon
             list_S_per.append(sens)
-            print(f_sens.write('{:2.4E}\n'.format(sens)))
-            count += 1
+            f_sens.write('{:2.4E}\n'.format(sens))
+        count += 1
     f_sens.close()
 
     # # then calculate mfadj for head at point
@@ -3027,12 +3032,6 @@ def twod_ss_nested_homo_head_at_point():
     array_S_per = np.array(list_S_per)
     array_S_jdub = pd.read_csv('k123.dat')
 
-    # # S_adj = np.reshape(array_S_adj, (Nlay, Nrow, Ncol))
-    # S_per = np.reshape(array_S_per, (Nlay, Nrow, Ncol))
-    # S_jdub = np.reshape(array_S_jdub.value, (Nlay, Nrow, Ncol))
-    # # S_jdub = np.loadtxt('k123.dat')
-    # # list_S_mf6adj = S_jdub.reshape(-1)
-    #
     x = np.linspace(0, L1, Ncol)
     y = np.linspace(0, L2, Nrow)
     y = y[::-1]
@@ -3042,12 +3041,12 @@ def twod_ss_nested_homo_head_at_point():
     plot_colorbar_sensitivity(x, y, array_S_per, array_S_per,array_S_jdub.value, contour_intervals, 'snglhdtest_nested_homo.png', nodenumber=79)
     # exit()
     f = open("sensitivity_nested.dat", "w")
-    print(f.write('Perturbation  MF6-ADJ\n'))
-    print(f.write('-----------------------\n'))
+    f.write('Perturbation  MF6-ADJ\n')
+    f.write('-----------------------\n')
     for i in range(len(list_S_per)):
         # print(f.write('{:2.4E} '.format(list_S_per[i])))
-        print(f.write('{:2.4E} '.format(list_S_per[i])))
-        print(f.write('{:2.4E} \n'.format(array_S_jdub.value[i])))
+        f.write('{:2.4E} '.format(list_S_per[i]))
+        f.write('{:2.4E} \n'.format(array_S_jdub.value[i]))
     f.close()
 
 def twod_ss_nested_hetero_head_at_point():
@@ -3329,7 +3328,7 @@ def twod_ss_nested_hetero_head_at_point():
     array_cond = np.array(list_cond)
     npf = flopy.mf6.ModflowGwfnpf(
         gwf,
-        icelltype=1,
+        icelltype=0,
         k=array_cond,
     )
 
@@ -3460,7 +3459,7 @@ def twod_ss_nested_hetero_head_at_point():
             # k[0][index_sens] = k[0][index_sens] + epsilon
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
-                icelltype=1,
+                icelltype=0,
                 k=k,
             )
 
@@ -3560,7 +3559,7 @@ def twod_ss_nested_hetero_head_at_point():
 
     # now set epsilon
     f_sens = open("sens_per_nested.dat", "w")
-    epsilon = 0.1
+    epsilon = 0.01
     list_S_per = []
     count = 0
     for index_sens in range(gwf.modelgrid.nnodes):
@@ -3572,7 +3571,7 @@ def twod_ss_nested_hetero_head_at_point():
             k[index_sens] += epsilon
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
-                icelltype=1,
+                icelltype=0,
                 k=k,
             )
 
@@ -4008,6 +4007,6 @@ if __name__ == "__main__":
     # twod_ss_hetero_coarsegrid()
     # twod_ss_homo_head_at_point()
     # twod_ss_hetero_head_at_point()
-    # twod_ss_nested_homo_head_at_point()
+    twod_ss_nested_homo_head_at_point()
     # twod_ss_nested_hetero_head_at_point()
-    freyberg_test()
+    # freyberg_test()

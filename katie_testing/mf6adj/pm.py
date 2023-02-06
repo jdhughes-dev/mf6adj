@@ -190,6 +190,58 @@ class PerfMeas(object):
 						d_mat_k11[ia[node] + ij] = 0.
 						d_mat_k22[ia[node] + ij] = 0.
 						d_mat_k123[ia[node] + ij] = 0.
+				else:
+					sum1 = 0.
+					sum2 = 0.
+					sum3 = 0.
+					height1 = sat[node] * (top[node] - bot[node])
+					# for ii in range(iac[nn])[1:]:
+					pp = 1
+					for ii in range(start_ia, end_ia):
+						mnode = ja[ii]
+						xmnode = xs[mnode]
+						ymnode = ys[mnode]
+						xdiff = xnode - xmnode
+						ydiff = ynode - ymnode
+
+						height2 = sat[mnode] * (top[mnode] - bot[mnode])
+						jj = jas[ii]
+						iihc = ihc[jj]
+						if iihc == 0: # vertical con
+							d_mat_k11[ia[node]+pp] = 0.
+							d_mat_k22[ia[node]+pp] = 0.
+							# d_mat_k33[jj] = PerfMeas._dconddvk(k33[node],top[node],bot[node],sat[node],
+							# 								   k33[mnode],top[mnode],bot[mnode],sat[mnode],hwva[jj])
+							d_mat_k33[ia[node]+pp] = PerfMeas.derivative_conductance_k1(k33[node],k33[mnode],height1, height2, cl1[jj]+cl2[jj], hwva[jj])
+							d_mat_k123[ia[node]+pp]  = d_mat_k11[ia[node]+pp] + d_mat_k22[ia[node]+pp] + d_mat_k33[ia[node]+pp]
+							sum1 += d_mat_k33[ia[node]+pp]
+							sum2 += d_mat_k11[ia[node]+pp]
+							sum3 += d_mat_k22[ia[node]+pp]
+							pp+=1
+						elif np.abs(xdiff) > np.abs(ydiff):
+							# d_mat_k11[jj] = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
+							d_mat_k11[ia[node]+pp] = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
+							d_mat_k33[ia[node]+pp] = 0.
+							d_mat_k22[ia[node]+pp] = 0.
+							d_mat_k123[ia[node]+pp]  = d_mat_k11[ia[node]+pp] + d_mat_k22[ia[node]+pp] + d_mat_k33[ia[node]+pp]
+							sum1 += d_mat_k33[ia[node]+pp]
+							sum2 += d_mat_k11[ia[node]+pp]
+							sum3 += d_mat_k22[ia[node]+pp]
+							pp+=1
+						else: #this is K22 in Mohamed's code
+							# d_mat_k11[jj] = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
+							d_mat_k11[ia[node]+pp] = 0.
+							d_mat_k33[ia[node]+pp] = 0.
+							d_mat_k22[ia[node]+pp] = PerfMeas.derivative_conductance_k1(k22[node],k22[mnode],hwva[jj],hwva[jj], cl1[jj]+cl2[jj],height1)
+							d_mat_k123[ia[node]+pp]  = d_mat_k11[ia[node]+pp] + d_mat_k22[ia[node]+pp] + d_mat_k33[ia[node]+pp]
+							sum1 += d_mat_k33[ia[node]+pp]
+							sum2 += d_mat_k11[ia[node]+pp]
+							sum3 += d_mat_k22[ia[node]+pp]
+							pp+=1
+						d_mat_k11[ia[node]] = -sum2
+						d_mat_k33[ia[node]] = -sum1
+						d_mat_k22[ia[node]] = -sum3
+						d_mat_k123[ia[node]] = d_mat_k11[ia[node]] + d_mat_k22[ia[node]] + d_mat_k33[ia[node]]
 			else:
 				sum1 = 0.
 				sum2 = 0.
@@ -238,10 +290,10 @@ class PerfMeas(object):
 						sum2 += d_mat_k11[ia[node]+pp]
 						sum3 += d_mat_k22[ia[node]+pp]
 						pp+=1
-				d_mat_k11[ia[node]] = -sum2
-				d_mat_k33[ia[node]] = -sum1
-				d_mat_k22[ia[node]] = -sum3
-				d_mat_k123[ia[node]] = d_mat_k11[ia[node]] + d_mat_k22[ia[node]] + d_mat_k33[ia[node]]
+					d_mat_k11[ia[node]] = -sum2
+					d_mat_k33[ia[node]] = -sum1
+					d_mat_k22[ia[node]] = -sum3
+					d_mat_k123[ia[node]] = d_mat_k11[ia[node]] + d_mat_k22[ia[node]] + d_mat_k33[ia[node]]
 
 		# d_mat_k11 = sparse.csr_matrix((d_mat_k11, ja, ia), shape=(len(ia) - 1, len(ia) - 1))
 		# d_mat_k33 = sparse.csr_matrix((d_mat_k33, ja, ia), shape=(len(ia) - 1, len(ia) - 1))
@@ -291,11 +343,15 @@ class PerfMeas(object):
 				if is_chd:
 					if ja[ia[k] + j] in chd:
 						sum2 += 0.0
+					elif ib[ja[ia[k] + j]]==0:
+						sum2 += 0.0
+					else:
+						sum2 += lamb[ja[ia[k] + j]] * dAdk[ia[k] + j] * (head_dict[k] - head_dict[ja[ia[k] + j]])
 				elif ib[ja[ia[k] + j]]==0:
 					sum2 += 0.0
 				else:
 					sum2 += lamb[ja[ia[k] + j]] * dAdk[ia[k] + j] * (head_dict[k] - head_dict[ja[ia[k] + j]])
-					# print(sum2)
+
 			sums = sum1 + sum2
 			my_list.append(sums)
 
