@@ -11,7 +11,7 @@ from .pm import PerfMeasRecord,PerfMeas
 DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 class Mf6Adj(object):
-    def __init__(self, adj_filename, lib_name, is_structured=True):
+    def __init__(self, adj_filename, lib_name, is_structured):
 
         """todo:
 
@@ -42,7 +42,7 @@ class Mf6Adj(object):
         self._gwf = self._initialize_gwf(lib_name,self._flow_dir)
 
         self._structured_mg = None
-        self.is_structured = True  # hard coded for now...
+        self.is_structured = is_structured  # hard coded for now...
         if self.is_structured:
             nlay = self._gwf.get_value(self._gwf.get_var_address("NLAY", self._gwf_name.upper(), "DIS"))[0]
             nrow = self._gwf.get_value(self._gwf.get_var_address("NROW", self._gwf_name.upper(), "DIS"))[0]
@@ -50,6 +50,7 @@ class Mf6Adj(object):
             self._structured_mg = flopy.discretization.StructuredGrid(nrow=nrow,
                                                                       ncol=ncol,
                                                                       nlay=nlay)
+
 
         self._performance_measures = []
 
@@ -66,10 +67,11 @@ class Mf6Adj(object):
 
 
 
-    def _read_adj_file(self,):
+    def _read_adj_file(self):
 
         # clear any existing PMs
         self._performance_measures = []
+
 
         """read the adj input file
 
@@ -183,13 +185,48 @@ class Mf6Adj(object):
                                 pm_entries.append(
                                     PerfMeasRecord(kper,kstp,n - 1,k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
                         else:
-                            raise NotImplementedError("only structured grids currently supported")
+                            # raise NotImplementedError("only structured grids currently supported")
+                            if len(raw) < 3:
+                                raise Exception(
+                                    "performance measure {0} line {1} has too few entries, need at least 3".format(
+                                        pm_name, line2))
+                            weight = None
+                            if pm_type == "direct":
+                                if len(raw) != 4:
+                                    raise Exception(
+                                        "direct performance measure {0} line {1} has wrong number of entries, should be 4".format(
+                                            pm_name, line2))
+                                weight = float(raw[3])
+                            obsval = None
+                            if pm_type == "residual":
+                                if len(raw) != 5:
+                                    raise Exception(
+                                        "residual performance measure {0} line {1} has wrong number of entries, should be 5".format(
+                                            pm_name, line2))
+                                weight = float(raw[4])
+                                obsval = float(raw[3])
+ 
+                            try:
+                                n = int(raw[2])
+                            except:
+                                raise Exception("error casting node info info on line {0}: '{1}'".format(count, line2))
+
+                            # if there is a reduced node scheme
+                            if len(nuser) > 1:
+                                nn = np.where(nuser == n)[0]
+                                if nn.shape[0] != 1:
+                                    raise Exception("node num {0} not in reduced node num".format(n))
+                                pm_entries.append(PerfMeasRecord(kper,kstp,nn,weight=weight,obsval=obsval))
+                            else:
+                                pm_entries.append(
+                                    PerfMeasRecord(kper,kstp,n - 1,weight=weight,obsval=obsval))
+
                     if len(pm_entries) == 0:
                         raise Exception("no entries found for PM {0}".format(pm_name))
 
                     if pm_name in [pm._name for pm in self._performance_measures]:
                         raise Exception("PM {0} multiply defined".format(pm_name))
-                    self._performance_measures.append(PerfMeas(pm_name,pm_type,pm_entries))
+                    self._performance_measures.append(PerfMeas(pm_name,pm_type,pm_entries, self.is_structured))
 
 
                 else:
