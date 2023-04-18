@@ -1,9 +1,0 @@
-
-begin options
-
-end options
-
-begin performance_measure pm1 type direct
-1 1 1 20 10 1.0 
-end performance_measure
-
