@@ -14,6 +14,7 @@ sys.path.insert(0,".")
 import flopy
 import mf6adj
 import flopy.utils.cvfdutil
+import pyemu
 
 if "linux" in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "linux", "libmf6.so")
@@ -1289,7 +1290,7 @@ def twod_ss_hetero_coarsegrid():
     minval = min(list_S_per)
     maxval = max(list_S_per)
     contour_intervals = np.linspace(minval, maxval, 10)
-    plot_colorbar_sensitivity(x, y, S_adj, S_per, contour_intervals, '2dssheterocgr_colorbar_sensitivity.png')
+    plot_colorbar_sensitivity(x, y, S_adj, S_per, contour_intervals, fname='2dssheterocgr_colorbar_sensitivity.png')
 
     f = open("sensitivity.dat", "w")
     print(f.write('  MF6-ADJ  Perturbation\n'))
@@ -3732,7 +3733,8 @@ def freyberg_test():
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
-    sim.run_simulation()
+    #sim.run_simulation()
+    pyemu.os_utils.run("mf6",cwd=new_d)
 
     # then calculate perturbation for head at point
     print('now calculating perturbation sensitivity')
@@ -4003,10 +4005,10 @@ def freyberg_test():
 
 
 if __name__ == "__main__":
-    # twod_ss_homo_finegrid()
-    # twod_ss_hetero_coarsegrid()
-    # twod_ss_homo_head_at_point()
-    # twod_ss_hetero_head_at_point()
-    twod_ss_nested_homo_head_at_point()
-    # twod_ss_nested_hetero_head_at_point()
-    # freyberg_test()
+    #twod_ss_homo_finegrid()
+    twod_ss_hetero_coarsegrid()
+    #twod_ss_homo_head_at_point()
+    #twod_ss_hetero_head_at_point()
+    #twod_ss_nested_homo_head_at_point()
+    #twod_ss_nested_hetero_head_at_point()
+    #freyberg_test()
