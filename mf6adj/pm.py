@@ -84,7 +84,7 @@ class PerfMeas(object):
 		self.save_array("k123",dfdk123,gwf_name,gwf,mg_structured)
 
 	def save_array(self,filetag,avec,gwf_name,gwf,structured_mg):
-		nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","NODEUSER",gwf)
+		nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","NODEUSER",gwf)-1
 		nnodes = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NODES", gwf)
 		
 		# if not a reduced node scheme
