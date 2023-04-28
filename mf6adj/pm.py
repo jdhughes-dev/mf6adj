@@ -110,16 +110,13 @@ class PerfMeas(object):
 	def _dadk(self,gwf_name,gwf, sat):
 		"""partial of A matrix WRT K
 		"""
-
 		is_chd = False
+		chd_list = []
 		names = list(gwf.get_input_var_names())
-		if '{0}/CHD_0/NODELIST'.format(gwf_name.upper()) in names:
-			chd1 =  PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf) - 1
-			chd = np.array(chd1)
-			is_chd = True
-		if '{0}/CHD_1/NODELIST'.format(gwf_name.upper()) in names:
-			chd2 = 	PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_1", "NODELIST", gwf) - 1
-			chd = np.append(chd1,chd2)
+		chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
+		for name in chds:
+			chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
+			chd_list.append(chd)
 			is_chd = True
 
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
@@ -185,7 +182,7 @@ class PerfMeas(object):
 					d_mat_k22[ia[node] + ij] = 0.
 					d_mat_k123[ia[node] + ij] = 0.
 			if is_chd:
-				if node in chd:
+				if node in chd_list[0]:
 					for ij in range(iac[node]-1):
 						d_mat_k33[ia[node] + ij] = 0.
 						d_mat_k11[ia[node] + ij] = 0.
@@ -321,14 +318,12 @@ class PerfMeas(object):
 		ib = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf).reshape(-1)
 
 		is_chd = False
+		chd_list = []
 		names = list(gwf.get_input_var_names())
-		if '{0}/CHD_0/NODELIST'.format(gwf_name.upper()) in names:
-			chd1 =  PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_0", "NODELIST", gwf) - 1
-			chd = np.array(chd1)
-			is_chd = True
-		if '{0}/CHD_1/NODELIST'.format(gwf_name.upper()) in names:
-			chd2 = 	PerfMeas.get_ptr_from_gwf(gwf_name, "CHD_1", "NODELIST", gwf) - 1
-			chd = np.append(chd1,chd2)
+		chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
+		for name in chds:
+			chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
+			chd_list.append(chd)
 			is_chd = True
 
 
@@ -342,7 +337,7 @@ class PerfMeas(object):
 			sum1 = lamb[k] * sum1
 			for j in list(range(iac[k]))[1:]:
 				if is_chd:
-					if ja[ia[k] + j] in chd:
+					if ja[ia[k] + j] in chd_list[0]:
 						sum2 += 0.0
 					elif ib[ja[ia[k] + j]]==0:
 						sum2 += 0.0
