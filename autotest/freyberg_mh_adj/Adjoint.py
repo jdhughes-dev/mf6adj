@@ -319,6 +319,18 @@ with open(inputfile, 'r') as f:
                         fname = tag+"_k{0:03d}.dat".format(k)
                         np.savetxt(fname,arr[k,:,:],fmt="%15.6E")
 
+                temporal_data_arrays = [list_AS_LS,list_lam_dAdk_h_LS,list_lam_dAdk33_h_LS,list_sens_ss_indirect_LS]
+                temporal_tags = ["adjstates","dadk","dadk33","indirss"]
+
+                for data,tag in zip(temporal_data_arrays,temporal_tags):
+                    for kper in range(nper):
+                        print(tag,kper,len(data))
+                        arr = convert_idmarray_2_gridarray(data[kper]).reshape((nlay,nrow,ncol))
+                        ttag = tag + "_kper{0:05d}".format(kper)
+                        for k in range(nlay):
+                            fname = ttag+"_k{0:03d}.dat".format(k)
+                            np.savetxt(fname,arr[k,:,:],fmt="%15.6E")
+
                 for kper in range(nper):
                     arr = list_S_RCH_adj_LS[kper].reshape((nlay,nrow,ncol))
                     tag = "rech_kper{0:05d}".format(kper)
