@@ -24,8 +24,6 @@ else:
     lib_name = os.path.join("..", "bin", "win", "libmf6.dll")
     mf6_bin = os.path.join("..", "bin", "win", "mf6.exe")
 
-sys.path.insert(0,os.path.join(".."))
-
 #some plotting functions
 def plot_colorbar_sensitivity(x, y, Sper,Sadj, contour_intervals, fname, nodenumber = None, rowcol = None):
     from matplotlib.patches import Polygon
@@ -2303,10 +2301,73 @@ def update_freyberg_pert(sim,model_ws):
     return df
 
 
+def freyberg_mh_test():
+    org_d = "freyberg_mh_adj"
+    test_d = "freyberg_mh_adj_test"
+    if os.path.exists(test_d):
+       shutil.rmtree(test_d)
+    shutil.copytree(org_d,test_d)
+
+    base_d = "freyberg_mh_adj_base"
+    if os.path.exists(base_d):
+        shutil.rmtree(base_d)
+    shutil.copytree(org_d,base_d)
+
+    mf6adj_d = os.path.join(test_d,'mf6adj')
+    if os.path.exists(mf6adj_d):
+        shutil.rmtree(mf6adj_d)
+    shutil.copytree(os.path.join('..','mf6adj'),mf6adj_d)
+    shutil.copy2(mf6_bin,os.path.join(test_d,os.path.split(mf6_bin)[1]))
+    shutil.copy2(lib_name,os.path.join(test_d,os.path.split(lib_name)[1]))
+
+    for d in ["bmipy","xmipy","modflowapi"]:
+        dest = os.path.join(test_d,d)
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        shutil.copytree(d,dest)
+
+    local_lib_name = os.path.split(lib_name)[1]
+    bd = os.getcwd()
+    sys.path.append(os.path.join(".."))
+    import mf6adj
+    print(mf6adj.__file__)
+    os.chdir(test_d)
+    #try:     
+    adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True)
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
+    #except Exception as e:
+    #    os.chdir(bd)
+    #    raise Exception(e)
+    os.chdir(bd)
+
+    # run MH's adj code
+    bd = os.getcwd()
+    os.chdir(base_d)
+    try:
+        ret_val = os.system("python Adjoint.py")
+    except Exception as e:
+        os.chdir(bd)
+        raise Exception(e)
+    if "window" in platform.platform().lower():
+        if ret_val != 0:
+            os.chdir(bd)
+            raise Exception("run() returned non-zero: {0}".format(ret_val))
+    else:
+        estat = os.WEXITSTATUS(ret_val)
+        if estat != 0:
+            os.chdir(bd)
+            raise Exception("run() returned non-zero: {0}".format(estat))
+    os.chdir(bd)
+
+
 if __name__ == "__main__":
     #basic_freyberg()
     #twod_ss_hetero_coarsegrid()
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()
-    freyberg_test()
+    #freyberg_test()
+    freyberg_mh_test()
+
 

@@ -152,14 +152,14 @@ class Mf6Adj(object):
                                         pm_name, line2))
                             weight = None
                             if pm_type == "direct":
-                                if len(raw) != 6:
+                                if len(raw) < 6:
                                     raise Exception(
                                         "direct performance measure {0} line {1} has wrong number of entries, should be 6".format(
                                             pm_name, line2))
                                 weight = float(raw[5])
                             obsval = None
                             if pm_type == "residual":
-                                if len(raw) != 7:
+                                if len(raw) < 7:
                                     raise Exception(
                                         "residual performance measure {0} line {1} has wrong number of entries, should be 7".format(
                                             pm_name, line2))
@@ -173,12 +173,17 @@ class Mf6Adj(object):
                                 except:
                                     raise Exception("error casting k-i-j info on line {0}: '{1}'".format(count, line2))
 
+
                             # convert to node number
-                            n = self._structured_mg.get_node([kij])[0] + 1
+                            kji = tuple([kij[0],kij[2],kij[1]]) #WTF!
+                            n = self._structured_mg.get_node([kji])[0]
                             # if there is a reduced node scheme
                             if len(nuser) > 1:
                                 nn = np.where(nuser == n)[0]
                                 if nn.shape[0] != 1:
+                                    print(n,nn)
+                                    if self.is_structured:
+                                        print(kij)
                                     raise Exception("node num {0} not in reduced node num".format(n))
                                 pm_entries.append(PerfMeasRecord(kper,kstp,nn,k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
                             else:
@@ -192,14 +197,14 @@ class Mf6Adj(object):
                                         pm_name, line2))
                             weight = None
                             if pm_type == "direct":
-                                if len(raw) != 4:
+                                if len(raw) < 4:
                                     raise Exception(
                                         "direct performance measure {0} line {1} has wrong number of entries, should be 4".format(
                                             pm_name, line2))
                                 weight = float(raw[3])
                             obsval = None
                             if pm_type == "residual":
-                                if len(raw) != 5:
+                                if len(raw) < 5:
                                     raise Exception(
                                         "residual performance measure {0} line {1} has wrong number of entries, should be 5".format(
                                             pm_name, line2))

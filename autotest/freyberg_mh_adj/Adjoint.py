@@ -116,7 +116,9 @@ list_of_SENSI_NAMES = ['COND', 'CONDV', 'STOR', 'HGHB', 'CGHB', 'QWEL']
 
 # ### k
 d_mat_k11, d_mat_k22, d_mat_k33, d_mat_k123 = d_amat_k()
-
+for arr,tag in zip([d_mat_k11,d_mat_k22,d_mat_k33,d_mat_k123],["dadk11","dadk22","dadk33","dadk123"]):
+    np.savetxt(tag+".dat",arr,fmt="%15.6E")
+    
 inputfile = "MF6-ADJ.INP"
 with open(inputfile, 'r') as f:
     lines = f.readlines()
@@ -280,6 +282,8 @@ with open(inputfile, 'r') as f:
                     if lines[i+j].startswith('SENSI'):
                         break
                 # Solving the adjoint state problem for PM = 'SWLSH'
+                for kkk in range(len(time))[1:]:
+                    np.savetxt("head_k{0:04d}".format(kkk-1),h[kkk],fmt="%15.6E")
                 list_AS_LS = SolveAdjointLS(len(IA) - 1, len(deltat), list_obs, h, reverse_deltat)
                 # Local Sensitivity Coefficients (for each grid element)
                 list_lam_dAdk_h_LS = [lam_dAdk_h(list_AS_LS[::-1][kkk-1], d_mat_k123, h[kkk]) for kkk in range(len(time))[1:]]
@@ -319,7 +323,7 @@ with open(inputfile, 'r') as f:
                         fname = tag+"_k{0:03d}.dat".format(k)
                         np.savetxt(fname,arr[k,:,:],fmt="%15.6E")
 
-                temporal_data_arrays = [list_AS_LS,list_lam_dAdk_h_LS,list_lam_dAdk33_h_LS,list_sens_ss_indirect_LS]
+                temporal_data_arrays = [list_AS_LS[1:],list_lam_dAdk_h_LS,list_lam_dAdk33_h_LS,list_sens_ss_indirect_LS]
                 temporal_tags = ["adjstates","dadk","dadk33","indirss"]
 
                 for data,tag in zip(temporal_data_arrays,temporal_tags):
@@ -597,7 +601,7 @@ for (kw, jw, iw) in [dict_wel[0][item][0] for item in range(len(dict_wel[0]))]:
 for (ko, jo, io) in list_obs[0][1]:
     array_model[ko][jo][io] = 4.0
 
-plot_colorbar_arrays(array_model[0], array_model[0], 1, "model")
+#plot_colorbar_arrays(array_model[0], array_model[0], 1, "model")
 
 # # HGHB
 # list_SENSITIVITY_HGHB_adj = [-0.05250082327769279, -0.07040794412328386, -0.13323025770515223, -0.36620150041616906, -0.16672358950375796, -0.17514838139596708, -0.3980402057607099,  -0.22583357106631438, -0.389557768210818,  -0.16444088099663287]

@@ -53,10 +53,12 @@ class PerfMeas(object):
 		dfdk123 = np.zeros(nnodes)
 
 		for itime,kk in enumerate(kperkstp[::-1]):
+			itime = kk[0]
 			print('solving',self._name,kk)
 			dfdh = self._dfdh(kk, gwf_name, gwf, deltat_dict, head_dict)
 			dadk11,dadk22,dadk33,dadk123 = self._dadk(gwf_name, gwf, sat_dict[kk])
-
+			for arr,tag in zip([dadk11,dadk22,dadk33,dadk123],["dadk11","dadk22","dadk33","dadk123"]):
+				np.savetxt("pm-{0}_{1}_kper{2:05d}.dat".format(self._name,tag,itime),arr,fmt="%15.6E")
 			if iss[kk] == 0: #transient
 				# get the derv of RHS WRT head
 				drhsdh = self._drhsdh(gwf_name,gwf,deltat_dict[kk])
@@ -72,11 +74,18 @@ class PerfMeas(object):
 
 			# dfdk11 += np.dot(lamb,dadk11.dot(head_dict[kk]))
 			# dfdk33 += np.dot(lamb, dadk33.dot(head_dict[kk]))
+			np.savetxt("pm-{0}_head_kper{1:04d}.dat".format(self._name,itime),head_dict[kk],fmt="%15.6E")
 			dfdk11 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk11,head_dict[kk])
 			dfdk22 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk22,head_dict[kk])
 			dfdk33 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk33,head_dict[kk])
 			dfdk123 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk123,head_dict[kk])
 
+			self.save_array("adjstates_kper{0:05d}".format(itime),lamb,gwf_name,gwf,mg_structured)
+			self.save_array("dadk11_kper{0:05d}".format(itime),dadk11,gwf_name,gwf,mg_structured)
+			self.save_array("dadk22_kper{0:05d}".format(itime),dadk22,gwf_name,gwf,mg_structured)
+			self.save_array("dadk33_kper{0:05d}".format(itime),dadk33,gwf_name,gwf,mg_structured)
+			self.save_array("dadk123_kper{0:05d}".format(itime),dadk123,gwf_name,gwf,mg_structured)
+		
 		# np.savetxt('result.dat',dfdk123)
 		self.save_array("k11",dfdk11,gwf_name,gwf,mg_structured)
 		self.save_array("k22",dfdk22,gwf_name,gwf,mg_structured)
@@ -86,7 +95,7 @@ class PerfMeas(object):
 	def save_array(self,filetag,avec,gwf_name,gwf,structured_mg):
 		nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","NODEUSER",gwf)-1
 		nnodes = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NODES", gwf)
-		
+		filetag = "pm-"+self._name + "_" + filetag
 		# if not a reduced node scheme
 		if len(nodeuser) == 1:
 			nodeuser = np.arange(nnodes)
@@ -97,7 +106,7 @@ class PerfMeas(object):
 			for kij,v in zip(kijs,avec):
 				arr[kij] = v
 			for k,karr in enumerate(arr):
-				filename = filetag + "_layer{0:03d}.dat".format(k+1)
+				filename = filetag + "_k{0:03d}.dat".format(k)
 				np.savetxt(filename,karr,fmt="%15.6E")
 		else:
 			filename = filetag + ".dat"
@@ -269,8 +278,9 @@ class PerfMeas(object):
 						sum3 += d_mat_k22[ia[node]+pp]
 						pp+=1
 					elif np.abs(xdiff) > np.abs(ydiff):
-						# d_mat_k11[jj] = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
-						d_mat_k11[ia[node]+pp] = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
+						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
+						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
+						d_mat_k11[ia[node]+pp] = v1
 						d_mat_k33[ia[node]+pp] = 0.
 						d_mat_k22[ia[node]+pp] = 0.
 						d_mat_k123[ia[node]+pp]  = d_mat_k11[ia[node]+pp] + d_mat_k22[ia[node]+pp] + d_mat_k33[ia[node]+pp]
@@ -282,7 +292,9 @@ class PerfMeas(object):
 						# d_mat_k11[jj] = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
 						d_mat_k11[ia[node]+pp] = 0.
 						d_mat_k33[ia[node]+pp] = 0.
-						d_mat_k22[ia[node]+pp] = PerfMeas.derivative_conductance_k1(k22[node],k22[mnode],hwva[jj],hwva[jj], cl1[jj]+cl2[jj],height1)
+						v1 = PerfMeas._dconddhk(k22[node],k22[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
+						#v2 = PerfMeas.derivative_conductance_k1(k22[node],k22[mnode],hwva[jj],hwva[jj], cl1[jj]+cl2[jj],height1)
+						d_mat_k22[ia[node]+pp] = v1
 						d_mat_k123[ia[node]+pp]  = d_mat_k11[ia[node]+pp] + d_mat_k22[ia[node]+pp] + d_mat_k33[ia[node]+pp]
 						sum1 += d_mat_k33[ia[node]+pp]
 						sum2 += d_mat_k11[ia[node]+pp]
@@ -297,17 +309,23 @@ class PerfMeas(object):
 		# d_mat_k33 = sparse.csr_matrix((d_mat_k33, ja, ia), shape=(len(ia) - 1, len(ia) - 1))
 		return d_mat_k11,d_mat_k22,d_mat_k33, d_mat_k123
 
-	# @staticmethod
-	# def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
-	# 	# todo: upstream weighting - could use height1 and height2 to check...
-	# 	# todo: vertically staggered
-	# 	return (width * cl1 * height1 * height2 ** 2 * k2) / ((cl2 * height1 * k1) + (cl1 * height2 * k2) ** 2)
+	@staticmethod
+	def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
+		# todo: upstream weighting - could use height1 and height2 to check...
+		# todo: vertically staggered
+		d = (width * cl1 * height1 * height2 ** 2 * k2) / (((cl2 * height1 * k1) + (cl1 * height2 * k2)) ** 2)
+		return d
 
 	# @staticmethod
 	# def _dconddvk(k1,top1,bot1,sat1,k2,top2,bot2,sat2,area):
 	# 	# todo: VARIABLE CV and DEWATER options
 	# 	condsq = (1./((1./((area*k1)/(0.5*(top1-bot1)))) + (1./((area*k2)/(0.5*(top2-bot2))))))**2
 	# 	return condsq / ((area * k1**2)/(0.5*(top1-bot1)))
+
+	@staticmethod
+	def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
+		d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
+		return d
 
 	def lam_dAdk_h(self, gwf_name, gwf, lamb, dAdk, head_dict):
 		ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
@@ -353,10 +371,7 @@ class PerfMeas(object):
 
 		return my_list
 
-	@staticmethod
-	def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
-		d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
-		return d
+	
 
 	def _drhsdh(self, gwf_name,gwf, dt):
 		top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
