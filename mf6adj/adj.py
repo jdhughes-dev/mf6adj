@@ -11,7 +11,7 @@ from .pm import PerfMeasRecord,PerfMeas
 DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 class Mf6Adj(object):
-    def __init__(self, adj_filename, lib_name, is_structured):
+    def __init__(self, adj_filename, lib_name, is_structured,verbose_level=1):
 
         """todo:
 
@@ -20,6 +20,7 @@ class Mf6Adj(object):
         check for unsupported aniso options
         check for unsupported xt3d option
         """
+        self.verbose_level = int(verbose_level)
         if not os.path.exists(adj_filename):
             raise Exception("adj_filename '{0}' not found".format(adj_filename))
         self.adj_filename = adj_filename
@@ -231,7 +232,7 @@ class Mf6Adj(object):
 
                     if pm_name in [pm._name for pm in self._performance_measures]:
                         raise Exception("PM {0} multiply defined".format(pm_name))
-                    self._performance_measures.append(PerfMeas(pm_name,pm_type,pm_entries, self.is_structured))
+                    self._performance_measures.append(PerfMeas(pm_name,pm_type,pm_entries, self.is_structured,self.verbose_level))
 
 
                 else:

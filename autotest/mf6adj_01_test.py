@@ -2330,7 +2330,7 @@ def freyberg_mh_test():
     print(mf6adj.__file__)
     os.chdir(test_d)
     #try:     
-    adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True)
+    adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,2)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -2338,7 +2338,7 @@ def freyberg_mh_test():
     #    os.chdir(bd)
     #    raise Exception(e)
     os.chdir(bd)
- 
+    
     # run MH's adj code
     base_d = "freyberg_mh_adj_base"
     if os.path.exists(base_d):

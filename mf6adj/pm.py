@@ -31,11 +31,12 @@ class PerfMeasRecord(object):
 			self.obsval = float(obsval)
 class PerfMeas(object):
 
-	def __init__(self,name,type,entries,is_structured):
+	def __init__(self,name,type,entries,is_structured,verbose_level=1):
 		self._name = name.lower().strip()
 		self._type = type.lower().strip()
 		self._entries = entries
 		self.is_structured = is_structured
+		self.verbose_level = int(verbose_level)
 
 
 	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, sat_dict, gwf, gwf_name,mg_structured):
@@ -47,61 +48,48 @@ class PerfMeas(object):
 		ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
 		ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
 
-		#dfdk11 = np.zeros(nnodes)
-		#dfdk22 = np.zeros(nnodes)
 		comp_k33_sens = np.zeros(nnodes)
 		comp_k_sens = np.zeros(nnodes)
 
 		for itime,kk in enumerate(kperkstp[::-1]):
 			itime = kk[0]
-			print('solving',self._name,kk)
+			print('solving',self._name,"(kper,kstp",kk)
 			dfdh = self._dfdh(kk, gwf_name, gwf, deltat_dict, head_dict)
 			dadk11,dadk22,dadk33,dadk123 = self._dadk(gwf_name, gwf, sat_dict[kk])
-			for arr,tag in zip([dadk11,dadk22,dadk33,dadk123],["dadk11","dadk22","dadk33","dadk123"]):
-				np.savetxt("pm-{0}_{1}_kper{2:05d}.dat".format(self._name,tag,itime),arr,fmt="%15.6E")
+				
 			if iss[kk] == 0: #transient
 				# get the derv of RHS WRT head
 				drhsdh = self._drhsdh(gwf_name,gwf,deltat_dict[kk])
 				rhs = (drhsdh * lamb) - dfdh
 			else:
-				rhs = -1 * dfdh
 				rhs = dfdh
-
+			
 			amat = amat_dict[kk]
-			np.savetxt("pm-{0}_amat_kper{1:04d}.dat".format(self._name,itime),amat,fmt="%15.6E")
-			np.savetxt("pm-{0}_rhs_kper{1:04d}.dat".format(self._name,itime),rhs,fmt="%15.6E")
-			np.savetxt("pm-{0}_ia_kper{1:04d}.dat".format(self._name,itime),ia)
-			np.savetxt("pm-{0}_ja_kper{1:04d}.dat".format(self._name,itime),ja)
-			
-			
 			amat_sp = sparse.csr_matrix((amat,ja.copy(),ia.copy()),shape=(len(ia)-1,len(ia)-1))
-			amat_sp_t = amat_sp.transpose()
-			np.savetxt("pm-{0}_amattodense_kper{1:04d}.dat".format(self._name,itime),amat_sp_t.todense(),fmt="%15.6E")
+			amat_sp_t = amat_sp.transpose()			
 			lamb = spsolve(amat_sp_t,rhs)
-
-			#lambs[itime,:] = lamb
-
-			# dfdk11 += np.dot(lamb,dadk11.dot(head_dict[kk]))
-			# dfdk33 += np.dot(lamb, dadk33.dot(head_dict[kk]))
-			np.savetxt("pm-{0}_head_kper{1:04d}.dat".format(self._name,itime),head_dict[kk],fmt="%15.6E")
-			#dfdk11 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk11,head_dict[kk])
-			#dfdk22 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk22,head_dict[kk])
-			k_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk33,head_dict[kk])
-			k33_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk123,head_dict[kk])
+				
+			k33_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk33,head_dict[kk])
+			k_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk123,head_dict[kk])
 			comp_k_sens += k_sens
 			comp_k33_sens += k33_sens
 
-			self.save_array("adjstates_kper{0:05d}".format(itime),lamb,gwf_name,gwf,mg_structured)
-			self.save_array("dadk11_kper{0:05d}".format(itime),dadk11,gwf_name,gwf,mg_structured)
-			self.save_array("dadk22_kper{0:05d}".format(itime),dadk22,gwf_name,gwf,mg_structured)
-			self.save_array("dadk33_kper{0:05d}".format(itime),dadk33,gwf_name,gwf,mg_structured)
-			self.save_array("dadk123_kper{0:05d}".format(itime),dadk123,gwf_name,gwf,mg_structured)
-		
-			# np.savetxt('result.dat',dfdk123)
-			#self.save_array("k11_kper{0:05d}".format(itime),dfdk11,gwf_name,gwf,mg_structured)
-			#self.save_array("dfdk22_kper{0:05d}".format(itime),dfdk22,gwf_name,gwf,mg_structured)
-			self.save_array("sens_k33_kper{0:05d}".format(itime), k33_sens, gwf_name, gwf, mg_structured)
-			self.save_array("sens_k_kper{0:05d}".format(itime),k_sens,gwf_name,gwf,mg_structured)
+			if self.verbose_level > 1:
+				self.save_array("adjstates_kper{0:05d}".format(itime),lamb,gwf_name,gwf,mg_structured)
+				self.save_array("dadk11_kper{0:05d}".format(itime),dadk11,gwf_name,gwf,mg_structured)
+				self.save_array("dadk22_kper{0:05d}".format(itime),dadk22,gwf_name,gwf,mg_structured)
+				self.save_array("dadk33_kper{0:05d}".format(itime),dadk33,gwf_name,gwf,mg_structured)
+				self.save_array("dadk123_kper{0:05d}".format(itime),dadk123,gwf_name,gwf,mg_structured)
+				self.save_array("sens_k33_kper{0:05d}".format(itime), k33_sens, gwf_name, gwf, mg_structured)
+				self.save_array("sens_k_kper{0:05d}".format(itime),k_sens,gwf_name,gwf,mg_structured)
+				np.savetxt("pm-{0}_head_kper{1:04d}.dat".format(self._name,itime),head_dict[kk],fmt="%15.6E")
+				np.savetxt("pm-{0}_amattodense_kper{1:04d}.dat".format(self._name,itime),amat_sp_t.todense(),fmt="%15.6E")
+				np.savetxt("pm-{0}_amat_kper{1:04d}.dat".format(self._name,itime),amat,fmt="%15.6E")
+				np.savetxt("pm-{0}_rhs_kper{1:04d}.dat".format(self._name,itime),rhs,fmt="%15.6E")
+				np.savetxt("pm-{0}_ia_kper{1:04d}.dat".format(self._name,itime),ia)
+				np.savetxt("pm-{0}_ja_kper{1:04d}.dat".format(self._name,itime),ja)
+				for arr,tag in zip([dadk11,dadk22,dadk33,dadk123],["dadk11","dadk22","dadk33","dadk123"]):
+					np.savetxt("pm-{0}_{1}_kper{2:05d}.dat".format(self._name,tag,itime),arr,fmt="%15.6E")
 		
 		self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
 		self.save_array("comp_sens_k",comp_k_sens,gwf_name,gwf,mg_structured)
@@ -205,65 +193,13 @@ class PerfMeas(object):
 					d_mat_k11[ia[node] + ij] = 0.
 					d_mat_k22[ia[node] + ij] = 0.
 					d_mat_k123[ia[node] + ij] = 0.
-			if is_chd:
-				if node in chd_list[0]:
+			if is_chd and node in chd_list[0]:
 					for ij in range(iac[node]-1):
 						d_mat_k33[ia[node] + ij] = 0.
 						d_mat_k11[ia[node] + ij] = 0.
 						d_mat_k22[ia[node] + ij] = 0.
 						d_mat_k123[ia[node] + ij] = 0.
-				else:
-					sum1 = 0.
-					sum2 = 0.
-					sum3 = 0.
-					height1 = sat[node] * (top[node] - bot[node])
-					# for ii in range(iac[nn])[1:]:
-					pp = 1
-					for ii in range(start_ia, end_ia):
-						mnode = ja[ii]
-						xmnode = xs[mnode]
-						ymnode = ys[mnode]
-						xdiff = xnode - xmnode
-						ydiff = ynode - ymnode
-
-						height2 = sat[mnode] * (top[mnode] - bot[mnode])
-						jj = jas[ii]
-						iihc = ihc[jj]
-						if iihc == 0: # vertical con
-							d_mat_k11[ia[node]+pp] = 0.
-							d_mat_k22[ia[node]+pp] = 0.
-							# d_mat_k33[jj] = PerfMeas._dconddvk(k33[node],top[node],bot[node],sat[node],
-							# 								   k33[mnode],top[mnode],bot[mnode],sat[mnode],hwva[jj])
-							d_mat_k33[ia[node]+pp] = PerfMeas.derivative_conductance_k1(k33[node],k33[mnode],height1, height2, cl1[jj]+cl1[jj], hwva[jj])
-							d_mat_k123[ia[node]+pp]  = d_mat_k11[ia[node]+pp] + d_mat_k22[ia[node]+pp] + d_mat_k33[ia[node]+pp]
-							sum1 += d_mat_k33[ia[node]+pp]
-							sum2 += d_mat_k11[ia[node]+pp]
-							sum3 += d_mat_k22[ia[node]+pp]
-							pp+=1
-						elif np.abs(xdiff) > np.abs(ydiff):
-							# d_mat_k11[jj] = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
-							d_mat_k11[ia[node]+pp] = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl1[jj], cl2[jj]+cl2[jj], hwva[jj],height1)
-							d_mat_k33[ia[node]+pp] = 0.
-							d_mat_k22[ia[node]+pp] = 0.
-							d_mat_k123[ia[node]+pp]  = d_mat_k11[ia[node]+pp] + d_mat_k22[ia[node]+pp] + d_mat_k33[ia[node]+pp]
-							sum1 += d_mat_k33[ia[node]+pp]
-							sum2 += d_mat_k11[ia[node]+pp]
-							sum3 += d_mat_k22[ia[node]+pp]
-							pp+=1
-						else: #this is K22 in Mohamed's code
-							# d_mat_k11[jj] = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
-							d_mat_k11[ia[node]+pp] = 0.
-							d_mat_k33[ia[node]+pp] = 0.
-							d_mat_k22[ia[node]+pp] = PerfMeas.derivative_conductance_k1(k22[node],k22[mnode],hwva[jj],hwva[jj], cl1[jj]+cl1[jj],height1)
-							d_mat_k123[ia[node]+pp]  = d_mat_k11[ia[node]+pp] + d_mat_k22[ia[node]+pp] + d_mat_k33[ia[node]+pp]
-							sum1 += d_mat_k33[ia[node]+pp]
-							sum2 += d_mat_k11[ia[node]+pp]
-							sum3 += d_mat_k22[ia[node]+pp]
-							pp+=1
-						d_mat_k11[ia[node]] = -sum2
-						d_mat_k33[ia[node]] = -sum1
-						d_mat_k22[ia[node]] = -sum3
-						d_mat_k123[ia[node]] = d_mat_k11[ia[node]] + d_mat_k22[ia[node]] + d_mat_k33[ia[node]]
+				
 			else:
 				sum1 = 0.
 				sum2 = 0.
@@ -342,7 +278,7 @@ class PerfMeas(object):
 		d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
 		return d
 
-	def lam_dAdk_h(self, gwf_name, gwf, lamb, dAdk, head_dict):
+	def lam_dAdk_h(self, gwf_name, gwf, lamb, dAdk, head):
 		ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
 		#IA is the number of connections, plus 1 (for self), for each node in grid. it is of size NNODES + 1
 		ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
@@ -360,31 +296,25 @@ class PerfMeas(object):
 			is_chd = True
 
 
-		my_list = []
+		result = np.zeros_like(lamb)
 		for k in range(len(lamb)):
 			sum1 = 0.0
 			sum2 = 0.0
 			for j in range(iac[k]):
-			    sum1 += dAdk[ia[k] + j] * head_dict[ja[ia[k] + j]]
+			    sum1 += dAdk[ia[k] + j] * head[ja[ia[k] + j]]
 
-			sum1 = lamb[k] * sum1
+			sum1 *= lamb[k]
 			for j in list(range(iac[k]))[1:]:
-				if is_chd:
-					if ja[ia[k] + j] in chd_list[0]:
-						sum2 += 0.0
-					elif ib[ja[ia[k] + j]]==0:
-						sum2 += 0.0
-					else:
-						sum2 += lamb[ja[ia[k] + j]] * dAdk[ia[k] + j] * (head_dict[k] - head_dict[ja[ia[k] + j]])
+				if is_chd and ja[ia[k] + j] in chd_list[0]:
+					pass
 				elif ib[ja[ia[k] + j]]==0:
-					sum2 += 0.0
+					pass
 				else:
-					sum2 += lamb[ja[ia[k] + j]] * dAdk[ia[k] + j] * (head_dict[k] - head_dict[ja[ia[k] + j]])
-
+					sum2 += lamb[ja[ia[k] + j]] * dAdk[ia[k] + j] * (head[k] - head[ja[ia[k] + j]])
 			sums = sum1 + sum2
-			my_list.append(sums)
+			result[k] = sums
 
-		return my_list
+		return result
 
 	
 
