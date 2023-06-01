@@ -47,10 +47,10 @@ class PerfMeas(object):
 		ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
 		ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
 
-		dfdk11 = np.zeros(nnodes)
-		dfdk22 = np.zeros(nnodes)
-		dfdk33 = np.zeros(nnodes)
-		dfdk123 = np.zeros(nnodes)
+		#dfdk11 = np.zeros(nnodes)
+		#dfdk22 = np.zeros(nnodes)
+		comp_k33_sens = np.zeros(nnodes)
+		comp_k_sens = np.zeros(nnodes)
 
 		for itime,kk in enumerate(kperkstp[::-1]):
 			itime = kk[0]
@@ -84,10 +84,12 @@ class PerfMeas(object):
 			# dfdk11 += np.dot(lamb,dadk11.dot(head_dict[kk]))
 			# dfdk33 += np.dot(lamb, dadk33.dot(head_dict[kk]))
 			np.savetxt("pm-{0}_head_kper{1:04d}.dat".format(self._name,itime),head_dict[kk],fmt="%15.6E")
-			dfdk11 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk11,head_dict[kk])
-			dfdk22 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk22,head_dict[kk])
-			dfdk33 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk33,head_dict[kk])
-			dfdk123 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk123,head_dict[kk])
+			#dfdk11 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk11,head_dict[kk])
+			#dfdk22 = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk22,head_dict[kk])
+			k_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk33,head_dict[kk])
+			k33_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk123,head_dict[kk])
+			comp_k_sens += k_sens
+			comp_k33_sens += k33_sens
 
 			self.save_array("adjstates_kper{0:05d}".format(itime),lamb,gwf_name,gwf,mg_structured)
 			self.save_array("dadk11_kper{0:05d}".format(itime),dadk11,gwf_name,gwf,mg_structured)
@@ -95,11 +97,15 @@ class PerfMeas(object):
 			self.save_array("dadk33_kper{0:05d}".format(itime),dadk33,gwf_name,gwf,mg_structured)
 			self.save_array("dadk123_kper{0:05d}".format(itime),dadk123,gwf_name,gwf,mg_structured)
 		
-		# np.savetxt('result.dat',dfdk123)
-		self.save_array("k11",dfdk11,gwf_name,gwf,mg_structured)
-		self.save_array("k22",dfdk22,gwf_name,gwf,mg_structured)
-		self.save_array("k33", dfdk33, gwf_name, gwf, mg_structured)
-		self.save_array("k123",dfdk123,gwf_name,gwf,mg_structured)
+			# np.savetxt('result.dat',dfdk123)
+			#self.save_array("k11_kper{0:05d}".format(itime),dfdk11,gwf_name,gwf,mg_structured)
+			#self.save_array("dfdk22_kper{0:05d}".format(itime),dfdk22,gwf_name,gwf,mg_structured)
+			self.save_array("sens_k33_kper{0:05d}".format(itime), k33_sens, gwf_name, gwf, mg_structured)
+			self.save_array("sens_k_kper{0:05d}".format(itime),k_sens,gwf_name,gwf,mg_structured)
+		
+		self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
+		self.save_array("comp_sens_k",comp_k_sens,gwf_name,gwf,mg_structured)
+		
 
 	def save_array(self,filetag,avec,gwf_name,gwf,structured_mg):
 		nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","NODEUSER",gwf)-1

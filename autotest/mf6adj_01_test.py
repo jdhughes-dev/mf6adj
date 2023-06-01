@@ -2338,7 +2338,7 @@ def freyberg_mh_test():
     #    os.chdir(bd)
     #    raise Exception(e)
     os.chdir(bd)
-    exit()
+ 
     # run MH's adj code
     base_d = "freyberg_mh_adj_base"
     if os.path.exists(base_d):

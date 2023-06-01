@@ -316,7 +316,7 @@ with open(inputfile, 'r') as f:
                 nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
                 nper = sim.tdis.nper.data
                 data_arrays = [list_S_K_adj_LS,list_S_K33_adj_LS,list_S_ss_adj_LS,list_S_HGHB_adj_LS,list_S_CGHB_adj_LS]
-                tags = ["k","k33","ss","hghb","cghb"]
+                tags = ["comp_sens_k","comp_sens_k33","comp_sens_ss","comp_sens_hghb","comp_sens_cghb"]
                 for data,tag in zip(data_arrays,tags):
                     arr = data.reshape(nlay,nrow,ncol)
                     for k in range(nlay):
@@ -324,7 +324,7 @@ with open(inputfile, 'r') as f:
                         np.savetxt(fname,arr[k,:,:],fmt="%15.6E")
 
                 temporal_data_arrays = [list_AS_LS[1:],list_lam_dAdk_h_LS,list_lam_dAdk33_h_LS,list_sens_ss_indirect_LS]
-                temporal_tags = ["adjstates","dadk","dadk33","indirss"]
+                temporal_tags = ["adjstates","sens_k","sens_k33","sens_ss"]
 
                 for data,tag in zip(temporal_data_arrays,temporal_tags):
                     for kper in range(nper):
