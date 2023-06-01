@@ -65,9 +65,18 @@ class PerfMeas(object):
 				rhs = (drhsdh * lamb) - dfdh
 			else:
 				rhs = -1 * dfdh
+				rhs = dfdh
 
 			amat = amat_dict[kk]
-			amat_sp_t = sparse.csr_matrix((amat,ja,ia),shape=(len(ia)-1,len(ia)-1)).transpose()
+			np.savetxt("pm-{0}_amat_kper{1:04d}.dat".format(self._name,itime),amat,fmt="%15.6E")
+			np.savetxt("pm-{0}_rhs_kper{1:04d}.dat".format(self._name,itime),rhs,fmt="%15.6E")
+			np.savetxt("pm-{0}_ia_kper{1:04d}.dat".format(self._name,itime),ia)
+			np.savetxt("pm-{0}_ja_kper{1:04d}.dat".format(self._name,itime),ja)
+			
+			
+			amat_sp = sparse.csr_matrix((amat,ja.copy(),ia.copy()),shape=(len(ia)-1,len(ia)-1))
+			amat_sp_t = amat_sp.transpose()
+			np.savetxt("pm-{0}_amattodense_kper{1:04d}.dat".format(self._name,itime),amat_sp_t.todense(),fmt="%15.6E")
 			lamb = spsolve(amat_sp_t,rhs)
 
 			#lambs[itime,:] = lamb
@@ -279,7 +288,7 @@ class PerfMeas(object):
 						pp+=1
 					elif np.abs(xdiff) > np.abs(ydiff):
 						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
-						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
+						v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
 						d_mat_k11[ia[node]+pp] = v1
 						d_mat_k33[ia[node]+pp] = 0.
 						d_mat_k22[ia[node]+pp] = 0.
@@ -293,7 +302,7 @@ class PerfMeas(object):
 						d_mat_k11[ia[node]+pp] = 0.
 						d_mat_k33[ia[node]+pp] = 0.
 						v1 = PerfMeas._dconddhk(k22[node],k22[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
-						#v2 = PerfMeas.derivative_conductance_k1(k22[node],k22[mnode],hwva[jj],hwva[jj], cl1[jj]+cl2[jj],height1)
+						v2 = PerfMeas.derivative_conductance_k1(k22[node],k22[mnode],hwva[jj],hwva[jj], cl1[jj]+cl2[jj],height1)
 						d_mat_k22[ia[node]+pp] = v1
 						d_mat_k123[ia[node]+pp]  = d_mat_k11[ia[node]+pp] + d_mat_k22[ia[node]+pp] + d_mat_k33[ia[node]+pp]
 						sum1 += d_mat_k33[ia[node]+pp]
@@ -387,9 +396,10 @@ class PerfMeas(object):
 		for pfr in self._entries:
 			if pfr.kperkstp == kk:
 				if self._type == "direct":
-					dfdh[pfr.nnode] = -1. * pfr.weight / deltat_dict[kk]
+					#dfdh[pfr.nnode] = -1. * pfr.weight / deltat_dict[kk]
+					dfdh[pfr.nnode] = pfr.weight
 				elif self._type == "residual":
-					dfdh[pfr.nnode] = - 2.0 * pfr.weight * (head_dict[kk][pfr.nnode] - pfr.obsval)
+					dfdh[pfr.nnode] = 2.0 * pfr.weight * (head_dict[kk][pfr.nnode] - pfr.obsval)
 		return dfdh
 
 	@staticmethod

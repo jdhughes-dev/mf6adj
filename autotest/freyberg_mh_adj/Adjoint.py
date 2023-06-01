@@ -330,21 +330,21 @@ with open(inputfile, 'r') as f:
                     for kper in range(nper):
                         print(tag,kper,len(data))
                         arr = convert_idmarray_2_gridarray(data[kper]).reshape((nlay,nrow,ncol))
-                        ttag = tag + "_kper{0:05d}".format(kper)
+                        ttag = tag + "_kper{0:05d}".format(nper-kper-1)
                         for k in range(nlay):
                             fname = ttag+"_k{0:03d}.dat".format(k)
                             np.savetxt(fname,arr[k,:,:],fmt="%15.6E")
 
                 for kper in range(nper):
                     arr = list_S_RCH_adj_LS[kper].reshape((nlay,nrow,ncol))
-                    tag = "rech_kper{0:05d}".format(kper)
+                    tag = "rech_kper{0:05d}".format(nper-kper-1)
                     for k in range(nlay):
                         fname = tag+"_k{0:03d}.dat".format(k)
                         np.savetxt(fname,arr[k,:,:],fmt="%15.6E")
 
                 for kper in range(nper):
                     arr = list_S_QWEL_adj_LS[kper].reshape((nlay,nrow,ncol))
-                    tag = "wel_kper{0:05d}".format(kper)
+                    tag = "wel_kper{0:05d}".format(nper-kper-1)
                     for k in range(nlay):
                         fname = tag+"_k{0:03d}.dat".format(k)
                         np.savetxt(fname,arr[k,:,:],fmt="%15.6E")

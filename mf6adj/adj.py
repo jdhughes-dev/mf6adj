@@ -82,7 +82,7 @@ class Mf6Adj(object):
 
         addr = ["NODEUSER", self._gwf_name.upper(), "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
-        nuser = self._gwf.get_value(wbaddr)
+        nuser = self._gwf.get_value(wbaddr) - 1
 
         addr = ["NODEREDUCED", self._gwf_name.upper(), "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
@@ -339,9 +339,10 @@ class Mf6Adj(object):
             # update current sim time
             ctime = self._gwf.get_current_time()
             dt1 = self._gwf.get_time_step()
-            amat = self._gwf.get_value(self._gwf.get_var_address("AMAT", "SLN_1"))
+            amat = self._gwf.get_value(self._gwf.get_var_address("AMAT", "SLN_1")).copy()
             kper,kstp = stress_period - 1,time_step - 1
             kperkstp = (kper,kstp)
+            #todo: add some checks to make sure kperkstp isnt already in these containers
             self._amat[kperkstp] = amat
             head = self._gwf.get_value(self._gwf.get_var_address("X", self._gwf_name.upper()))
             self._head[kperkstp] = head

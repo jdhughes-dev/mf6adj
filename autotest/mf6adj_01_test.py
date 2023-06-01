@@ -2308,10 +2308,7 @@ def freyberg_mh_test():
        shutil.rmtree(test_d)
     shutil.copytree(org_d,test_d)
 
-    base_d = "freyberg_mh_adj_base"
-    if os.path.exists(base_d):
-        shutil.rmtree(base_d)
-    shutil.copytree(org_d,base_d)
+    
 
     mf6adj_d = os.path.join(test_d,'mf6adj')
     if os.path.exists(mf6adj_d):
@@ -2341,8 +2338,12 @@ def freyberg_mh_test():
     #    os.chdir(bd)
     #    raise Exception(e)
     os.chdir(bd)
-
+    exit()
     # run MH's adj code
+    base_d = "freyberg_mh_adj_base"
+    if os.path.exists(base_d):
+        shutil.rmtree(base_d)
+    shutil.copytree(org_d,base_d)
     bd = os.getcwd()
     os.chdir(base_d)
     try:

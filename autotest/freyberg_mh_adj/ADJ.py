@@ -227,7 +227,7 @@ def SolveAdjointSWH(ncells, current_ts, nts, list_of_kji, list_of_weights, rev_d
     l = list(range(len(rev_dt)))
     l = l[::-1]
     for kk in l:
-        list_drhs = drhsdh(STORAGE, CELLAREA, CELLTOP, CELLBOT, rev_dt[kk])
+        list_drhs = drhsdh(STORAGE, CELLAREA, CELLTOP, CELLBOT, rev_dt[len(rev_dt)-kk-1])
         array_lam = lam
         l1 =  multiplyarray(list_drhs, array_lam)
         l2 = dFdhSWH(ncells, current_ts, nts, list_of_kji, list_of_weights, rev_dt[::-1][current_ts])[kk]
@@ -268,14 +268,19 @@ def SolveAdjointLS(ncells, nts, list_obs, head, rev_dt):
     l = list(range(len(rev_dt)))
     l = l[::-1]
     for kk in l:
-        list_drhs = drhsdh(STORAGE, CELLAREA, CELLTOP, CELLBOT, rev_dt[kk])
+        list_drhs = drhsdh(STORAGE, CELLAREA, CELLTOP, CELLBOT, rev_dt[len(rev_dt)-kk-1])
         array_lam = lam
         l1 =  multiplyarray(list_drhs, array_lam)
         l2 =  dFdhLS(ncells, nts, list_obs, head)[kk]
         rhs1 = substructarray(l1, l2)
-        A = csr_matrix((MAT[kk], JA_p, IA_p), shape=(len(IA) - 1, len(IA) - 1)).toarray()
+        np.savetxt("rhs_kper{0:04d}.dat".format(kk),rhs1,fmt="%15.6E")
+        np.savetxt("amat_kper{0:04d}.dat".format(kk), MAT[kk], fmt="%15.6E")
+        A = csr_matrix((MAT[kk], JA_p, IA_p), shape=(len(IA) - 1, len(IA) - 1)
+        np.savetxt("ia_kper{1:04d}.dat".format(itime),IA_p)
+        np.savetxt("ja_kper{1:04d}.dat".format(itime),JA_p)).toarray()
         A = csr_matrix(A)
         At = A.transpose()
+        np.savetxt("amattodense_kper:{0:04d}.dat".format(kk), At.todense(), fmt="%15.6E")
         lam = spsolve(At, rhs1)
         # lam = spsolve(A, rhs1)
         list_AS.append(lam)
