@@ -323,7 +323,7 @@ with open(inputfile, 'r') as f:
                         fname = tag+"_k{0:03d}.dat".format(k)
                         np.savetxt(fname,arr[k,:,:],fmt="%15.6E")
 
-                temporal_data_arrays = [list_AS_LS[1:],list_lam_dAdk_h_LS,list_lam_dAdk33_h_LS,list_sens_ss_indirect_LS]
+                temporal_data_arrays = [list_AS_LS[1:],list_lam_dAdk_h_LS[::-1],list_lam_dAdk33_h_LS[::-1],list_sens_ss_indirect_LS[::-1]]
                 temporal_tags = ["adjstates","sens_k","sens_k33","sens_ss"]
 
                 for data,tag in zip(temporal_data_arrays,temporal_tags):

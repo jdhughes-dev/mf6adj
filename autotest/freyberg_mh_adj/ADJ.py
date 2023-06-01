@@ -278,7 +278,7 @@ def SolveAdjointLS(ncells, nts, list_obs, head, rev_dt):
         A = csr_matrix((MAT[kk], JA_p.copy(), IA_p.copy()), shape=(len(IA) - 1, len(IA) - 1))
         A = csr_matrix(A)
         At = A.transpose()
-        np.savetxt("amattodense_kper:{0:04d}.dat".format(kk), At.todense(), fmt="%15.6E")
+        np.savetxt("amattodense_kper{0:04d}.dat".format(kk), At.todense(), fmt="%15.6E")
         lam = spsolve(At, rhs1)
         # lam = spsolve(A, rhs1)
         list_AS.append(lam)

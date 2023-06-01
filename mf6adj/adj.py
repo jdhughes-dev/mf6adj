@@ -18,7 +18,7 @@ class Mf6Adj(object):
         check for unsupported horizontal conductance formulation
         check for unsupported vertical conductance formulation
         check for unsupported aniso options
-        check for unsupported xt3d option
+        check for unsupported xt3d option/horizontal anisotropy!
         """
         self.verbose_level = int(verbose_level)
         if not os.path.exists(adj_filename):
@@ -176,8 +176,8 @@ class Mf6Adj(object):
 
 
                             # convert to node number
-                            kji = tuple([kij[0],kij[2],kij[1]]) #WTF!
-                            n = self._structured_mg.get_node([kji])[0]
+                            #kji = tuple([kij[0],kij[2],kij[1]]) #WTF!
+                            n = self._structured_mg.get_node([kij])[0]
                             # if there is a reduced node scheme
                             if len(nuser) > 1:
                                 nn = np.where(nuser == n)[0]

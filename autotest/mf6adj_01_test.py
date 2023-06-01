@@ -2308,8 +2308,9 @@ def freyberg_mh_test():
        shutil.rmtree(test_d)
     shutil.copytree(org_d,test_d)
 
-    
-
+    sim = flopy.mf6.MFSimulation.load(sim_ws=org_d)
+    gwf = sim.get_model()
+    id = gwf.dis.idomain.array[0,:,:]    
     mf6adj_d = os.path.join(test_d,'mf6adj')
     if os.path.exists(mf6adj_d):
         shutil.rmtree(mf6adj_d)
@@ -2331,6 +2332,8 @@ def freyberg_mh_test():
     os.chdir(test_d)
     #try:     
     adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,2)
+
+    
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -2338,29 +2341,126 @@ def freyberg_mh_test():
     #    os.chdir(bd)
     #    raise Exception(e)
     os.chdir(bd)
-    
-    # run MH's adj code
     base_d = "freyberg_mh_adj_base"
-    if os.path.exists(base_d):
-        shutil.rmtree(base_d)
-    shutil.copytree(org_d,base_d)
-    bd = os.getcwd()
-    os.chdir(base_d)
-    try:
-        ret_val = os.system("python Adjoint.py")
-    except Exception as e:
+
+    if False:
+        # run MH's adj code
+        
+        if os.path.exists(base_d):
+            shutil.rmtree(base_d)
+        shutil.copytree(org_d,base_d)
+        bd = os.getcwd()
+        os.chdir(base_d)
+        try:
+            ret_val = os.system("python Adjoint.py")
+        except Exception as e:
+            os.chdir(bd)
+            raise Exception(e)
+        if "window" in platform.platform().lower():
+            if ret_val != 0:
+                os.chdir(bd)
+                raise Exception("run() returned non-zero: {0}".format(ret_val))
+        else:
+            estat = os.WEXITSTATUS(ret_val)
+            if estat != 0:
+                os.chdir(bd)
+                raise Exception("run() returned non-zero: {0}".format(estat))
         os.chdir(bd)
-        raise Exception(e)
-    if "window" in platform.platform().lower():
-        if ret_val != 0:
-            os.chdir(bd)
-            raise Exception("run() returned non-zero: {0}".format(ret_val))
-    else:
-        estat = os.WEXITSTATUS(ret_val)
-        if estat != 0:
-            os.chdir(bd)
-            raise Exception("run() returned non-zero: {0}".format(estat))
-    os.chdir(bd)
+
+    from matplotlib.backends.backend_pdf import PdfPages
+    with PdfPages("h_k.pdf") as pdf:
+        for kper in range(sim.tdis.nper.data):
+            h1file = os.path.join(test_d,"pm-pm1_head_kper{0:05d}_k000.dat".format(kper))
+            k1file = os.path.join(test_d,"pm-pm1_sens_k_kper{0:05d}_k000.dat".format(kper))
+            k2file = os.path.join(base_d,"sens_k_kper{0:05d}_k000.dat".format(kper))
+            h1 = np.loadtxt(h1file)
+            k1 = np.loadtxt(k1file)
+            k2 = np.loadtxt(k2file)
+            h1[id==0] = np.nan
+            k1[id==0] = np.nan
+            k2[id==0] = np.nan
+            fig,axes= plt.subplots(1,2,figsize=(10,5))
+            ax = axes[0]
+            cb = ax.imshow(k1)
+            plt.colorbar(cb,ax=ax)
+            con = ax.contour(h1,colors='k')
+            ax.clabel(con)
+            ax.set_title("kper:{0}".format(kper))
+            ax = axes[1]
+            cb = ax.imshow(k2)
+            plt.colorbar(cb,ax=ax)
+            con = ax.contour(h1,colors='k')
+            ax.clabel(con)
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close(fig)
+
+
+    a1 = np.loadtxt(os.path.join(test_d,"pm-pm1_dadk123_kper00000.dat"))
+    a2 = np.loadtxt(os.path.join(base_d,"dadk123.dat"))
+    d = np.abs(a1-a2)
+    assert d.max() < 1.0e-6
+
+    files = [f for f in os.listdir(test_d) if f.startswith("pm-pm1_dadk123_kper") and "_k0" not in f]
+    assert len(files) == 25
+    for f in files:
+        a1 = np.loadtxt(os.path.join(test_d,f))
+        d = np.abs(a1-a2)
+        assert d.max() < 1.0e-6
+
+    
+
+    for kper in range(sim.tdis.nper.data):
+        a1 = np.loadtxt(os.path.join(test_d,"pm-pm1_adjstates_kper{0:05d}_k000.dat".format(kper)))
+        a2 = np.loadtxt(os.path.join(base_d,"adjstates_kper{0:05d}_k000.dat".format(kper)))
+        a1[id==0] = 0
+        a2[id==0] = 0
+        d = np.abs(a1-a2)
+        print(d.max())
+        assert d.max() < 1e-6
+        
+
+    tags = ["comp_sens_k_k000.dat","comp_sens_k33_k000.dat","comp_sens_ss_k000.dat"]
+    
+    obs_arr = np.zeros((gwf.dis.nrow.data,gwf.dis.ncol.data))
+    print(obs_arr.shape)
+    for pm in adj._performance_measures[0]._entries:
+        print(pm._i,pm._j)
+        obs_arr[pm._i,pm._j] = 1
+    obs_arr[obs_arr==0] = np.nan
+    h1 = np.loadtxt(os.path.join(test_d,"pm-pm1_head_kper00024_k000.dat"))
+    h1[id==0] = np.nan
+    
+    with PdfPages("compare.pdf") as pdf:
+        for tag in tags:
+            a1 = np.loadtxt(os.path.join(test_d,"pm-pm1_"+tag))
+            a1[id==0] = 0
+            a2 = np.loadtxt(os.path.join(base_d,tag))
+            a2[id==0] = 0
+            vmn = min(a1.min(),a2.min())
+            vmx = max(a1.max(),a2.max())
+            d = (a1 - a2)
+            a1[id==0] = np.nan
+            a2[id==0] = np.nan
+            fig,axes = plt.subplots(1,3,figsize=(11,7))
+            cb = axes[0].imshow(a1,vmin=vmn,vmax=vmx)
+            plt.colorbar(cb,ax=axes[0])
+            cb = axes[1].imshow(a2,vmin=vmn,vmax=vmx)
+            plt.colorbar(cb,ax=axes[1])
+            cb = axes[2].imshow(d)
+            plt.colorbar(cb,ax=axes[2])
+            axes[0].set_title(tag)
+            axes[2].set_title("max:{0:4.1f}, min:{1:4.1}".format(d.max(),d.min()))
+            for ax in axes.flatten():
+                ax.imshow(obs_arr,cmap="jet_r",alpha=0.85)
+                ax.contour(h1)
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close(fig)
+            print(d)
+            print(tag,d.max())
+            assert np.abs(d).max() < 1e-6
+
 
 
 if __name__ == "__main__":
