@@ -16,5 +16,6 @@ BEGIN Packages
   npf6  freyberg6.npf  npf
   RCH6  freyberg6.rcha  rcha_0
   obs6  head.obs
+  sfr6  freyberg6.sfr
 END Packages
 
