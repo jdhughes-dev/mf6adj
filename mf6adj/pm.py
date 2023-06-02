@@ -30,7 +30,14 @@ class PerfMeasRecord(object):
 		if obsval is not None:
 			self.obsval = float(obsval)
 class PerfMeas(object):
+	"""todo: preprocess all the connectivity in to faster look dict containers, 
+	including nnode to kij info for structured grids
 
+	todo: convert several class methods to static methods - this might make testing easier
+
+	todo: add a no-data value var to fill empty spots in output arrays.  currently using zero :(
+	
+	"""
 	def __init__(self,name,type,entries,is_structured,verbose_level=1):
 		self._name = name.lower().strip()
 		self._type = type.lower().strip()
@@ -44,8 +51,7 @@ class PerfMeas(object):
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name,"DIS","NODES",gwf)[0]
 
 		lamb = np.zeros(nnodes)
-		#lambs = np.zeros((len(kperkstp),nnodes))
-
+		
 		ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
 		ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
 
@@ -53,6 +59,16 @@ class PerfMeas(object):
 		comp_k_sens = np.zeros(nnodes)
 		comp_ss_sens = np.zeros(nnodes)
 
+		comp_welq_sens = None
+		comp_ghb_head_sens = None
+		comp_ghb_cond_sens = None
+
+		if "wel6" in gwf_package_dict:
+			comp_welq_sens = np.zeros(nnodes)
+		if "ghb6" in gwf_package_dict:
+			comp_ghb_head_sens = np.zeros(nnodes)
+			comp_ghb_cond_sens = np.zeros(nnodes)
+			
 		for itime,kk in enumerate(kperkstp[::-1]):
 			itime = kk[0]
 			print('solving',self._name,"(kper,kstp",kk)
@@ -80,11 +96,18 @@ class PerfMeas(object):
 			comp_ss_sens += ss_sens
 
 			if "wel6" in gwf_package_dict and kk in gwf_package_dict["wel6"]:
-				#print(kk)
-				pass
-				
+				sens_welq = self.lam_drhs_dqwel(lamb,gwf_package_dict["wel6"][kk])
+				if self.verbose_level > 1:
+					self.save_array("sens_welq_kper{0:05d}".format(itime),sens_welq,gwf_name,gwf,mg_structured)
+				comp_welq_sens += sens_welq				
+
 			if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
-				pass
+				sens_ghb_head,sens_ghb_cond = self.lam_drhs_dghb(lamb,head_dict[kk],gwf_package_dict["ghb6"][kk])
+				if self.verbose_level > 1:
+					self.save_array("sens_ghbhead_kper{0:05d}".format(itime),sens_ghb_head,gwf_name,gwf,mg_structured)
+					self.save_array("sens_ghbcond_kper{0:05d}".format(itime),sens_ghb_cond,gwf_name,gwf,mg_structured)
+				comp_ghb_head_sens += sens_ghb_head
+				comp_ghb_cond_sens += sens_ghb_cond
 			
 			if "rch" in gwf_package_dict and kk in gwf_package_dict["rch6"]:
 				pass
@@ -115,24 +138,29 @@ class PerfMeas(object):
 		self.save_array("comp_sens_ss",comp_ss_sens,gwf_name,gwf,mg_structured)
 		
 
-	def lam_drhs_dQWEL(lamb, sp_dict):
-		# # This function returns the sensitivity with respect to each flow rate at a well
-		# # at a given location and a given stress period which is equal to the adjoint state
-		# mylist = len(lam) * [0.0]
-		# if nsp in dict_wel.keys():
-		# 	list_kji_WEL = []
-		# 	for i in range(dict_wel[nsp].size):
-		# 		list_kji_WEL.append(dict_wel[nsp][i][0])
-		# 	for (k, j, i) in list_kji_WEL:
-		# 		# nn = gwf.modelgrid.get_node((k, j, i))[0]
-		# 		nn = list_lrc.index((k, j, i))
-		# 		mylist[nn] = lam[nn]
-		# 	return mylist
-		# else:
-		# 	return mylist
-		result = np.zeros_like(lamb)
+	def lam_drhs_dghb(self,lamb,head,sp_dict):
+		result_head = np.zeros_like(lamb)
+		result_cond = np.zeros_like(lamb)
+		
+		for id in sp_dict:
+			n = id["node"] - 1
+			# the second item in bound should be cond
+			result_head[n] = lamb[n] * id["bound"][1] 
+			# the first item in bound should be head
+			lam_drhs_dcond = lamb[n] * id["bound"][0]
+			lam_dadcond_h = -1.0 * lamb[n] * head[n]
+			result_cond[n] = lam_drhs_dcond + lam_dadcond_h
 
+		return result_head,result_cond
+
+
+	def lam_drhs_dqwel(self,lamb, sp_dict):
+		result = np.zeros_like(lamb)
+		for id in sp_dict:
+			n = id["node"] - 1
+			result[n] = lamb[n]
 		return result	
+	
 
 	def save_array(self,filetag,avec,gwf_name,gwf,structured_mg):
 		nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","NODEUSER",gwf)-1
@@ -204,6 +232,7 @@ class PerfMeas(object):
 
 		k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
 		k22 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K22", gwf)
+		assert np.all(k11==k22)
 		k33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
 
 		for node,(offset,ncon) in enumerate(zip(ia,iac)):
@@ -239,7 +268,7 @@ class PerfMeas(object):
 						pp+=1
 					else:
 						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
-						v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
+						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
 						d_mat_k11[ia[node]+pp] = v1
 						d_mat_k123[ia[node]+pp]  = v1
 						sum2 += v1
