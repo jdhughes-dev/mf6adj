@@ -256,7 +256,7 @@ class PerfMeas(object):
 	def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
 		# todo: upstream weighting - could use height1 and height2 to check...
 		# todo: vertically staggered
-		d = (width * cl1 * height1 * (height2 ** 2) * k2) / (((cl2 * height1 * k1) + (cl1 * height2 * k2)) ** 2)
+		d = (width * cl1 * height1 * (height2 ** 2) * (k2**2)) / (((cl2 * height1 * k1) + ((cl1 * height2 * k2))) ** 2)
 		return d
 
 	# @staticmethod
