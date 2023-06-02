@@ -2332,7 +2332,9 @@ def freyberg_mh_test():
     os.chdir(test_d)
     #try:     
     adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,2)
-
+    # pd = mf6adj.Mf6Adj.get_package_names_from_gwfname(os.path.join("freyberg6.nam"))
+    # print(pd)
+    # exit()
     
     adj.solve_gwf()
     adj.solve_adjoint()
@@ -2343,7 +2345,7 @@ def freyberg_mh_test():
     os.chdir(bd)
     base_d = "freyberg_mh_adj_base"
 
-    if False:
+    if True:
         # run MH's adj code
         
         if os.path.exists(base_d):
@@ -2399,6 +2401,7 @@ def freyberg_mh_test():
     a1 = np.loadtxt(os.path.join(test_d,"pm-pm1_dadk123_kper00000.dat"))
     a2 = np.loadtxt(os.path.join(base_d,"dadk123.dat"))
     d = np.abs(a1-a2)
+    print(d.max())
     assert d.max() < 1.0e-6
 
     files = [f for f in os.listdir(test_d) if f.startswith("pm-pm1_dadk123_kper") and "_k0" not in f]
@@ -2407,8 +2410,6 @@ def freyberg_mh_test():
         a1 = np.loadtxt(os.path.join(test_d,f))
         d = np.abs(a1-a2)
         assert d.max() < 1.0e-6
-
-    
 
     for kper in range(sim.tdis.nper.data):
         a1 = np.loadtxt(os.path.join(test_d,"pm-pm1_adjstates_kper{0:05d}_k000.dat".format(kper)))

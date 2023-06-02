@@ -34,6 +34,8 @@ class Mf6Adj(object):
         if len(self._gwf_model_dict) != 1:
             raise Exception("only one model is current supported")
         self._gwf_name = list(self._gwf_model_dict.keys())[0]
+        self._gwf_namfile = namfile_dict[self._gwf_name]
+        self._gwf_package_dict = Mf6Adj.get_package_names_from_gwfname(self._gwf_namfile)
         if self._gwf_model_dict[self._gwf_name] != "gwf6":
             raise Exception("model is not a gwf6 type: {0}". \
                             format(self._gwf_model_dict[self._gwf_name]))
@@ -65,6 +67,7 @@ class Mf6Adj(object):
         self._deltat = {}
         self._iss = {}
         self._sat = {}
+        self._gwf_package_types = ["wel6","ghb6","rch6","rcha6"]
 
 
 
@@ -278,6 +281,52 @@ class Mf6Adj(object):
                     break
         return model_dict, namfile_dict
 
+
+    @staticmethod
+    def get_package_names_from_gwfname(gwf_nam_file):
+        
+       
+        if not os.path.exists(gwf_nam_file):
+            raise Exception("gwf nam file '{0}' not found".format(gwf_nam_file))
+        package_dict = {}
+        count_dict = {}
+        with open(gwf_nam_file, 'r') as f:
+            while True:
+                line = f.readline()
+                if line == "":
+                    raise EOFError("EOF when looking for 'packages' block")
+                if line.strip().lower().startswith("begin") and "packages" in line.lower():
+                    while True:
+                        line2 = f.readline()
+                        if line2 == "":
+                            raise EOFError("EOF when reading 'packages' block")
+                        elif line2.strip().lower().startswith("end") and "packages" in line2.lower():
+                            break
+                        raw = line2.strip().lower().split()
+                        if raw[0].startswith("#"):
+                            continue
+                        if "#" in line2:
+                            raw = line2.split("#")[0].lower().split()
+                        if len(raw) < 2:
+                            raise Exception("wrong number of items on line: {0}".format(line2))
+                        tag_name = None
+                        if len(raw) > 2:
+                            tag_name = raw[2]
+                        package_type = raw[0]
+                        if package_type not in count_dict:
+                            count_dict[package_type] = 1
+                        
+                        if package_type not in package_dict:
+                            package_dict[package_type] = []
+                        filename = raw[1]
+                        if tag_name is None:
+                            tag_name = package_type.replace("6","")+"-{0}".format(count_dict[package_type])
+                        package_dict[package_type].append(tag_name)
+                        count_dict[package_type] += 1
+                        
+                    break
+        return package_dict
+
     def solve_gwf(self):
         """solve the flow across the modflow sim times
 
@@ -302,7 +351,7 @@ class Mf6Adj(object):
         self._deltat = {}
         self._iss = {}
         self._sat = {}
-
+        self._sp_package_data = {}
         while ctime < etime:
             sol_start = datetime.now()
             # the length of this sim time
@@ -355,6 +404,31 @@ class Mf6Adj(object):
             self._iss[kperkstp] = iss
             sat = self._gwf.get_value(self._gwf.get_var_address("SAT",self._gwf_name,"NPF"))
             self._sat[(kper,kstp)] = sat
+            for package_type in self._gwf_package_types:
+                if package_type in self._gwf_package_dict:
+                    if package_type not in self._sp_package_data:
+                        self._sp_package_data[package_type] = {}
+                    for tag in self._gwf_package_dict[package_type]:
+                        nbound = self._gwf.get_value(self._gwf.get_var_address("NBOUND",self._gwf_name,tag.upper()))[0]
+                        
+                        if nbound > 0:
+                            if kperkstp in self._sp_package_data[package_type]:
+                                if len(self._gwf_package_dict[package_type]) == 1:
+                                    raise Exception("kperkstp '{0}' already in sp_package_data".format(str(kperkstp)))
+                                else:
+                                    pass
+                            else:
+                                self._sp_package_data[package_type][kperkstp] = []
+                            nodelist = self._gwf.get_value_ptr(self._gwf.get_var_address("NODELIST",self._gwf_name,tag.upper()))
+                            bound = self._gwf.get_value_ptr(self._gwf.get_var_address("BOUND",self._gwf_name,tag.upper()))
+                            hcof = self._gwf.get_value_ptr(self._gwf.get_var_address("HCOF",self._gwf_name,tag.upper()))
+                            rhs = self._gwf.get_value_ptr(self._gwf.get_var_address("RHS",self._gwf_name,tag.upper()))
+                            for i in range(nbound):
+                                # note bound is an array!
+                                self._sp_package_data[package_type][kperkstp].append({"node":nodelist[i],"bound":bound[i],
+                                                                                     "hcof":hcof[i],"rhs":rhs[i]})
+
+
 
         sim_end = datetime.now()
         td = (sim_end - sim_start).total_seconds() / 60.0
@@ -367,7 +441,9 @@ class Mf6Adj(object):
         if len(self._kperkstp) == 0:
             raise Exception("need to call solve_gwf() first")
         for pm in self._performance_measures:
-            pm.solve_adjoint(self._kperkstp,self._iss, self._deltat,self._amat,self._head,self._head_old, self._sat, self._gwf, self._gwf_name, self._structured_mg)
+            pm.solve_adjoint(self._kperkstp,self._iss, self._deltat,self._amat,
+                             self._head,self._head_old, self._sat, self._gwf, 
+                             self._gwf_name, self._structured_mg,self._sp_package_data)
 
     def _initialize_gwf(self,lib_name,flow_dir):
         # instantiate the flow model api

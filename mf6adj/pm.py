@@ -39,7 +39,8 @@ class PerfMeas(object):
 		self.verbose_level = int(verbose_level)
 
 
-	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, sat_dict, gwf, gwf_name,mg_structured):
+	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, 
+		   			  sat_dict, gwf, gwf_name,mg_structured, gwf_package_dict):
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name,"DIS","NODES",gwf)[0]
 
 		lamb = np.zeros(nnodes)
@@ -78,6 +79,19 @@ class PerfMeas(object):
 			comp_k33_sens += k33_sens
 			comp_ss_sens += ss_sens
 
+			if "wel6" in gwf_package_dict and kk in gwf_package_dict["wel6"]:
+				#print(kk)
+				pass
+				
+			if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
+				pass
+			
+			if "rch" in gwf_package_dict and kk in gwf_package_dict["rch6"]:
+				pass
+
+			if "rcha" in gwf_package_dict and kk in gwf_package_dict["rcha6"]:
+				pass
+
 			if self.verbose_level > 1:
 				self.save_array("adjstates_kper{0:05d}".format(itime),lamb,gwf_name,gwf,mg_structured)
 				self.save_array("dadk11_kper{0:05d}".format(itime),dadk11,gwf_name,gwf,mg_structured)
@@ -100,6 +114,25 @@ class PerfMeas(object):
 		self.save_array("comp_sens_k",comp_k_sens,gwf_name,gwf,mg_structured)
 		self.save_array("comp_sens_ss",comp_ss_sens,gwf_name,gwf,mg_structured)
 		
+
+	def lam_drhs_dQWEL(lamb, sp_dict):
+		# # This function returns the sensitivity with respect to each flow rate at a well
+		# # at a given location and a given stress period which is equal to the adjoint state
+		# mylist = len(lam) * [0.0]
+		# if nsp in dict_wel.keys():
+		# 	list_kji_WEL = []
+		# 	for i in range(dict_wel[nsp].size):
+		# 		list_kji_WEL.append(dict_wel[nsp][i][0])
+		# 	for (k, j, i) in list_kji_WEL:
+		# 		# nn = gwf.modelgrid.get_node((k, j, i))[0]
+		# 		nn = list_lrc.index((k, j, i))
+		# 		mylist[nn] = lam[nn]
+		# 	return mylist
+		# else:
+		# 	return mylist
+		result = np.zeros_like(lamb)
+
+		return result	
 
 	def save_array(self,filetag,avec,gwf_name,gwf,structured_mg):
 		nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","NODEUSER",gwf)-1
@@ -287,6 +320,8 @@ class PerfMeas(object):
 		return result
 
 	
+	
+
 
 	def _drhsdh(self, gwf_name,gwf, dt):
 		top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
