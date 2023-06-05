@@ -1,0 +1,14 @@
+name: mf6adj
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - numpy
+  - matplotlib
+  - pandas
+  - jupyter
+  - notebook
+  - pytest
+  - pip
+  - pip:
+    - git+https://github.com/pypest/pymeu@develop
