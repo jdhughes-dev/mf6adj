@@ -7,10 +7,11 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import modflowapi
+
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
 sys.path.insert(0,".")
+import modflowapi
 import flopy
 import flopy.utils.cvfdutil
 

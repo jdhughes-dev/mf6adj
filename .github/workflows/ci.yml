@@ -1,0 +1,65 @@
+name: mf6adj continuous integration
+
+on: 
+  schedule:
+    - cron: '0 8 * * *' # run at 8 AM UTC (12 AM PST, 8 PM NZST)
+  push:
+  pull_request:
+
+jobs:
+  pyemuCI:
+    name: autotests
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest] # , macos-latest] 
+        python-version: [3.8, 3.9, "3.10", "3.11"]
+        run-type: [std]
+        test-path: ["."]
+        include:
+          - os: macos-latest
+            python-version: 3.9
+
+    steps:
+    - name: Checkout repo
+      uses:  actions/checkout@v3 # checksout this repo
+
+    # Setup conda env
+    - name: Install Conda environment using micromamba
+      uses: mamba-org/provision-with-micromamba@main
+      with:
+        environment-file: environment.yml
+        environment-name: mf6adj
+        cache-downloads: true
+        cache-env: true
+        extra-specs: |
+          python=${{ matrix.python-version }}
+
+    - name: ${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.test-path }}
+      shell: bash -l {0}
+      working-directory: ./autotest
+      run: |
+        pytest -v -n=auto --tb=native --cov=pyemu --cov-report=lcov ${{ matrix.test-path }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # - name: Coveralls
+    #   uses: coverallsapp/github-action@master
+    #   with:
+    #     github-token: ${{ secrets.GITHUB_TOKEN }}
+    #     flag-name: ${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.test-path }}
+    #     parallel: true
+    #     path-to-lcov: autotest/coverage.lcov
+
+  # coveralls_finish:
+  #   needs: pyemuCI
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - name: Coveralls Finished
+  #     uses: coverallsapp/github-action@master
+  #     with:
+  #       github-token: ${{ secrets.GITHUB_TOKEN }}
+  #       parallel-finished: true
+  #       path-to-lcov: autotest/coverage.lcov
