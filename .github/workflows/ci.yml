@@ -41,7 +41,7 @@ jobs:
       shell: bash -l {0}
       working-directory: ./autotest
       run: |
-        pytest -v --tb=native --cov=mf6adj ${{ matrix.test-path }}
+        pytest -v -n=auto --tb=native --cov=mf6adj ${{ matrix.test-path }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

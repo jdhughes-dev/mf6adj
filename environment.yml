@@ -9,6 +9,9 @@ dependencies:
   - jupyter
   - notebook
   - pytest
+  - pytest-cov
+  - pytest-xdist
+  - nbmake
   - pip
   - pip:
     - git+https://github.com/pypest/pyemu@develop
