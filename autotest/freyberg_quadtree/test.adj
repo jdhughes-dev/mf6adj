@@ -1,0 +1,14 @@
+
+begin options
+
+end options
+
+#begin performance_measure pm1 type direct
+#1 1 1 20 10 1.0 
+#end performance_measure
+#from MF6-ADJ.INP file - format is sp,ts,node,obsval,weight,name - all one-based!
+begin performance_measure pm1 type residual
+25  1  1  1.0  38.5 
+25  1  5108  1.0  38.5
+25  1  300  1.0  38.5 
+end performance_measure

@@ -2515,12 +2515,14 @@ def test_3d_freyberg():
     import mf6adj
     print(mf6adj.__file__)
     os.chdir(test_d)
-    adj = mf6adj.Mf6Adj("test.adj",local_lib_name,is_structured=True)
+    adj = mf6adj.Mf6Adj("test.adj",local_lib_name,is_structured=True,verbose_level=2)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
     os.chdir(bd)
 
+def test_freyberg_unstruct():
+    pass
 
 if __name__ == "__main__":
     #basic_freyberg()

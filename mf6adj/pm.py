@@ -257,13 +257,11 @@ class PerfMeas(object):
 					iihc = ihc[jj]
 					
 					if iihc == 0: # vertical con
-						# d_mat_k33[jj] = PerfMeas._dconddvk(k33[node],top[node],bot[node],sat[node],
-						# 								   k33[mnode],top[mnode],bot[mnode],sat[mnode],hwva[jj])
 						v1 = PerfMeas._dconddvk(k33[node],top[node],bot[node],sat[node],k33[mnode],
 			      								top[mnode],bot[mnode],sat[mnode],hwva[jj],amat[jj])
-						v2 = PerfMeas.derivative_conductance_k1(k33[node],k33[mnode],height1, height2, cl1[jj]+cl2[jj], hwva[jj])
-						d_mat_k33[ia[node]+pp] += v2
-						d_mat_k123[ia[node]+pp] += v2
+						#v2 = PerfMeas.derivative_conductance_k1(k33[node],k33[mnode],height1, height2, cl1[jj]+cl2[jj], hwva[jj])
+						d_mat_k33[ia[node]+pp] += v1
+						d_mat_k123[ia[node]+pp] += v1
 						sum1 += v2
 						pp+=1
 						# d_mat_k33[ia[node]+pp] = v2
@@ -274,7 +272,7 @@ class PerfMeas(object):
 						# pp+=1
 					else:
 						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
-						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
+						v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
 						d_mat_k11[ia[node]+pp] += v1
 						d_mat_k123[ia[node]+pp]  += v1
 						sum2 += v1
