@@ -8,7 +8,7 @@ on:
 
 jobs:
   pyemuCI:
-    name: autotests
+    name: autotest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
@@ -39,7 +39,7 @@ jobs:
 
     - name: ${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.test-path }}
       shell: bash -l {0}
-      working-directory: ./autotest
+      #working-directory: ./autotest
       run: |
         cd autotest
         ls
