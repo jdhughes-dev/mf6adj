@@ -71,7 +71,7 @@ class PerfMeas(object):
 			
 		for itime,kk in enumerate(kperkstp[::-1]):
 			itime = kk[0]
-			print('solving',self._name,"(kper,kstp",kk)
+			print('solving',self._name,"(kper,kstp)",kk)
 			dfdh = self._dfdh(kk, gwf_name, gwf, deltat_dict, head_dict)
 			dadk11,dadk22,dadk33,dadk123 = self._dadk(gwf_name, gwf, sat_dict[kk],amat_dict[kk])
 				
@@ -117,21 +117,22 @@ class PerfMeas(object):
 
 			if self.verbose_level > 1:
 				self.save_array("adjstates_kper{0:05d}".format(itime),lamb,gwf_name,gwf,mg_structured)
-				self.save_array("dadk11_kper{0:05d}".format(itime),dadk11,gwf_name,gwf,mg_structured)
-				self.save_array("dadk22_kper{0:05d}".format(itime),dadk22,gwf_name,gwf,mg_structured)
-				self.save_array("dadk33_kper{0:05d}".format(itime),dadk33,gwf_name,gwf,mg_structured)
-				self.save_array("dadk123_kper{0:05d}".format(itime),dadk123,gwf_name,gwf,mg_structured)
 				self.save_array("sens_k33_kper{0:05d}".format(itime), k33_sens, gwf_name, gwf, mg_structured)
 				self.save_array("sens_k_kper{0:05d}".format(itime),k_sens,gwf_name,gwf,mg_structured)
 				self.save_array("sens_ss_kper{0:05d}".format(itime),ss_sens,gwf_name,gwf,mg_structured)
 				self.save_array("head_kper{0:05d}".format(itime),head_dict[kk],gwf_name,gwf,mg_structured)
-				np.savetxt("pm-{0}_amattodense_kper{1:04d}.dat".format(self._name,itime),amat_sp_t.todense(),fmt="%15.6E")
-				np.savetxt("pm-{0}_amat_kper{1:04d}.dat".format(self._name,itime),amat,fmt="%15.6E")
-				np.savetxt("pm-{0}_rhs_kper{1:04d}.dat".format(self._name,itime),rhs,fmt="%15.6E")
-				np.savetxt("pm-{0}_ia_kper{1:04d}.dat".format(self._name,itime),ia)
-				np.savetxt("pm-{0}_ja_kper{1:04d}.dat".format(self._name,itime),ja)
-				for arr,tag in zip([dadk11,dadk22,dadk33,dadk123],["dadk11","dadk22","dadk33","dadk123"]):
-					np.savetxt("pm-{0}_{1}_kper{2:05d}.dat".format(self._name,tag,itime),arr,fmt="%15.6E")
+				if self.verbose_level > 2:
+					self.save_array("dadk11_kper{0:05d}".format(itime),dadk11,gwf_name,gwf,mg_structured)
+					self.save_array("dadk22_kper{0:05d}".format(itime),dadk22,gwf_name,gwf,mg_structured)
+					self.save_array("dadk33_kper{0:05d}".format(itime),dadk33,gwf_name,gwf,mg_structured)
+					self.save_array("dadk123_kper{0:05d}".format(itime),dadk123,gwf_name,gwf,mg_structured)
+					np.savetxt("pm-{0}_amattodense_kper{1:04d}.dat".format(self._name,itime),amat_sp_t.todense(),fmt="%15.6E")
+					np.savetxt("pm-{0}_amat_kper{1:04d}.dat".format(self._name,itime),amat,fmt="%15.6E")
+					np.savetxt("pm-{0}_rhs_kper{1:04d}.dat".format(self._name,itime),rhs,fmt="%15.6E")
+					np.savetxt("pm-{0}_ia_kper{1:04d}.dat".format(self._name,itime),ia)
+					np.savetxt("pm-{0}_ja_kper{1:04d}.dat".format(self._name,itime),ja)
+					for arr,tag in zip([dadk11,dadk22,dadk33,dadk123],["dadk11","dadk22","dadk33","dadk123"]):
+						np.savetxt("pm-{0}_{1}_kper{2:05d}.dat".format(self._name,tag,itime),arr,fmt="%15.6E")
 		
 		self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
 		self.save_array("comp_sens_k",comp_k_sens,gwf_name,gwf,mg_structured)
@@ -165,6 +166,7 @@ class PerfMeas(object):
 	def save_array(self,filetag,avec,gwf_name,gwf,structured_mg):
 		nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","NODEUSER",gwf)-1
 		nnodes = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NODES", gwf)
+		jas = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JAS", gwf)
 		filetag = "pm-"+self._name + "_" + filetag
 		# if not a reduced node scheme
 		if len(nodeuser) == 1:
@@ -180,10 +182,18 @@ class PerfMeas(object):
 				np.savetxt(filename,karr,fmt="%15.6E")
 		else:
 			filename = filetag + ".dat"
-			with open(filename,'w') as f:
-				f.write("node,value\n")
-				for n,v in zip(nodeuser,avec):
-					f.write("{0},{1:15.6E}\n".format(n,v))
+			if avec.shape[0] == nodeuser.shape[0]:
+				rarr = np.array((nodeuser,avec)).transpose()
+			elif avec.shape[0] == jas.shape[0]:
+				rarr = np.array((jas,avec)).transpose()
+			else:
+				raise Exception("unrecognized unstructed vector length: {0} for filename {1}".format(avec.shape[0],filename))
+			#print(rarr)
+			np.savetxt(filename,rarr,fmt=["%10d","%15.6E"])
+			# with open(filename,'w') as f:
+			# 	f.write("node,value\n")
+			# 	for n,v in zip(nodeuser,avec):
+			# 		f.write("{0},{1:15.6E}\n".format(n,v))
 
 
 	def _dadk(self,gwf_name,gwf, sat, amat):
@@ -262,7 +272,7 @@ class PerfMeas(object):
 						#v2 = PerfMeas.derivative_conductance_k1(k33[node],k33[mnode],height1, height2, cl1[jj]+cl2[jj], hwva[jj])
 						d_mat_k33[ia[node]+pp] += v1
 						d_mat_k123[ia[node]+pp] += v1
-						sum1 += v2
+						sum1 += v1
 						pp+=1
 						# d_mat_k33[ia[node]+pp] = v2
 						# d_mat_k123[ia[node]+pp]  = d_mat_k11[ia[node]+pp] + d_mat_k22[ia[node]+pp] + d_mat_k33[ia[node]+pp]
@@ -272,7 +282,7 @@ class PerfMeas(object):
 						# pp+=1
 					else:
 						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
-						v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
+						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
 						d_mat_k11[ia[node]+pp] += v1
 						d_mat_k123[ia[node]+pp]  += v1
 						sum2 += v1

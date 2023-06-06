@@ -2332,7 +2332,7 @@ def test_freyberg_mh():
     print(mf6adj.__file__)
     os.chdir(test_d)
     #try:     
-    adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,2)
+    adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=3)
     # pd = mf6adj.Mf6Adj.get_package_names_from_gwfname(os.path.join("freyberg6.nam"))
     # print(pd)
     # exit()
@@ -2522,7 +2522,41 @@ def test_3d_freyberg():
     os.chdir(bd)
 
 def test_freyberg_unstruct():
-    pass
+    org_d = "freyberg_quadtree"
+    test_d = "freyberg_quadtree_test"
+    if os.path.exists(test_d):
+       shutil.rmtree(test_d)
+    shutil.copytree(org_d,test_d)
+
+    
+    
+    sim = flopy.mf6.MFSimulation.load(sim_ws=org_d)
+    gwf = sim.get_model()
+    mf6adj_d = os.path.join(test_d,'mf6adj')
+    if os.path.exists(mf6adj_d):
+        shutil.rmtree(mf6adj_d)
+    shutil.copytree(os.path.join('..','mf6adj'),mf6adj_d)
+    shutil.copy2(mf6_bin,os.path.join(test_d,os.path.split(mf6_bin)[1]))
+    shutil.copy2(lib_name,os.path.join(test_d,os.path.split(lib_name)[1]))
+
+    for d in ["bmipy","xmipy","modflowapi"]:
+        dest = os.path.join(test_d,d)
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        shutil.copytree(d,dest)
+
+    local_lib_name = os.path.split(lib_name)[1]
+    bd = os.getcwd()
+    sys.path.append(os.path.join(".."))
+    import mf6adj
+    print(mf6adj.__file__)
+    os.chdir(test_d)
+    adj = mf6adj.Mf6Adj("test.adj",local_lib_name,is_structured=False,verbose_level=2)
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
+    os.chdir(bd)
+
 
 if __name__ == "__main__":
     #basic_freyberg()
@@ -2531,6 +2565,7 @@ if __name__ == "__main__":
     #twod_ss_nested_hetero_head_at_point()
     #freyberg_test()
     #test_freyberg_mh()
-    test_3d_freyberg()
+    #test_3d_freyberg()
+    test_freyberg_unstruct()
 
 
