@@ -38,7 +38,7 @@ jobs:
           python=${{ matrix.python-version }}
 
     - name: ${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.test-path }}
-      #shell: bash -l {0}
+      shell: bash -l {0}
       #working-directory: ./autotest
       run: |
         cd autotest
