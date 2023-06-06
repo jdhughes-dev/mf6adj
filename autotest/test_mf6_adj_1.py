@@ -2664,8 +2664,8 @@ if __name__ == "__main__":
     #freyberg_test()
     #test_freyberg_mh()
 
-    test_3d_freyberg()
-    test_freyberg_unstruct()
+    #test_3d_freyberg()
+    #test_freyberg_unstruct()
     test_zaidel()
     #plot_freyberg_verbose_structured_output("freyberg_mf6_pestppv5_test")
     #plot_freyberg_verbose_structured_output("freyberg_mh_adj_test")

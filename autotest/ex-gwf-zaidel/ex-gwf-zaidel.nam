@@ -9,5 +9,6 @@ BEGIN packages
   IC6  ex-gwf-zaidel.ic  ic
   CHD6  ex-gwf-zaidel.chd  chd_0
   OC6  ex-gwf-zaidel.oc  oc
+  STO6 ex-gwf-zaidel.sto
 END packages
 
