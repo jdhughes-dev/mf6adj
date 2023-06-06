@@ -267,19 +267,14 @@ class PerfMeas(object):
 					iihc = ihc[jj]
 					
 					if iihc == 0: # vertical con
-						v1 = PerfMeas._dconddvk(k33[node],top[node],bot[node],sat[node],k33[mnode],
-			      								top[mnode],bot[mnode],sat[mnode],hwva[jj],amat[jj])
-						#v2 = PerfMeas.derivative_conductance_k1(k33[node],k33[mnode],height1, height2, cl1[jj]+cl2[jj], hwva[jj])
-						d_mat_k33[ia[node]+pp] += v1
-						d_mat_k123[ia[node]+pp] += v1
+						#v1 = PerfMeas._dconddvk(k33[node],height1,sat[node],k33[mnode],
+			      		#						height2,sat[mnode],hwva[jj],amat[jj])
+						v2 = PerfMeas.derivative_conductance_k1(k33[node],k33[mnode],height1, height2, cl1[jj]+cl2[jj], hwva[jj])
+						d_mat_k33[ia[node]+pp] += v2
+						d_mat_k123[ia[node]+pp] += v2
 						sum1 += v1
 						pp+=1
-						# d_mat_k33[ia[node]+pp] = v2
-						# d_mat_k123[ia[node]+pp]  = d_mat_k11[ia[node]+pp] + d_mat_k22[ia[node]+pp] + d_mat_k33[ia[node]+pp]
-						# sum1 += d_mat_k33[ia[node]+pp]
-						# sum2 += d_mat_k11[ia[node]+pp]
-						# sum3 += d_mat_k22[ia[node]+pp]
-						# pp+=1
+						
 					else:
 						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
 						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
@@ -303,7 +298,7 @@ class PerfMeas(object):
 		return d
 
 	@staticmethod
-	def _dconddvk(k1,top1,bot1,sat1,k2,top2,bot2,sat2,area,vcond_12):
+	def _dconddvk(k1,height1,sat1,k2,height2,sat2,area,vcond_12):
 		"""need to think about how k1 and k2 are combined to 
 		form the average k between the two cells
 		from MH:
@@ -314,7 +309,7 @@ class PerfMeas(object):
 		# todo: VARIABLE CV and DEWATER options
 		#condsq = (1./((1./((area*k1)/(0.5*(top1-bot1)))) + (1./((area*k2)/(0.5*(top2-bot2))))))**2
 		#return condsq / ((area * k1**2)/(0.5*(top1-bot1)))
-		d = (vcond_12**2) / ((area * k1**2)/(0.5*(top1- bot1)))
+		d = (vcond_12**2) / ((area * k1**2)/(0.5*(height1)))
 		return d
 
 	@staticmethod

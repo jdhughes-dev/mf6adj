@@ -2531,6 +2531,8 @@ def test_3d_freyberg():
     adj.finalize()
     os.chdir(bd)
 
+
+
 def test_freyberg_unstruct():
     """test a quadtree refined grid.  
     TODO: work out what the base condition for comparison is?  Do we run pertubations with pestpp-glm? 
@@ -2626,7 +2628,33 @@ def test_zaidel():
     adj.finalize()
     os.chdir(bd)
 
-    
+def plot_freyberg_verbose_structured_output(test_d):
+    from matplotlib.backends.backend_pdf import PdfPages
+    files = os.listdir(test_d)
+    sim = flopy.mf6.MFSimulation.load(sim_ws=test_d)
+    id = sim.get_model().dis.idomain.array[0,:,:]
+    pm_files = [f for f in files if f.lower().endswith(".dat") and f.lower().startswith("pm-") and "k22" not in f]
+    pm_vals = [f.replace("pm-","").split("_")[0] for f in pm_files]
+    pm_vals = list(set(pm_vals))
+    for pm_val in pm_vals:
+        ppm_files = [f for f in pm_files if f.lower().startswith("pm-{0}".format(pm_val)) and "_k0" in f.lower()]
+        ppm_files.sort()
+        with PdfPages(os.path.join(test_d,pm_val+".pdf")) as pdf:
+            for ppm_file in ppm_files:
+                arr = np.loadtxt(os.path.join(test_d,ppm_file))
+                arr[id==0] = np.nan
+                fig,ax = plt.subplots(1,1,figsize=(4,7))
+                cb = ax.imshow(arr)
+                plt.colorbar(cb)
+                ax.set_title(ppm_file)
+                plt.tight_layout()
+                pdf.savefig()
+                plt.close(fig)
+                print(ppm_file)
+
+        
+
+
 
 if __name__ == "__main__":
     #basic_freyberg()
@@ -2635,8 +2663,11 @@ if __name__ == "__main__":
     #twod_ss_nested_hetero_head_at_point()
     #freyberg_test()
     #test_freyberg_mh()
-    #test_3d_freyberg()
-    #test_freyberg_unstruct()
+
+    test_3d_freyberg()
+    test_freyberg_unstruct()
     test_zaidel()
+    #plot_freyberg_verbose_structured_output("freyberg_mf6_pestppv5_test")
+    #plot_freyberg_verbose_structured_output("freyberg_mh_adj_test")
 
 
