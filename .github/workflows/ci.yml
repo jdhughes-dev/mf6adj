@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  pyemuCI:
+  mf6adjCI:
     name: autotest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
@@ -38,14 +38,14 @@ jobs:
           python=${{ matrix.python-version }}
 
     - name: ${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.test-path }}
-      shell: bash -l {0}
+      #shell: bash -l {0}
       #working-directory: ./autotest
       run: |
         cd autotest
         ls
-        pytest -v -s --tb=native 
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        pytest -v -s --durations=0
+      #env:
+      #  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     # - name: Coveralls
     #   uses: coverallsapp/github-action@master
