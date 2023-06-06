@@ -2303,6 +2303,11 @@ def update_freyberg_pert(sim,model_ws):
 
 
 def test_freyberg_mh():
+    """compare the Mf6Adj results to MH's adj code
+
+    TODO: get an MH variant that does direct heads instead of obj function
+    
+    """
     org_d = "freyberg_mh_adj"
     test_d = "freyberg_mh_adj_test"
     if os.path.exists(test_d):
@@ -2421,7 +2426,6 @@ def test_freyberg_mh():
         print(d.max())
         assert d.max() < 1e-6
         
-
     tags = ["comp_sens_k_k000.dat","comp_sens_k33_k000.dat","comp_sens_ss_k000.dat"]
     
     obs_arr = np.zeros((gwf.dis.nrow.data,gwf.dis.ncol.data))
@@ -2464,6 +2468,12 @@ def test_freyberg_mh():
             assert np.abs(d).max() < 1e-6
 
 def test_3d_freyberg():
+    """test the 3D freyberg model from the pestpp v5 report.  
+    
+    TODO: work out what the basis of comparison is - pertubations?  
+    TODO: variants using the different vcond options - need to add the vcond option checking to Mf6Adj
+
+    """
     org_d = "freyberg_mf6_pestppv5"
     test_d = "freyberg_mf6_pestppv5_test"
     if os.path.exists(test_d):
@@ -2522,14 +2532,17 @@ def test_3d_freyberg():
     os.chdir(bd)
 
 def test_freyberg_unstruct():
+    """test a quadtree refined grid.  
+    TODO: work out what the base condition for comparison is?  Do we run pertubations with pestpp-glm? 
+    TODO: variants for the vcond options.
+
+    """
     org_d = "freyberg_quadtree"
     test_d = "freyberg_quadtree_test"
     if os.path.exists(test_d):
        shutil.rmtree(test_d)
     shutil.copytree(org_d,test_d)
-
-    
-    
+  
     sim = flopy.mf6.MFSimulation.load(sim_ws=org_d)
     gwf = sim.get_model()
     mf6adj_d = os.path.join(test_d,'mf6adj')
@@ -2557,6 +2570,63 @@ def test_freyberg_unstruct():
     adj.finalize()
     os.chdir(bd)
 
+    # todo: some kinda of testing/plotting here!
+
+
+def test_freyberg_unstructured_match():
+    """unstructured test  using the same discret, etc as the MH freyberg test but uses disv, 
+    which will allow us to directly compare the results with MH's adj code
+    
+    TODO: use gridgen to setup the basic files; 
+    TODO: isolate MH's adj code calls above so that we can use them here
+    TODO: intersect/workout gw obs locations in the node numbers for the adj file
+
+    """
+    pass
+
+def test_zaidel():
+    """test the upstream weighting conductance scheme and newton solution process,stolen from mf6 examples!
+
+    TODO: variants for both direct and residual performance measures
+
+    """
+    org_d = "ex-gwf-zaidel"
+    test_d = org_d+"_test"
+    if os.path.exists(test_d):
+       shutil.rmtree(test_d)
+    shutil.copytree(org_d,test_d)
+  
+    sim = flopy.mf6.MFSimulation.load(sim_ws=org_d)
+    gwf = sim.get_model()
+    botm = gwf.dis.botm.array
+    print(botm)
+    
+    mf6adj_d = os.path.join(test_d,'mf6adj')
+    if os.path.exists(mf6adj_d):
+        shutil.rmtree(mf6adj_d)
+    shutil.copytree(os.path.join('..','mf6adj'),mf6adj_d)
+    shutil.copy2(mf6_bin,os.path.join(test_d,os.path.split(mf6_bin)[1]))
+    shutil.copy2(lib_name,os.path.join(test_d,os.path.split(lib_name)[1]))
+
+    for d in ["bmipy","xmipy","modflowapi"]:
+        dest = os.path.join(test_d,d)
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        shutil.copytree(d,dest)
+
+    local_lib_name = os.path.split(lib_name)[1]
+    bd = os.getcwd()
+    sys.path.append(os.path.join(".."))
+    import mf6adj
+    print(mf6adj.__file__)
+    os.chdir(test_d)
+    adj = mf6adj.Mf6Adj("test.adj",local_lib_name,is_structured=False,verbose_level=2)
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
+    os.chdir(bd)
+
+    
 
 if __name__ == "__main__":
     #basic_freyberg()
@@ -2566,6 +2636,7 @@ if __name__ == "__main__":
     #freyberg_test()
     #test_freyberg_mh()
     #test_3d_freyberg()
-    test_freyberg_unstruct()
+    #test_freyberg_unstruct()
+    test_zaidel()
 
 
