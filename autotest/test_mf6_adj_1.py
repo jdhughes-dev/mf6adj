@@ -2465,7 +2465,7 @@ def test_freyberg_mh():
 
 def test_3d_freyberg():
     org_d = "freyberg_mf6_pestppv5"
-    test_d = "freyberg_mf6_pestppv5"
+    test_d = "freyberg_mf6_pestppv5_test"
     if os.path.exists(test_d):
        shutil.rmtree(test_d)
     shutil.copytree(org_d,test_d)
@@ -2473,10 +2473,26 @@ def test_3d_freyberg():
     #write the adj file using the truth values
     import pyemu
     pst = pyemu.Pst(os.path.join(test_d,"truth.pst"))
+    obs = pst.observation_data
     res = pst.res
-    print(res)
-    return
-
+    obs.loc[:,"obsval"] = res.loc[obs.obsnme,"modelled"].values
+    tobs = obs.loc[obs.obsnme.str.startswith("trgw"),:].copy()
+    tobs.loc[:,"k"] = tobs.obsnme.apply(lambda x: int(x.split("_")[1]))
+    tobs.loc[:,"i"] = tobs.obsnme.apply(lambda x: int(x.split("_")[2]))
+    tobs.loc[:,"j"] = tobs.obsnme.apply(lambda x: int(x.split("_")[3]))
+    tobs.loc[:,"datetime"] = tobs.obsnme.apply(lambda x: pd.to_datetime(x.split("_")[-1],format="%Y%m%d"))
+    udatetimes = list(tobs.datetime.unique())
+    udatetimes.sort()
+    with open(os.path.join(test_d,"test.adj"),'w') as f:
+        f.write("begin options\n\nend options\n\n")
+        f.write("begin performance_measure pm1 type residual\n")
+        for kper,udt in enumerate(udatetimes):
+            uobs = tobs.loc[tobs.datetime==udt,:].copy()
+            uobs.sort_index(inplace=True)
+            for k,i,j,weight,obsval,obsnme in zip(uobs.k,uobs.i,uobs.j,uobs.weight,uobs.obsval,uobs.obsnme):
+                f.write("{0} 1 {1} {2} {3} {4} {5} #{6}\n".format(kper+1,k+1,i+1,j+1,weight,obsval,obsnme))
+        f.write("end performance_measure pm1\n\n")
+    
     sim = flopy.mf6.MFSimulation.load(sim_ws=org_d)
     gwf = sim.get_model()
     id = gwf.dis.idomain.array[0,:,:]    
@@ -2499,7 +2515,10 @@ def test_3d_freyberg():
     import mf6adj
     print(mf6adj.__file__)
     os.chdir(test_d)
-
+    adj = mf6adj.Mf6Adj("test.adj",local_lib_name,is_structured=True)
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
     os.chdir(bd)
 
 
