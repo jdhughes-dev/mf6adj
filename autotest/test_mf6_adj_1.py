@@ -2463,6 +2463,44 @@ def test_freyberg_mh():
             print(tag,d.max())
             assert np.abs(d).max() < 1e-6
 
+def test_3d_freyberg():
+    org_d = "freyberg_mf6_pestppv5"
+    test_d = "freyberg_mf6_pestppv5"
+    if os.path.exists(test_d):
+       shutil.rmtree(test_d)
+    shutil.copytree(org_d,test_d)
+
+    #write the adj file using the truth values
+    import pyemu
+    pst = pyemu.Pst(os.path.join(test_d,"truth.pst"))
+    res = pst.res
+    print(res)
+    return
+
+    sim = flopy.mf6.MFSimulation.load(sim_ws=org_d)
+    gwf = sim.get_model()
+    id = gwf.dis.idomain.array[0,:,:]    
+    mf6adj_d = os.path.join(test_d,'mf6adj')
+    if os.path.exists(mf6adj_d):
+        shutil.rmtree(mf6adj_d)
+    shutil.copytree(os.path.join('..','mf6adj'),mf6adj_d)
+    shutil.copy2(mf6_bin,os.path.join(test_d,os.path.split(mf6_bin)[1]))
+    shutil.copy2(lib_name,os.path.join(test_d,os.path.split(lib_name)[1]))
+
+    for d in ["bmipy","xmipy","modflowapi"]:
+        dest = os.path.join(test_d,d)
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        shutil.copytree(d,dest)
+
+    local_lib_name = os.path.split(lib_name)[1]
+    bd = os.getcwd()
+    sys.path.append(os.path.join(".."))
+    import mf6adj
+    print(mf6adj.__file__)
+    os.chdir(test_d)
+
+    os.chdir(bd)
 
 
 if __name__ == "__main__":
@@ -2471,6 +2509,7 @@ if __name__ == "__main__":
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()
     #freyberg_test()
-    freyberg_mh_test()
+    #test_freyberg_mh()
+    test_3d_freyberg()
 
 
