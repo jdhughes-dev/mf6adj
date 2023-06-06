@@ -17,7 +17,7 @@ jobs:
         os: [ubuntu-latest, windows-latest] # , macos-latest] 
         python-version: [3.8, 3.9, "3.10", "3.11"]
         run-type: [std]
-        test-path: ["autotest"]
+        test-path: ["."]
         include:
           - os: macos-latest
             python-version: 3.9
@@ -41,6 +41,8 @@ jobs:
       shell: bash -l {0}
       working-directory: ./autotest
       run: |
+        cd autotest
+        ls
         pytest -v -n=auto --tb=native --cov=mf6adj ${{ matrix.test-path }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
