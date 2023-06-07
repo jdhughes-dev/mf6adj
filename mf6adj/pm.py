@@ -247,7 +247,7 @@ class PerfMeas(object):
 
 		for node,(offset,ncon) in enumerate(zip(ia,iac)):
 			
-			ncon -= 1 # for self
+			#ncon -= 1 # for self
 			
 			if ib[node]==0:	
 				pass
@@ -259,7 +259,7 @@ class PerfMeas(object):
 				sum3 = 0.
 				height1 = height[node]
 				pp = 1
-				for ii in range(offset,offset+ncon):
+				for ii in range(offset+1,offset+ncon):
 					mnode = ja[ii]
 					height2 = height[mnode]
 					jj = jas[ii]
@@ -277,7 +277,7 @@ class PerfMeas(object):
 						
 					else:
 						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
-						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
+						v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
 						d_mat_k11[ia[node]+pp] += v1
 						d_mat_k123[ia[node]+pp]  += v1
 						sum2 += v1

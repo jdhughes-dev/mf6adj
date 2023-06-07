@@ -1,6 +1,6 @@
 BEGIN Options
   LIST  freyberg6.lst
-  NEWTON
+
 END Options
 
 BEGIN Packages

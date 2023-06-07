@@ -365,6 +365,7 @@ def d_amat_k():
                     sum1 += d_mat_k11[IA_p[nn] + ii]
                     sum2 += d_mat_k22[IA_p[nn] + ii]
                     sum3 += d_mat_k33[IA_p[nn] + ii]
+                    ii += 1
             d_mat_k11[IA_p[nn]] = - sum1
             d_mat_k22[IA_p[nn]] = - sum2
             d_mat_k33[IA_p[nn]] = - sum3
