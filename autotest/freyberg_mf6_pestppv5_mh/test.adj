@@ -1,0 +1,27 @@
+
+begin options
+
+end options
+
+#begin performance_measure pm1 type direct
+#1 1 1 20 10 1.0 
+#end performance_measure
+#from MF6-ADJ.INP file - format is sp,ts,l,r,c,obsval,weight,name - all one-based!
+begin performance_measure pm1 type residual
+25  1  1 1  1    1.0  38.5 TRGW_1_4_11
+25  1  1 4  17   1.0  38.5 TRGW_1_4_17
+25  1  1 5  10   1.0  38.5 TRGW_1_5_10
+25  1  1 11 3    1.0  38.5 TRGW_1_11_3
+25  1  1 15 12   1.0  38.5 TRGW_1_15_12
+25  1  1 17 17   1.0  38.5 TRGW_1_17_17
+25  1  1 23 12   1.0  38.5 TRGW_1_23_12
+25  1  1 24 17   1.0  38.5 TRGW_1_24_17
+25  1  1 26 6    1.0  38.5 TRGW_1_26_6
+25  1  1 28 8    1.0  38.5 TRGW_1_28_8
+25  1  1 31 17   1.0  38.5 TRGW_1_31_17
+25  1  1 35 9    1.0  38.5 TRGW_1_35_9
+25  1  1 36 12   1.0  38.5 TRGW_1_36_12
+25  1  1 40 9    1.0  38.5 TRGW_1_40_9
+25  1  1 40 12   1.0  38.5 TRGW_1_40_12
+25  1  1 40 20   1.0  38.5 TRGW_1_40_14
+end performance_measure
