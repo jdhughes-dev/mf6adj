@@ -2688,19 +2688,20 @@ def xd_box_test():
 
     # workflow flags
     clean = True # run the pertbuation process
-    plot_pert_results = False #plot the pertubation results
+    plot_pert_results = True #plot the pertubation results
     plot_adj_results = True # plot adj result
 
     name = "freyberg6" #use this name so the org MH codes will work
-    epsilon = 1.0e-05
+    pert_mult = 1.1
     sp_len = 1.0
     tdis_pd = [(sp_len,1,1.0)]
-    n = 5 #min value of 5
+    
     h = 1.0
     k = 1.0
     q = -3.0
     nlay = 1
-    nrow = ncol = n
+    nrow = 1
+    ncol = 4
     delrow = delcol = 1
     top = nlay
     botm = np.linspace(-1,-nlay,nlay)  # botm
@@ -2770,13 +2771,14 @@ def xd_box_test():
             #newtonoptions="NEWTON UNDER_RELAXATION",
         )
 
-        idm = np.ones((nlay, n, n))
-        idm[0,0,2] = 0 # just to have one in active cell...
+        idm = np.ones((nlay, nrow, ncol))
+        if ncol > 1 and nrow > 1:
+            idm[0,0,1] = 0 # just to have one in active cell...
         dis = flopy.mf6.ModflowGwfdis(
             gwf,
             nlay=nlay,
-            nrow=n,
-            ncol=n,
+            nrow=nrow,
+            ncol=ncol,
             delr=delrow,
             delc=delcol,
             top=top,
@@ -2785,7 +2787,7 @@ def xd_box_test():
         )
 
         # ### Create the initial conditions (`IC`) Package
-        start = top * np.ones((nlay, n, n))
+        start = top * np.ones((nlay, nrow, ncol))
         ic = flopy.mf6.ModflowGwfic(gwf, pname="ic", strt=start)
 
         # ### Create the storage (`STO`) Package
@@ -2818,13 +2820,14 @@ def xd_box_test():
             stress_period_data=ghb_rec,
         )
 
-        wel_rec = [(nlay-1, int(n / 2), int(n / 2), q)]
-        wel = flopy.mf6.ModflowGwfwel(
-            gwf,
-            stress_period_data=wel_rec,
-        )
+        if nrow > 1 and ncol > 1:
+            wel_rec = [(nlay-1, int(nrow / 2), int(ncol / 2), q)]
+            wel = flopy.mf6.ModflowGwfwel(
+                gwf,
+                stress_period_data=wel_rec,
+            )
 
-        flopy.mf6.ModflowGwfrcha(gwf,recharge=0.0001)
+            flopy.mf6.ModflowGwfrcha(gwf,recharge=0.0001)
 
         headfile = f"{name}.hds"
         head_filerecord = [headfile]
@@ -2880,11 +2883,13 @@ def xd_box_test():
         
         addr = ["NODEUSER", "FREYBERG6", "DIS"]
         wbaddr = mf6api.get_var_address(*addr)
-        nuser = mf6api.get_value(wbaddr) - 1
+        nuser = mf6api.get_value(wbaddr).copy() - 1
+        if nuser.shape[0] == 1:
+            #addr = ["NODES", "FREYBERG6", "DIS"]
+            #wbaddr = mf6api.get_var_address(*addr)
+            #nuser = mf6api.get_value(wbaddr).copy() - 1
+            nuser = np.arange(nlay*nrow*ncol,dtype=int)
 
-        addr = ["NODEREDUCED", "FREYBERG6", "DIS"]
-        wbaddr = mf6api.get_var_address(*addr)
-        nred = mf6api.get_value(wbaddr)
         kijs = gwf.modelgrid.get_lrc(list(nuser))
         try:
             mf6api.finalize()
@@ -2912,14 +2917,16 @@ def xd_box_test():
         #     plt.show()
         #     exit()
         k_arr = gwf.npf.k.array
-        epsilon = 0.0001
+        epsilon = {}
         head_pert = {}
 
         count = 0
         for k,i,j in p_kijs:
             count += 1
             kk_arr = k_arr.copy()
-            kk_arr[k,i,j] += epsilon
+            dk = kk_arr[k,i,j] * pert_mult
+            epsilon[(k,i,j)] = dk
+            kk_arr[k,i,j] += dk
             kij = (k,i,j)
             if kij not in head_pert:
                 head_pert[kij] = []
@@ -2950,7 +2957,6 @@ def xd_box_test():
                 mf6api.finalize_solve(1)
                 mf6api.finalize_time_step()
                 current_time = mf6api.get_current_time()
-                dt1 = mf6api.get_time_step()
                 head = mf6api.get_value(mf6api.get_var_address("X", "%s" % name))
                 head_pert[(k,i,j)].append(head.copy())
                 if not has_converged:
@@ -2968,7 +2974,7 @@ def xd_box_test():
             
             delt = []
             for kper in range(len(tdis_pd)):
-                delt.append((head_pert[kij][kper] - head_base[kper])/epsilon)
+                delt.append((head_pert[kij][kper] - head_base[kper])/epsilon[kij])
             pert_sens[kij] = delt
         
         if plot_pert_results:
@@ -3051,7 +3057,7 @@ def xd_box_test():
         from matplotlib.backends.backend_pdf import PdfPages
         with PdfPages('adj.pdf') as pdf:
             for i,afile in enumerate(afiles_to_plot):
-                arr = np.loadtxt(afile)
+                arr = np.atleast_2d(np.loadtxt(afile))
                 fig,ax = plt.subplots(1,1,figsize=(10,10))
                 cb = ax.imshow(arr)
                 plt.colorbar(cb,ax=ax)
@@ -3066,12 +3072,12 @@ def xd_box_test():
 
 
 if __name__ == "__main__":
-    #xd_box_test()
+    xd_box_test()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()
     #_skip_for_now_freyberg()
-    test_freyberg_mh()
+    #test_freyberg_mh()
 
     #test_3d_freyberg()
     #test_freyberg_unstruct()
