@@ -2687,12 +2687,12 @@ def xd_box_test():
         local_mf6_bin = "mf6.exe"
 
     # workflow flags
-    clean = True # run the pertbuation process
+    clean = False # run the pertbuation process
     plot_pert_results = True #plot the pertubation results
     plot_adj_results = True # plot adj result
 
     name = "freyberg6" #use this name so the org MH codes will work
-    pert_mult = 1.1
+    pert_mult = 1.01
     sp_len = 1.0
     tdis_pd = [(sp_len,1,1.0)]
     
@@ -2701,10 +2701,10 @@ def xd_box_test():
     q = -3.0
     nlay = 1
     nrow = 1
-    ncol = 4
+    ncol = 3
     delrow = delcol = 1
     top = nlay
-    botm = np.linspace(-1,-nlay,nlay)  # botm
+    botm = np.linspace(0,-nlay,nlay)  # botm
     p_kijs = []
     for k in range(nlay):
         for i in range(nrow):
@@ -2813,7 +2813,7 @@ def xd_box_test():
         ghb_rec = []
         for k in range(nlay):
             for i in range(nrow):
-                ghb_rec.append(((k, i, ncol - 1), top+1,1.0))
+                ghb_rec.append(((k, i, ncol - 1), top+1,10000.0))
         
         ghb = flopy.mf6.ModflowGwfghb(
             gwf,
@@ -2924,10 +2924,11 @@ def xd_box_test():
         for k,i,j in p_kijs:
             count += 1
             kk_arr = k_arr.copy()
-            dk = kk_arr[k,i,j] * pert_mult
-            epsilon[(k,i,j)] = dk
-            kk_arr[k,i,j] += dk
             kij = (k,i,j)
+            dk = kk_arr[k,i,j] * pert_mult
+            epsilon[kij] = dk - kk_arr[k,i,j]
+            kk_arr[k,i,j] = dk
+            
             if kij not in head_pert:
                 head_pert[kij] = []
             npf = flopy.mf6.ModflowGwfnpf(
@@ -3012,6 +3013,14 @@ def xd_box_test():
                     plt.tight_layout()
                     pdf.savefig()
                     plt.close(fig)
+        # reset to org karr
+        npf = flopy.mf6.ModflowGwfnpf(
+                gwf,
+                icelltype=0,
+                k=kk_arr,
+            )
+        sim.write_simulation()
+        sim.run_simulation()
         if plot_pert_results:
             pdf.close()
 
@@ -3046,7 +3055,7 @@ def xd_box_test():
                 f.write("end performance_measure\n\n")
     
 
-    adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True)
+    adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=2)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -3072,12 +3081,12 @@ def xd_box_test():
 
 
 if __name__ == "__main__":
-    xd_box_test()
+    #xd_box_test()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()
     #_skip_for_now_freyberg()
-    #test_freyberg_mh()
+    test_freyberg_mh()
 
     #test_3d_freyberg()
     #test_freyberg_unstruct()

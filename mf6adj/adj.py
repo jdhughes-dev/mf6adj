@@ -179,7 +179,6 @@ class Mf6Adj(object):
 
 
                             # convert to node number
-                            #kji = tuple([kij[0],kij[2],kij[1]]) #WTF!
                             n = self._structured_mg.get_node([kij])[0]
                             # if there is a reduced node scheme
                             if len(nuser) > 1:
@@ -192,7 +191,7 @@ class Mf6Adj(object):
                                 pm_entries.append(PerfMeasRecord(kper,kstp,nn,k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
                             else:
                                 pm_entries.append(
-                                    PerfMeasRecord(kper,kstp,n - 1,k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
+                                    PerfMeasRecord(kper,kstp,n,k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
                         else:
                             # raise NotImplementedError("only structured grids currently supported")
                             if len(raw) < 3:

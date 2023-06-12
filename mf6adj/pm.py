@@ -224,7 +224,7 @@ class PerfMeas(object):
 		#IA is the number of connections, plus 1 (for self), for each node in grid. it is of size NNODES + 1
 		ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
 		#JA is an array containing all cells for which there is a connection (including self) for each node. it is of size NJA
-		jas = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JAS", gwf) - 1
+		jas = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JAS", gwf) -1
 		cl1 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL1", gwf)
 		#distance from node to cell m boundary (size NJA)
 		cl2 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL2", gwf)
@@ -277,6 +277,8 @@ class PerfMeas(object):
 					#height2 *= sat[mnode]
 					
 					jj = jas[ii]
+					if jj < 0:
+						raise Exception()
 					iihc = ihc[jj]
 
 					if iihc == 0: # vertical con
@@ -383,12 +385,12 @@ class PerfMeas(object):
 			    sum1 += dAdk[ia[i] + ii] * head[ja[ia[i] + ii]]        
 			sum1 *= lamb[i]
 			for ii in list(range(iac[i]))[1:]:
-				if is_chd and ja[ii] in chd_list[0]:
-					pass
+				#if is_chd and ja[ii] in chd_list[0]:
+				#	pass
 				#elif ib[ja[ia[i]+ii]] == 0:
 				#		pass
-				else:
-					sum2 += lamb[ja[ia[i] + ii]] * dAdk[ia[i] + ii] * (head[i] - head[ja[ia[i] + ii]])
+				#else:
+				sum2 += lamb[ja[ia[i] + ii]] * dAdk[ia[i] + ii] * (head[i] - head[ja[ia[i] + ii]])
 			sums = sum1 + sum2
 			#print(list(range(iac[i]))[1:])
 			#print(sum1,sum2,sums)
