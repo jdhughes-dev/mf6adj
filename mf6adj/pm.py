@@ -81,11 +81,17 @@ class PerfMeas(object):
 				rhs = (drhsdh * lamb) - dfdh
 			else:
 				rhs = dfdh
-			
+			if np.all(rhs==0.0):
+				print("WARNING: adjoint solve rhs is all zeros, adjoint states cannot be calculated for {0} at kperkstp {1}".format(self._name,kk))
+				continue
+	  
 			amat = amat_dict[kk]
 			amat_sp = sparse.csr_matrix((amat,ja.copy(),ia.copy()),shape=(len(ia)-1,len(ia)-1))
 			amat_sp_t = amat_sp.transpose()			
 			lamb = spsolve(amat_sp_t,rhs)
+			if np.any(np.isnan(lamb)):
+				print("WARNING: nans in adjoint states for pm {0} at kperkstp {1}".format(self._name,kk))
+				continue
 				
 			k_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk123,head_dict[kk])
 			k33_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk33,head_dict[kk])
@@ -231,10 +237,13 @@ class PerfMeas(object):
 		#bottom elevation for all nodes
 		iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
 		#array of number of connections per node (size ndoes)
-		anglex = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "ANGLEX", gwf)
-
+		
+		icelltype = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "ICELLTYPE", gwf)
+		
 		height = sat * (top - bot)	
-
+		
+		#TODO: check here for converible cells
+			
 		d_mat_k11 = np.zeros(ja.shape[0])
 		d_mat_k22 = np.zeros(ja.shape[0])
 		d_mat_k33 = np.zeros(ja.shape[0])
@@ -257,30 +266,42 @@ class PerfMeas(object):
 				sum1 = 0.
 				sum2 = 0.
 				sum3 = 0.
+				sum2temp = 0.
 				height1 = height[node]
 				pp = 1
 				for ii in range(offset+1,offset+ncon):
 					mnode = ja[ii]
+
 					height2 = height[mnode]
-					jj = jas[ii]
-					cond_nm = amat[jj]
-					iihc = ihc[jj]
+					#if icelltype[mnode] != 0:
+					#height2 *= sat[mnode]
 					
+					jj = jas[ii]
+					iihc = ihc[jj]
+
 					if iihc == 0: # vertical con
-						#v1 = PerfMeas._dconddvk(k33[node],height1,sat[node],k33[mnode],
-			      		#						height2,sat[mnode],hwva[jj],amat[jj])
+						v1 = PerfMeas._dconddvk(k33[node],height1,sat[node],k33[mnode],
+			      								height2,sat[mnode],hwva[jj],amat[jj])
+						#def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
+						#	d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
+						#	return d
 						v2 = PerfMeas.derivative_conductance_k1(k33[node],k33[mnode],height1, height2, cl1[jj]+cl2[jj], hwva[jj])
-						d_mat_k33[ia[node]+pp] += v2
-						d_mat_k123[ia[node]+pp] += v2
+						#derivative_conductance_k33(k1, k2, w1, w2, area)
+						v3 = PerfMeas.derivative_conductance_k33(k33[node],k33[mnode],height1, height2, hwva[jj])
+						d_mat_k33[ia[node]+pp] += v3
+						d_mat_k123[ia[node]+pp] += v3
 						sum1 += v1
 						pp+=1
 						
 					else:
 						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
 						v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
+						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj],cl2[jj], hwva[jj],height1)
+						
 						d_mat_k11[ia[node]+pp] += v1
 						d_mat_k123[ia[node]+pp]  += v1
 						sum2 += v1
+						sum2temp += v2
 						pp+=1
 					
 				d_mat_k11[ia[node]] = -sum2
@@ -304,12 +325,18 @@ class PerfMeas(object):
 		from MH:
 		dcond_n,m / dk_n,m = cond_n,m**2 / ((area * k_n,m**2)/(0.5*(top_n - bot_n)))
 
+		todo: VARIABLE CV and DEWATER options
+
 		"""
 
-		# todo: VARIABLE CV and DEWATER options
 		#condsq = (1./((1./((area*k1)/(0.5*(top1-bot1)))) + (1./((area*k2)/(0.5*(top2-bot2))))))**2
 		#return condsq / ((area * k1**2)/(0.5*(top1-bot1)))
-		d = (vcond_12**2) / ((area * k1**2)/(0.5*(height1)))
+		d = (vcond_12**2) / (((area * k1)**2)/(0.5*(height1)))
+		return d
+
+	@staticmethod
+	def derivative_conductance_k33(k1, k2, w1, w2, area):
+		d = - 2.0 * w1 * area / ((w1 + w2 * k1 / k2) ** 2)
 		return d
 
 	@staticmethod
@@ -321,10 +348,13 @@ class PerfMeas(object):
 		top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
 		bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
 		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
+		#todo: weave sat into this and check for iconvert/icelltype to scale
+		# thickness
 		result = -1. * lamb * head * area * (top - bot) / dt
 		return result
 	
 	def sens_ss_indirect(self,gwf_name,gwf,lamb,head,head_old,dt):
+		#todo: check that sy is equivalent to ss - I think it might be...but maybe not...
 		return self.lam_dAdss_h(gwf_name,gwf,lamb,head,dt) - self.lam_dAdss_h(gwf_name,gwf,lamb,head_old,dt)
 
 	def lam_dAdk_h(self, gwf_name, gwf, lamb, dAdk, head):
@@ -375,6 +405,8 @@ class PerfMeas(object):
 		bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
 		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
 		storage = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "SS", gwf)
+		#todo: weave sat into this and check icelltype/iconvert and scale
+		# height if needed
 		drhsdh = -1. * storage * area * (top - bot) / dt
 		return drhsdh
 

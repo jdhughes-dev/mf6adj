@@ -3,7 +3,7 @@ END Options
 
 BEGIN GRIDDATA
   iconvert  LAYERED
-    CONSTANT  1
+    CONSTANT  0
     CONSTANT  0
     CONSTANT  0
   ss  LAYERED

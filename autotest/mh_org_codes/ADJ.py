@@ -221,23 +221,6 @@ def SolveAdjointHeadAtPoint(k, j, i, ntime, nts, ncells, rev_dt):
         list_AS.append(lam)
     return list_AS
 # ------------------------------------------------------------------------------------------------------------------------
-def SolveAdjointSWH(ncells, current_ts, nts, list_of_kji, list_of_weights, rev_dt):
-    lam = np.zeros(ncells)
-    list_AS = [lam]
-    l = list(range(len(rev_dt)))
-    l = l[::-1]
-    for kk in l:
-        list_drhs = drhsdh(STORAGE, CELLAREA, CELLTOP, CELLBOT, rev_dt[len(rev_dt)-kk-1])
-        array_lam = lam
-        l1 =  multiplyarray(list_drhs, array_lam)
-        l2 = dFdhSWH(ncells, current_ts, nts, list_of_kji, list_of_weights, rev_dt[::-1][current_ts])[kk]
-        rhs1 = substructarray(l1, l2)
-        A = csr_matrix((MAT[kk], JA_p.copy(), IA_p.copy()), shape=(len(IA) - 1, len(IA) - 1)).toarray()
-        A = csr_matrix(A)
-        At = A.transpose()
-        lam = spsolve(At, rhs1)
-        list_AS.append(lam)
-    return list_AS
 # ------------------------------------------------------------------------------------------------------------------------
 # def SolveAdjointLS(ncells, head, OBSFILE, rev_dt):
 #     lam = np.zeros(ncells)
@@ -261,6 +244,23 @@ def SolveAdjointSWH(ncells, current_ts, nts, list_of_kji, list_of_weights, rev_d
 #         # lam = spsolve(A, rhs1)
 #         list_AS.append(lam)
 #     return list_AS
+def SolveAdjointSWH(ncells, current_ts, nts, list_of_kji, list_of_weights, rev_dt):
+    lam = np.zeros(ncells)
+    list_AS = [lam]
+    l = list(range(len(rev_dt)))
+    l = l[::-1]
+    for kk in l:
+        list_drhs = drhsdh(STORAGE, CELLAREA, CELLTOP, CELLBOT, rev_dt[len(rev_dt)-kk-1])
+        array_lam = lam
+        l1 =  multiplyarray(list_drhs, array_lam)
+        l2 = dFdhSWH(ncells, current_ts, nts, list_of_kji, list_of_weights, rev_dt[::-1][current_ts])[kk]
+        rhs1 = substructarray(l1, l2)
+        A = csr_matrix((MAT[kk], JA_p.copy(), IA_p.copy()), shape=(len(IA) - 1, len(IA) - 1)).toarray()
+        A = csr_matrix(A)
+        At = A.transpose()
+        lam = spsolve(At, rhs1)
+        list_AS.append(lam)
+    return list_AS
 
 def SolveAdjointLS(ncells, nts, list_obs, head, rev_dt):
     lam = np.zeros(ncells)

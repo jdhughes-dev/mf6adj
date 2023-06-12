@@ -4,7 +4,7 @@ END Options
 
 BEGIN GRIDDATA
   icelltype  LAYERED
-    CONSTANT  1
+    CONSTANT  0
     CONSTANT  0
     CONSTANT  0
   k  LAYERED
