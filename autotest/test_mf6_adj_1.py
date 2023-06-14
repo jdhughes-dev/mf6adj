@@ -2687,21 +2687,22 @@ def xd_box_test():
         local_mf6_bin = "mf6.exe"
 
     # workflow flags
-    clean = False # run the pertbuation process
+    clean = True # run the pertbuation process
     plot_pert_results = True #plot the pertubation results
     plot_adj_results = True # plot adj result
+    include_id0 = True
 
     name = "freyberg6" #use this name so the org MH codes will work
-    pert_mult = 1.01
+    pert_mult = 1.1
     sp_len = 1.0
     tdis_pd = [(sp_len,1,1.0)]
-    
+    weight = 1.0
     h = 1.0
     k = 1.0
     q = -3.0
     nlay = 1
-    nrow = 1
-    ncol = 3
+    nrow = 10
+    ncol = 10
     delrow = delcol = 1
     top = nlay
     botm = np.linspace(0,-nlay,nlay)  # botm
@@ -2717,7 +2718,6 @@ def xd_box_test():
         if os.path.exists(new_d):
             shutil.rmtree(new_d)
         os.mkdir(new_d)
-        shutil.copytree(os.path.join('..', 'mf6adj'), os.path.join(new_d,'mf6adj'))
         shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
         shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
         
@@ -2730,61 +2730,30 @@ def xd_box_test():
         for f in os.listdir(org_mh_dir):
             shutil.copy2(os.path.join(org_mh_dir,f),os.path.join(new_d,f))
 
+        org_aux_dir = "xd_box_test_aux_files"
+        for f in os.listdir(org_aux_dir):
+            shutil.copy2(os.path.join(org_aux_dir, f), os.path.join(new_d, f))
+
+
         # todo: wrap this bit in try-catch in case in fails during testing
         os.chdir(new_d)
         sys.path.append(os.path.join("..",".."))
         import mf6adj  
         
 
-        sim = flopy.mf6.MFSimulation(
-            sim_name=name,
-            exe_name=local_mf6_bin,
-            version="mf6",
-            sim_ws=".",
-            memory_print_option="ALL"
-        )
+        sim = flopy.mf6.MFSimulation(sim_name=name,exe_name=local_mf6_bin,version="mf6",sim_ws=".", memory_print_option="ALL")
 
-        
-        tdis = flopy.mf6.ModflowTdis(
-            sim,
-            pname="tdis",
-            time_units="DAYS",
-            nper=len(tdis_pd),
-            perioddata=tdis_pd
-        )
+        tdis = flopy.mf6.ModflowTdis(sim,pname="tdis",time_units="DAYS",nper=len(tdis_pd),perioddata=tdis_pd)
 
-        ims = flopy.mf6.ModflowIms(
-            sim,
-            pname="ims",
-            complexity="SIMPLE",
-            linear_acceleration="BICGSTAB",
-            inner_dvclose=0.000000001,
-            outer_dvclose=0.000000001
-        )
+        ims = flopy.mf6.ModflowIms(sim,pname="ims",complexity="SIMPLE",linear_acceleration="BICGSTAB",inner_dvclose=1e-10,outer_dvclose=1e-10,outer_maximum=1000,inner_maximum=1000)
 
         model_nam_file = f"{name}.nam"
-        gwf = flopy.mf6.ModflowGwf(
-            sim,
-            modelname=name,
-            model_nam_file=model_nam_file,
-            save_flows=True#,
-            #newtonoptions="NEWTON UNDER_RELAXATION",
-        )
+        gwf = flopy.mf6.ModflowGwf(sim,modelname=name,model_nam_file=model_nam_file,save_flows=True)
 
         idm = np.ones((nlay, nrow, ncol))
-        if ncol > 1 and nrow > 1:
+        if ncol > 1 and nrow > 1 and include_id0:
             idm[0,0,1] = 0 # just to have one in active cell...
-        dis = flopy.mf6.ModflowGwfdis(
-            gwf,
-            nlay=nlay,
-            nrow=nrow,
-            ncol=ncol,
-            delr=delrow,
-            delc=delcol,
-            top=top,
-            botm=botm,
-            idomain=idm
-        )
+        dis = flopy.mf6.ModflowGwfdis(gwf,nlay=nlay,nrow=nrow,ncol=ncol,delr=delrow,delc=delcol,top=top,botm=botm,idomain=idm)
 
         # ### Create the initial conditions (`IC`) Package
         start = top * np.ones((nlay, nrow, ncol))
@@ -2796,36 +2765,30 @@ def xd_box_test():
             gwf
         )
 
-        chd_rec = []
-        for k in range(nlay):
-            for i in range(nrow):
-                chd_rec.append(((k, i, 0), top))
+        if ncol > 1 and nrow > 1:
+            chd_rec = []
+            for k in range(nlay):
+                for i in range(nrow):
+                    chd_rec.append(((k, i, 0), top))
 
-        chd = flopy.mf6.ModflowGwfchd(
-            gwf,
-            stress_period_data=chd_rec,
-        )
+            chd = flopy.mf6.ModflowGwfchd(
+                gwf,
+                stress_period_data=chd_rec,
+            )
 
-        iper = 0
-        ra = chd.stress_period_data.get_data(key=iper)
-        list_ch = [ra[item][0] for item in range(len(ra))]
+            iper = 0
+            ra = chd.stress_period_data.get_data(key=iper)
 
         ghb_rec = []
         for k in range(nlay):
             for i in range(nrow):
                 ghb_rec.append(((k, i, ncol - 1), top+1,10000.0))
         
-        ghb = flopy.mf6.ModflowGwfghb(
-            gwf,
-            stress_period_data=ghb_rec,
-        )
+        ghb = flopy.mf6.ModflowGwfghb(gwf,stress_period_data=ghb_rec)
 
         if nrow > 1 and ncol > 1:
             wel_rec = [(nlay-1, int(nrow / 2), int(ncol / 2), q)]
-            wel = flopy.mf6.ModflowGwfwel(
-                gwf,
-                stress_period_data=wel_rec,
-            )
+            wel = flopy.mf6.ModflowGwfwel(gwf,stress_period_data=wel_rec)
 
             flopy.mf6.ModflowGwfrcha(gwf,recharge=0.0001)
 
@@ -2835,19 +2798,9 @@ def xd_box_test():
         budget_filerecord = [budgetfile]
         saverecord = [("HEAD", "ALL"), ("BUDGET", "ALL")]
         printrecord = [("HEAD", "ALL")]
-        oc = flopy.mf6.ModflowGwfoc(
-            gwf,
-            saverecord=saverecord,
-            head_filerecord=head_filerecord,
-            budget_filerecord=budget_filerecord,
-            printrecord=printrecord,
-        )
+        oc = flopy.mf6.ModflowGwfoc(gwf,saverecord=saverecord,head_filerecord=head_filerecord,budget_filerecord=budget_filerecord,printrecord=printrecord )
 
-        npf = flopy.mf6.ModflowGwfnpf(
-            gwf,
-            icelltype=0,
-            k=1.0,
-        )
+        npf = flopy.mf6.ModflowGwfnpf(gwf,icelltype=0,k=1.0)
 
         # # ### Write the datasets and run to make sure it works
         sim.write_simulation()
@@ -2862,6 +2815,7 @@ def xd_box_test():
         max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
 
         head_base = []
+        swr_head_base = []
         while current_time < end_time:
             dt = mf6api.get_time_step()
             mf6api.prepare_time_step(dt)
@@ -2877,6 +2831,7 @@ def xd_box_test():
             current_time = mf6api.get_current_time()
             dt1 = mf6api.get_time_step()
             head_base.append(mf6api.get_value_ptr(mf6api.get_var_address("X", "%s" % name)).copy())
+            swr_head_base.append(((mf6api.get_value_ptr(mf6api.get_var_address("X", "%s" % name)).copy() - top) * weight)**2)
             if not has_converged:
                 print("model did not converge")
                 break
@@ -2919,7 +2874,7 @@ def xd_box_test():
         k_arr = gwf.npf.k.array
         epsilon = {}
         head_pert = {}
-
+        swr_pert = {}
         count = 0
         for k,i,j in p_kijs:
             count += 1
@@ -2931,6 +2886,7 @@ def xd_box_test():
             
             if kij not in head_pert:
                 head_pert[kij] = []
+                swr_pert[kij] = []
             npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
                 icelltype=0,
@@ -2960,6 +2916,7 @@ def xd_box_test():
                 current_time = mf6api.get_current_time()
                 head = mf6api.get_value(mf6api.get_var_address("X", "%s" % name))
                 head_pert[(k,i,j)].append(head.copy())
+                swr_pert[(k,i,j)].append(((head.copy() - top) * weight)**2)
                 if not has_converged:
                     print("model did not converge")
                     break
@@ -2970,13 +2927,17 @@ def xd_box_test():
                 raise RuntimeError
 
         
-        pert_sens = {}
+        pert_direct_sens = {}
+        pert_swr_sens = {}
         for kij in p_kijs:
             
             delt = []
+            swr_delt = []
             for kper in range(len(tdis_pd)):
                 delt.append((head_pert[kij][kper] - head_base[kper])/epsilon[kij])
-            pert_sens[kij] = delt
+                swr_delt.append((swr_pert[kij][kper] - swr_head_base[kper]) / epsilon[kij])
+            pert_direct_sens[kij] = delt
+            pert_swr_sens[kij] = swr_delt
         
         if plot_pert_results:
             from matplotlib.backends.backend_pdf import PdfPages
@@ -2984,35 +2945,51 @@ def xd_box_test():
 
         for p_kij in p_kijs:
             pk,pi,pj = p_kij
-            sens = pert_sens[p_kij]
+            dsens = pert_direct_sens[p_kij]
+            swrsens = pert_swr_sens[p_kij]
             for kper in range(len(tdis_pd)):
                 head_plot = np.zeros((nlay,nrow,ncol))
                 for kij,h in zip(kijs,head_base[kper]):       
                     head_plot[kij] = h
                 head_plot = head_plot.reshape((nlay,nrow,ncol))
                 head_plot[id==0] = np.nan
-                sens_plot = np.zeros((nlay,nrow,ncol))
-                for kij,h in zip(kijs,sens[kper]):       
-                    sens_plot[kij] = h
-                sens_plot = sens_plot.reshape((nlay,nrow,ncol))
-                sens_plot[id==0] = np.nan
+                dsens_plot = np.zeros((nlay,nrow,ncol))
+                for kij,h in zip(kijs,dsens[kper]):
+                    dsens_plot[kij] = h
+                dsens_plot = dsens_plot.reshape((nlay,nrow,ncol))
+                dsens_plot[id==0] = np.nan
+
+                ssens_plot = np.zeros((nlay, nrow, ncol))
+                for kij, h in zip(kijs, swrsens[kper]):
+                    ssens_plot[kij] = h
+                ssens_plot = ssens_plot.reshape((nlay, nrow, ncol))
+                ssens_plot[id == 0] = np.nan
+
+
+
                 if plot_pert_results:
-                    fig,axes = plt.subplots(nlay,2,figsize=(10,nlay*5))
+                    fig,axes = plt.subplots(nlay,3,figsize=(15,nlay*5))
                     if nlay == 1:
                         axes = np.atleast_2d(axes).transpose()
                 for k in range(nlay):
                     if plot_pert_results:
                         cb = axes[0,k].imshow(head_plot[k,:,:])
                         plt.colorbar(cb,ax=axes[0,k])
-                        cb = axes[1,k].imshow(sens_plot[k,:,:])
+                        cb = axes[1,k].imshow(dsens_plot[k,:,:])
                         plt.colorbar(cb,ax=axes[1,k])
+                        cb = axes[2, k].imshow(ssens_plot[k, :, :])
+                        plt.colorbar(cb, ax=axes[2, k])
                         axes[0,k].set_title("heads k:{0},kper:{1}".format(k,kper),loc="left")
-                        axes[1,k].set_title("sens kij:{2} k:{0},kper:{1}".format(k,kper,p_kij),loc="left")
-                    np.savetxt("pert_sens_pk{0}_pi{1}_pk{2}_k{3}.dat".format(pk,pi,pj,k),sens_plot[k,:,:],fmt="%15.6E")
+                        axes[1,k].set_title("dsens kij:{2} k:{0},kper:{1}".format(k,kper,p_kij),loc="left")
+                        axes[2, k].set_title("swrsens kij:{2} k:{0},kper:{1}".format(k, kper, p_kij), loc="left")
+                    np.savetxt("pert_dsens_pk{0}_pi{1}_pk{2}_k{3}.dat".format(pk,pi,pj,k),dsens_plot[k,:,:],fmt="%15.6E")
+                    np.savetxt("pert_swrsens_pk{0}_pi{1}_pk{2}_k{3}.dat".format(pk, pi, pj, k), ssens_plot[k, :, :],
+                               fmt="%15.6E")
                 if plot_pert_results:
                     plt.tight_layout()
                     pdf.savefig()
                     plt.close(fig)
+
         # reset to org karr
         npf = flopy.mf6.ModflowGwfnpf(
                 gwf,
@@ -3042,20 +3019,22 @@ def xd_box_test():
                 k,i,j = p_kij
                 if id[k,i,j] <= 0:
                     continue
+                if p_kij != (0,0,2):
+                    continue
                 pm_name = "direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
                 f.write("begin performance_measure {0} type direct\n".format(pm_name))
-                f.write("{0} 1 {1} {2} {3} 1.0 \n".format(kper+1,k+1,i+1,j+1))
+                f.write("{0} 1 {1} {2} {3} {4} \n".format(kper+1,k+1,i+1,j+1,weight))
                 f.write("end performance_measure\n\n")
 
 
                 pm_name = "phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
                 f.write("begin performance_measure {0} type residual\n".format(pm_name))
                 # just use top as the obs val....
-                f.write("{0} 1 {1} {2} {3} 1.0 {4}\n".format(kper+1,k+1,i+1,j+1,top)) 
+                f.write("{0} 1 {1} {2} {3} {4} {4}\n".format(kper+1,k+1,i+1,j+1,top,weight))
                 f.write("end performance_measure\n\n")
     
 
-    adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=2)
+    adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=1)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -3081,12 +3060,12 @@ def xd_box_test():
 
 
 if __name__ == "__main__":
-    #xd_box_test()
+    xd_box_test()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()
     #_skip_for_now_freyberg()
-    test_freyberg_mh()
+    #test_freyberg_mh()
 
     #test_3d_freyberg()
     #test_freyberg_unstruct()

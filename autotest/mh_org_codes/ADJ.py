@@ -383,11 +383,11 @@ def lam_dAdk_h(lam, dAdk, h):
         for j in list(range(IAC[k]))[1:]:
             # (kk, jj, ii) = gwf.modelgrid.get_lrc(JA_p[IA_p[k] + j])[0]
             # (kk, jj, ii) = getlrc()[JA_p[IA_p[k] + j]]
-            (kk, jj, ii) = list_lrc[JA_p[IA_p[k] + j]]
-            if (kk, jj, ii) in list_ch:
-                sum2 += 0.0
-            else:
-                sum2 += lam[JA_p[IA_p[k] + j]] * dAdk[IA_p[k] + j] * (h[k] - h[JA_p[IA_p[k] + j]])
+            #(kk, jj, ii) = list_lrc[JA_p[IA_p[k] + j]]
+            #if (kk, jj, ii) in list_ch:
+            #    sum2 += 0.0
+            #else:
+            sum2 += lam[JA_p[IA_p[k] + j]] * dAdk[IA_p[k] + j] * (h[k] - h[JA_p[IA_p[k] + j]])
         sum = sum1 + sum2
         my_list.append(sum)
     return my_list
@@ -398,11 +398,11 @@ def lam_dAdss_h(lam, hh, delt):
     for nn in range(len(lam)):
         # (k, j, i) = gwf.modelgrid.get_lrc(nn)[0]
         # (k, j, i) = getlrc()[nn]
-        (k, j, i) = list_lrc[nn]
-        if (k, j, i) in list_ch:
-            mylist.append(0.0)
-        else:
-            mylist.append(- lam[nn] * hh[nn] * CELLAREA[nn] * (CELLTOP[nn] - CELLBOT[nn]) / delt)
+        #(k, j, i) = list_lrc[nn]
+        #if (k, j, i) in list_ch:
+        #    mylist.append(0.0)
+        #else:
+        mylist.append(- lam[nn] * hh[nn] * CELLAREA[nn] * (CELLTOP[nn] - CELLBOT[nn]) / delt)
     return mylist
 
 def drhsdss(lam, hh, delt):
@@ -410,11 +410,11 @@ def drhsdss(lam, hh, delt):
     for nn in range(len(lam)):
         # (k, j, i) = gwf.modelgrid.get_lrc(nn)[0]
         # (k, j, i) = getlrc()[nn]
-        (k, j, i) = list_lrc[nn]
-        if (k, j, i) in list_ch:
-            mylist.append(0.0)
-        else:
-            mylist.append(- lam[nn] * CELLAREA[nn] * (CELLTOP[nn] - CELLBOT[nn]) * hh[nn] / delt)
+        #(k, j, i) = list_lrc[nn]
+        #if (k, j, i) in list_ch:
+        #    mylist.append(0.0)
+        #else:
+        mylist.append(- lam[nn] * CELLAREA[nn] * (CELLTOP[nn] - CELLBOT[nn]) * hh[nn] / delt)
     return mylist
 
 def sens_ss_indirect(lam, hh, hhold, delt):

@@ -86,7 +86,11 @@ class PerfMeas(object):
 				continue
 	  
 			amat = amat_dict[kk]
-			amat_sp = sparse.csr_matrix((amat,ja.copy(),ia.copy()),shape=(len(ia)-1,len(ia)-1))
+			#for ii in range(ia.shape[0]-1):
+			#	print(ii,ii+1,ia[ii],ia[ii+1],ja[ia[ii]:ia[ii+1]],amat[ja[ia[ii]:ia[ii+1]]])
+			#	print()
+			amat_sp = sparse.csr_matrix((amat.copy(),ja.copy(),ia.copy()),shape=(len(ia)-1,len(ia)-1))
+			#amat_sp.eliminate_zeros()
 			amat_sp_t = amat_sp.transpose()			
 			lamb = spsolve(amat_sp_t,rhs)
 			if np.any(np.isnan(lamb)):
@@ -211,7 +215,7 @@ class PerfMeas(object):
 		chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
 		for name in chds:
 			chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
-			chd_list.append(chd)
+			chd_list = set(list(chd))
 			is_chd = True
 
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
@@ -260,7 +264,7 @@ class PerfMeas(object):
 			
 			if ib[node]==0:	
 				pass
-			if is_chd and node in chd_list[0]:
+			if is_chd and node in chd_list:
 				pass
 			else:
 				sum1 = 0.
@@ -367,14 +371,14 @@ class PerfMeas(object):
 		iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
 		ib = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf).reshape(-1)
 
-		is_chd = False
-		chd_list = []
-		names = list(gwf.get_input_var_names())
-		chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
-		for name in chds:
-			chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
-			chd_list.append(chd)
-			is_chd = True
+		# is_chd = False
+		# chd_list = []
+		# names = list(gwf.get_input_var_names())
+		# chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
+		# for name in chds:
+		# 	chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
+		# 	chd_list.append(chd)
+		# 	is_chd = True
 
 		
 		result = np.zeros_like(lamb)
@@ -382,10 +386,10 @@ class PerfMeas(object):
 			sum1 = 0.0
 			sum2 = 0.0
 			for ii in range(iac[i]):
-			    sum1 += dAdk[ia[i] + ii] * head[ja[ia[i] + ii]]        
+				sum1 += dAdk[ia[i] + ii] * head[ja[ia[i] + ii]]
 			sum1 *= lamb[i]
 			for ii in list(range(iac[i]))[1:]:
-				#if is_chd and ja[ii] in chd_list[0]:
+				#if is_chd and ja[ia[i]+ii] in chd_list[0]:
 				#	pass
 				#elif ib[ja[ia[i]+ii]] == 0:
 				#		pass
