@@ -2690,22 +2690,22 @@ def xd_box_test():
     clean = True # run the pertbuation process
     plot_pert_results = True #plot the pertubation results
     plot_adj_results = True # plot adj result
-    include_id0 = True
+    include_id0 = False #include an idomain = cell
 
     name = "freyberg6" #use this name so the org MH codes will work
-    pert_mult = 1.1
+    pert_mult = 1.001
     sp_len = 1.0
     tdis_pd = [(sp_len,1,1.0)]
     weight = 1.0
-    h = 1.0
-    k = 1.0
+    hk = 1.0
+    k33 = 1.0
     q = -3.0
     nlay = 1
-    nrow = 10
-    ncol = 10
+    nrow = 30
+    ncol = 30
     delrow = delcol = 1
-    top = nlay
-    botm = np.linspace(0,-nlay,nlay)  # botm
+    top = 1
+    botm = np.linspace(0,-nlay+1,nlay)  # botm
     p_kijs = []
     for k in range(nlay):
         for i in range(nrow):
@@ -2761,9 +2761,7 @@ def xd_box_test():
 
         # ### Create the storage (`STO`) Package
         #if len(tdis_pd) > 1:
-        sto = flopy.mf6.ModflowGwfsto(
-            gwf
-        )
+        #sto = flopy.mf6.ModflowGwfsto(gwf,iconvert=0)
 
         if ncol > 1 and nrow > 1:
             chd_rec = []
@@ -2771,13 +2769,7 @@ def xd_box_test():
                 for i in range(nrow):
                     chd_rec.append(((k, i, 0), top))
 
-            chd = flopy.mf6.ModflowGwfchd(
-                gwf,
-                stress_period_data=chd_rec,
-            )
-
-            iper = 0
-            ra = chd.stress_period_data.get_data(key=iper)
+            chd = flopy.mf6.ModflowGwfchd(gwf, stress_period_data=chd_rec)
 
         ghb_rec = []
         for k in range(nlay):
@@ -2800,7 +2792,7 @@ def xd_box_test():
         printrecord = [("HEAD", "ALL")]
         oc = flopy.mf6.ModflowGwfoc(gwf,saverecord=saverecord,head_filerecord=head_filerecord,budget_filerecord=budget_filerecord,printrecord=printrecord )
 
-        npf = flopy.mf6.ModflowGwfnpf(gwf,icelltype=0,k=1.0)
+        npf = flopy.mf6.ModflowGwfnpf(gwf,icelltype=0,k=hk,k33=k33)
 
         # # ### Write the datasets and run to make sure it works
         sim.write_simulation()
@@ -2945,6 +2937,8 @@ def xd_box_test():
 
         for p_kij in p_kijs:
             pk,pi,pj = p_kij
+            if p_kij != (0,0,2):
+                continue
             dsens = pert_direct_sens[p_kij]
             swrsens = pert_swr_sens[p_kij]
             for kper in range(len(tdis_pd)):
