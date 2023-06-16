@@ -18,12 +18,19 @@ import flopy.utils.cvfdutil
 if "linux" in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "linux", "libmf6.so")
     mf6_bin = os.path.join("..", "bin", "linux", "mf6")
+    local_lib_name = "libmf6.so"
+    local_mf6_bin = "mf6"
 elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "mac", "libmf6.dylib")
     mf6_bin = os.path.join("..", "bin", "mac", "mf6")
+    local_lib_name = "libmf6.dylib"
+    local_mf6_bin = "mf6"
 else:
     lib_name = os.path.join("..", "bin", "win", "libmf6.dll")
     mf6_bin = os.path.join("..", "bin", "win", "mf6.exe")
+    local_lib_name = "libmf6.dll"
+    local_mf6_bin = "mf6.exe"
+
 
 #some plotting functions
 def plot_colorbar_sensitivity(x, y, Sper,Sadj, contour_intervals, fname, nodenumber = None, rowcol = None):
@@ -128,15 +135,7 @@ def twod_ss_nested_hetero_head_at_point():
     shutil.copytree(os.path.join('..', 'mf6adj'), os.path.join(new_d, 'mf6adj'))
     shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
     shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
-    if "linux" in platform.platform().lower():
-        local_lib_name =  "libmf6.so"
-        local_mf6_bin =  "mf6"
-    elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
-        local_lib_name = "libmf6.dylib"
-        local_mf6_bin = "mf6"
-    else:
-        local_lib_name =  "libmf6.dll"
-        local_mf6_bin = "mf6.exe"
+
 
     shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
     shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
@@ -759,15 +758,7 @@ def twod_ss_hetero_coarsegrid_test():
     shutil.copytree(os.path.join('..', 'mf6adj'), os.path.join(new_d,'mf6adj'))
     shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
     shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
-    if "linux" in platform.platform().lower():
-        local_lib_name = "libmf6.so"
-        local_mf6_bin =  "mf6"
-    elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
-        local_lib_name = "libmf6.dylib"
-        local_mf6_bin = "mf6"
-    else:
-        local_lib_name =  "libmf6.dll"
-        local_mf6_bin = "mf6.exe"
+
     shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
     shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
     shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
@@ -2674,226 +2665,206 @@ def plot_freyberg_verbose_structured_output(test_d):
                 print(ppm_file)
 
 
-def xd_box_test():
-
-    if "linux" in platform.platform().lower():
-            local_lib_name =  "libmf6.so"
-            local_mf6_bin =  "mf6"
-    elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
-        local_lib_name = "libmf6.dylib"
-        local_mf6_bin = "mf6"
-    else:
-        local_lib_name =  "libmf6.dll"
-        local_mf6_bin = "mf6.exe"
-
-    # workflow flags
-    clean = True # run the pertbuation process
-    plot_pert_results = True #plot the pertubation results
-    plot_adj_results = True # plot adj result
-    include_id0 = False #include an idomain = cell
-
-    name = "freyberg6" #use this name so the org MH codes will work
-    pert_mult = 1.001
-    sp_len = 1.0
-    tdis_pd = [(sp_len,1,1.0)]
-    weight = 1.0
-    hk = 1.0
-    k33 = 1.0
-    q = -3.0
-    nlay = 1
-    nrow = 30
-    ncol = 30
-    delrow = delcol = 1
-    top = 1
-    botm = np.linspace(0,-nlay+1,nlay)  # botm
-    p_kijs = []
-    for k in range(nlay):
-        for i in range(nrow):
-            for j in range(ncol):
-                p_kijs.append((k,i,j))
-    new_d = 'xd_box_test'
-
-    if clean:
-       
-        if os.path.exists(new_d):
-            shutil.rmtree(new_d)
-        os.mkdir(new_d)
-        shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
-        shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
-        
-        shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
-        shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
-        shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
-        shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
-        
-        org_mh_dir = "mh_org_codes"
-        for f in os.listdir(org_mh_dir):
-            shutil.copy2(os.path.join(org_mh_dir,f),os.path.join(new_d,f))
-
-        org_aux_dir = "xd_box_test_aux_files"
-        for f in os.listdir(org_aux_dir):
-            shutil.copy2(os.path.join(org_aux_dir, f), os.path.join(new_d, f))
+def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-3.0,
+                     nlay=1,nrow=10,ncol=10,delrowcol=1,
+                     top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6"):
 
 
-        # todo: wrap this bit in try-catch in case in fails during testing
-        os.chdir(new_d)
-        sys.path.append(os.path.join("..",".."))
-        import mf6adj  
-        
 
-        sim = flopy.mf6.MFSimulation(sim_name=name,exe_name=local_mf6_bin,version="mf6",sim_ws=".", memory_print_option="ALL")
+    tdis_pd = [(sp_len, 1, 1.0) for _ in range(nper)]
+    if botm is None:
+        botm = np.linspace(0, -nlay + 1, nlay)
+    if os.path.exists(new_d):
+        shutil.rmtree(new_d)
+    os.mkdir(new_d)
+    shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
+    shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
 
-        tdis = flopy.mf6.ModflowTdis(sim,pname="tdis",time_units="DAYS",nper=len(tdis_pd),perioddata=tdis_pd)
+    shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+    shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+    shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+    shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
 
-        ims = flopy.mf6.ModflowIms(sim,pname="ims",complexity="SIMPLE",linear_acceleration="BICGSTAB",inner_dvclose=1e-10,outer_dvclose=1e-10,outer_maximum=1000,inner_maximum=1000)
+    org_mh_dir = "mh_org_codes"
+    for f in os.listdir(org_mh_dir):
+        shutil.copy2(os.path.join(org_mh_dir, f), os.path.join(new_d, f))
 
-        model_nam_file = f"{name}.nam"
-        gwf = flopy.mf6.ModflowGwf(sim,modelname=name,model_nam_file=model_nam_file,save_flows=True)
+    org_aux_dir = "xd_box_test_aux_files"
+    for f in os.listdir(org_aux_dir):
+        shutil.copy2(os.path.join(org_aux_dir, f), os.path.join(new_d, f))
 
-        idm = np.ones((nlay, nrow, ncol))
-        if ncol > 1 and nrow > 1 and include_id0:
-            idm[0,0,1] = 0 # just to have one in active cell...
-        dis = flopy.mf6.ModflowGwfdis(gwf,nlay=nlay,nrow=nrow,ncol=ncol,delr=delrow,delc=delcol,top=top,botm=botm,idomain=idm)
 
-        # ### Create the initial conditions (`IC`) Package
-        start = top * np.ones((nlay, nrow, ncol))
-        ic = flopy.mf6.ModflowGwfic(gwf, pname="ic", strt=start)
 
-        # ### Create the storage (`STO`) Package
-        #if len(tdis_pd) > 1:
-        #sto = flopy.mf6.ModflowGwfsto(gwf,iconvert=0)
+    sim = flopy.mf6.MFSimulation(sim_name=name, exe_name=local_mf6_bin, version="mf6", sim_ws=new_d,
+                                 memory_print_option="ALL")
 
-        if ncol > 1 and nrow > 1:
-            chd_rec = []
-            for k in range(nlay):
-                for i in range(nrow):
-                    chd_rec.append(((k, i, 0), top))
+    tdis = flopy.mf6.ModflowTdis(sim, pname="tdis", time_units="DAYS", nper=len(tdis_pd), perioddata=tdis_pd)
 
-            chd = flopy.mf6.ModflowGwfchd(gwf, stress_period_data=chd_rec)
+    ims = flopy.mf6.ModflowIms(sim, pname="ims", complexity="SIMPLE", linear_acceleration="BICGSTAB",
+                               inner_dvclose=1e-10, outer_dvclose=1e-10, outer_maximum=1000, inner_maximum=1000)
 
-        ghb_rec = []
+    model_nam_file = f"{name}.nam"
+    gwf = flopy.mf6.ModflowGwf(sim, modelname=name, model_nam_file=model_nam_file, save_flows=True)
+
+    idm = np.ones((nlay, nrow, ncol))
+    if ncol > 1 and nrow > 1 and include_id0:
+        idm[0, 0, 1] = 0  # just to have one in active cell...
+    dis = flopy.mf6.ModflowGwfdis(gwf, nlay=nlay, nrow=nrow, ncol=ncol, delr=delrowcol, delc=delrowcol, top=top, botm=botm,
+                                  idomain=idm)
+    id = dis.idomain.array.copy()
+    # ### Create the initial conditions (`IC`) Package
+    start = top * np.ones((nlay, nrow, ncol))
+    ic = flopy.mf6.ModflowGwfic(gwf, pname="ic", strt=start)
+
+    # ### Create the storage (`STO`) Package
+    if include_sto:
+        sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=0, steady_state=True)
+
+    if ncol > 1 and nrow > 1:
+        chd_rec = []
         for k in range(nlay):
             for i in range(nrow):
-                ghb_rec.append(((k, i, ncol - 1), top+1,10000.0))
-        
-        ghb = flopy.mf6.ModflowGwfghb(gwf,stress_period_data=ghb_rec)
+                chd_rec.append(((k, i, 0), top))
 
-        if nrow > 1 and ncol > 1:
-            wel_rec = [(nlay-1, int(nrow / 2), int(ncol / 2), q)]
-            wel = flopy.mf6.ModflowGwfwel(gwf,stress_period_data=wel_rec)
+        chd = flopy.mf6.ModflowGwfchd(gwf, stress_period_data=chd_rec)
 
-            flopy.mf6.ModflowGwfrcha(gwf,recharge=0.0001)
+    ghb_rec = []
+    for k in range(nlay):
+        for i in range(nrow):
+            ghb_rec.append(((k, i, ncol - 1), top + 1, 10000.0))
 
-        headfile = f"{name}.hds"
-        head_filerecord = [headfile]
-        budgetfile = f"{name}.cbb"
-        budget_filerecord = [budgetfile]
-        saverecord = [("HEAD", "ALL"), ("BUDGET", "ALL")]
-        printrecord = [("HEAD", "ALL")]
-        oc = flopy.mf6.ModflowGwfoc(gwf,saverecord=saverecord,head_filerecord=head_filerecord,budget_filerecord=budget_filerecord,printrecord=printrecord )
+    ghb = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_rec)
 
-        npf = flopy.mf6.ModflowGwfnpf(gwf,icelltype=0,k=hk,k33=k33)
+    if nrow > 1 and ncol > 1:
+        wel_rec = [(nlay - 1, int(nrow / 2), int(ncol / 2), q)]
+        wel = flopy.mf6.ModflowGwfwel(gwf, stress_period_data=wel_rec)
 
-        # # ### Write the datasets and run to make sure it works
-        sim.write_simulation()
-        sim.run_simulation()
+        flopy.mf6.ModflowGwfrcha(gwf, recharge=0.0001)
 
-        # now run with API
-        print('test run to completion with API')
-        mf6api = modflowapi.ModflowApi(local_lib_name)
-        mf6api.initialize()
-        current_time = mf6api.get_current_time()
-        end_time = mf6api.get_end_time()
-        max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
+    headfile = f"{name}.hds"
+    head_filerecord = [headfile]
+    budgetfile = f"{name}.cbb"
+    budget_filerecord = [budgetfile]
+    saverecord = [("HEAD", "ALL"), ("BUDGET", "ALL")]
+    printrecord = [("HEAD", "ALL")]
+    oc = flopy.mf6.ModflowGwfoc(gwf, saverecord=saverecord, head_filerecord=head_filerecord,
+                                budget_filerecord=budget_filerecord, printrecord=printrecord)
 
-        head_base = []
-        swr_head_base = []
-        while current_time < end_time:
-            dt = mf6api.get_time_step()
-            mf6api.prepare_time_step(dt)
-            kiter = 0
-            mf6api.prepare_solve(1)
-            while kiter < max_iter:
-                has_converged = mf6api.solve(1)
-                kiter += 1
-                if has_converged:
-                    break
-            mf6api.finalize_solve(1)
-            mf6api.finalize_time_step()
-            current_time = mf6api.get_current_time()
-            dt1 = mf6api.get_time_step()
-            head_base.append(mf6api.get_value_ptr(mf6api.get_var_address("X", "%s" % name)).copy())
-            swr_head_base.append(((mf6api.get_value_ptr(mf6api.get_var_address("X", "%s" % name)).copy() - top) * weight)**2)
-            if not has_converged:
-                print("model did not converge")
+    npf = flopy.mf6.ModflowGwfnpf(gwf, icelltype=0, k=hk, k33=k33)
+
+    # # ### Write the datasets and run to make sure it works
+    sim.write_simulation()
+    sim.run_simulation()
+    return sim
+
+
+def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.001,
+                    name = "freyberg6",obsval=1.0):
+    import modflowapi
+    # # now run with API
+    bd = os.getcwd()
+    os.chdir(new_d)
+    sys.path.append(os.path.join("..", ".."))
+    import mf6adj
+
+    print('test run to completion with API')
+    mf6api = modflowapi.ModflowApi(local_lib_name)
+    mf6api.initialize()
+    current_time = mf6api.get_current_time()
+    end_time = mf6api.get_end_time()
+    max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
+
+    sim = flopy.mf6.MFSimulation.load(sim_ws=".")
+    gwf = sim.get_model()
+    nlay, nrow, ncol = gwf.dis.nlay.data, gwf.dis.nrow.data, gwf.dis.ncol.data
+    include_sto = True
+    if gwf.sto is None:
+        include_sto = False
+    head_base = []
+    swr_head_base = []
+    while current_time < end_time:
+        dt = mf6api.get_time_step()
+        mf6api.prepare_time_step(dt)
+        kiter = 0
+        mf6api.prepare_solve(1)
+        while kiter < max_iter:
+            has_converged = mf6api.solve(1)
+            kiter += 1
+            if has_converged:
                 break
-        
-        addr = ["NODEUSER", "FREYBERG6", "DIS"]
-        wbaddr = mf6api.get_var_address(*addr)
-        nuser = mf6api.get_value(wbaddr).copy() - 1
-        if nuser.shape[0] == 1:
-            #addr = ["NODES", "FREYBERG6", "DIS"]
-            #wbaddr = mf6api.get_var_address(*addr)
-            #nuser = mf6api.get_value(wbaddr).copy() - 1
-            nuser = np.arange(nlay*nrow*ncol,dtype=int)
+        mf6api.finalize_solve(1)
+        mf6api.finalize_time_step()
+        current_time = mf6api.get_current_time()
+        dt1 = mf6api.get_time_step()
+        head_base.append(mf6api.get_value_ptr(mf6api.get_var_address("X", "%s" % name)).copy())
+        swr_head_base.append(
+            ((mf6api.get_value_ptr(mf6api.get_var_address("X", "%s" % name)).copy() - obsval) * weight) ** 2)
+        if not has_converged:
+            print("model did not converge")
+            break
 
-        kijs = gwf.modelgrid.get_lrc(list(nuser))
-        try:
-            mf6api.finalize()
-            success = True
-        except:
-            raise RuntimeError()
-        
-        id = gwf.dis.idomain.array
-        # for kper in range(len(tdis_pd)):
-        #     fig,axes = plt.subplots(nlay,1,figsize=(5,nlay*5))
-        #     if (nlay == 1):
-        #         axes = [axes]
-        #     head_plot = np.zeros((nlay,nrow,ncol))
-        #     for kij,h in zip(kijs,head_base[kper]):
-                
-        #         head_plot[kij] = h
-            
-        #     head_plot = head_plot.reshape((nlay,nrow,ncol))
-        #     head_plot[id==0] = np.nan
-        #     for k,ax in enumerate(axes):
-        #         cb = ax.imshow(head_plot[k,:,:])
-        #         plt.colorbar(cb,ax=ax)
-        #         ax.set_title("k:{0}, kper:{1}".format(k,kper),loc="left")
-        #     plt.tight_layout()
-        #     plt.show()
-        #     exit()
-        k_arr = gwf.npf.k.array
+    np.savetxt("dbase_ss.dat", head_base[0], fmt="%15.6E")
+    np.savetxt("swrbase_ss.dat", swr_head_base[0], fmt="%15.6E")
+
+    addr = ["NODEUSER", "FREYBERG6", "DIS"]
+    wbaddr = mf6api.get_var_address(*addr)
+    nuser = mf6api.get_value(wbaddr).copy() - 1
+    if nuser.shape[0] == 1:
+        nuser = np.arange(nlay * nrow * ncol, dtype=int)
+
+    kijs = gwf.modelgrid.get_lrc(list(nuser))
+    try:
+        mf6api.finalize()
+        success = True
+    except:
+        raise RuntimeError()
+
+    props = [gwf.npf.k.array.copy()]
+    flopy_objects = [gwf.npf]
+    flopy_prop_names = ["k"]
+    tags = ["hk"]
+
+    if nlay > 1:
+        props.append(gwf.npf.k33.array.copy())
+        flopy_objects.append(gwf.npf)
+        flopy_prop_names.append("k33")
+        tags.append("k33")
+
+    if include_sto:
+        props.append(gwf.sto.ss.array.copy())
+        flopy_objects.append(gwf.npf)
+        flopy_prop_names.append("ss")
+        tags.append("ss")
+
+    for prop, fobj, fname, tag in zip(props, flopy_objects, flopy_prop_names, tags):
+
+        arr = prop.copy()
         epsilon = {}
         head_pert = {}
         swr_pert = {}
         count = 0
-        for k,i,j in p_kijs:
+        for k, i, j in p_kijs:
             count += 1
-            kk_arr = k_arr.copy()
-            kij = (k,i,j)
-            dk = kk_arr[k,i,j] * pert_mult
-            epsilon[kij] = dk - kk_arr[k,i,j]
-            kk_arr[k,i,j] = dk
-            
+            kk_arr = arr.copy()
+            kij = (k, i, j)
+            dk = kk_arr[k, i, j] * pert_mult
+            epsilon[kij] = dk - kk_arr[k, i, j]
+            kk_arr[k, i, j] = dk
+
             if kij not in head_pert:
                 head_pert[kij] = []
                 swr_pert[kij] = []
-            npf = flopy.mf6.ModflowGwfnpf(
-                gwf,
-                icelltype=0,
-                k=kk_arr,
-            )
+            fobj.__setattr__(fname, kk_arr)
             sim.write_simulation()
-            sim.run_simulation()
+            # sim.run_simulation()
             mf6api = modflowapi.ModflowApi(local_lib_name)
             mf6api.initialize()
             current_time = mf6api.get_current_time()
             end_time = mf6api.get_end_time()
             max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
-            
+
             while current_time < end_time:
-                
+
                 dt = mf6api.get_time_step()
                 mf6api.prepare_time_step(dt)
                 kiter = 0
@@ -2907,8 +2878,12 @@ def xd_box_test():
                 mf6api.finalize_time_step()
                 current_time = mf6api.get_current_time()
                 head = mf6api.get_value(mf6api.get_var_address("X", "%s" % name))
-                head_pert[(k,i,j)].append(head.copy())
-                swr_pert[(k,i,j)].append(((head.copy() - top) * weight)**2)
+                head_pert[(k, i, j)].append(head.copy())
+                swr_pert[(k, i, j)].append(((head.copy() - obsval) * weight) ** 2)
+                if tag == "ss":
+                    np.savetxt("dpert_ss_k{0}_i{1}_j{2}.dat".format(k, i, j), head_pert[(k, i, j)][0], fmt="%15.6E")
+                    np.savetxt("swrpert_ss_k{0}_i{1}_j{2}.dat".format(k, i, j), swr_pert[(k, i, j)][0], fmt="%15.6E")
+
                 if not has_converged:
                     print("model did not converge")
                     break
@@ -2918,40 +2893,39 @@ def xd_box_test():
             except:
                 raise RuntimeError
 
-        
         pert_direct_sens = {}
         pert_swr_sens = {}
         for kij in p_kijs:
-            
+
             delt = []
             swr_delt = []
-            for kper in range(len(tdis_pd)):
-                delt.append((head_pert[kij][kper] - head_base[kper])/epsilon[kij])
+            for kper in range(sim.tdis.nper.data):
+                delt.append((head_pert[kij][kper] - head_base[kper]) / epsilon[kij])
                 swr_delt.append((swr_pert[kij][kper] - swr_head_base[kper]) / epsilon[kij])
             pert_direct_sens[kij] = delt
             pert_swr_sens[kij] = swr_delt
-        
+
         if plot_pert_results:
             from matplotlib.backends.backend_pdf import PdfPages
-            pdf = PdfPages("pert_sens.pdf")
+            pdf = PdfPages("pert_sens_{0}.pdf".format(tag))
 
         for p_kij in p_kijs:
-            pk,pi,pj = p_kij
-            if p_kij != (0,0,2):
+            pk, pi, pj = p_kij
+            if p_kij != (0, 0, 2):
                 continue
             dsens = pert_direct_sens[p_kij]
             swrsens = pert_swr_sens[p_kij]
-            for kper in range(len(tdis_pd)):
-                head_plot = np.zeros((nlay,nrow,ncol))
-                for kij,h in zip(kijs,head_base[kper]):       
-                    head_plot[kij] = h
-                head_plot = head_plot.reshape((nlay,nrow,ncol))
-                head_plot[id==0] = np.nan
-                dsens_plot = np.zeros((nlay,nrow,ncol))
-                for kij,h in zip(kijs,dsens[kper]):
+            for kper in range(sim.tdis.nper.data):
+                head_plot = np.zeros((nlay, nrow, ncol))
+                for kij, h, p in zip(kijs, head_base[kper], head_pert[p_kij][kper]):
+                    head_plot[kij] = p - h
+                head_plot = head_plot.reshape((nlay, nrow, ncol))
+                head_plot[id == 0] = np.nan
+                dsens_plot = np.zeros((nlay, nrow, ncol))
+                for kij, h in zip(kijs, dsens[kper]):
                     dsens_plot[kij] = h
-                dsens_plot = dsens_plot.reshape((nlay,nrow,ncol))
-                dsens_plot[id==0] = np.nan
+                dsens_plot = dsens_plot.reshape((nlay, nrow, ncol))
+                dsens_plot[id == 0] = np.nan
 
                 ssens_plot = np.zeros((nlay, nrow, ncol))
                 for kij, h in zip(kijs, swrsens[kper]):
@@ -2959,60 +2933,89 @@ def xd_box_test():
                 ssens_plot = ssens_plot.reshape((nlay, nrow, ncol))
                 ssens_plot[id == 0] = np.nan
 
-
-
                 if plot_pert_results:
-                    fig,axes = plt.subplots(nlay,3,figsize=(15,nlay*5))
+                    fig, axes = plt.subplots(nlay, 3, figsize=(15, nlay * 5))
                     if nlay == 1:
                         axes = np.atleast_2d(axes).transpose()
                 for k in range(nlay):
                     if plot_pert_results:
-                        cb = axes[0,k].imshow(head_plot[k,:,:])
-                        plt.colorbar(cb,ax=axes[0,k])
-                        cb = axes[1,k].imshow(dsens_plot[k,:,:])
-                        plt.colorbar(cb,ax=axes[1,k])
+                        cb = axes[0, k].imshow(head_plot[k, :, :])
+                        plt.colorbar(cb, ax=axes[0, k])
+                        cb = axes[1, k].imshow(dsens_plot[k, :, :])
+                        plt.colorbar(cb, ax=axes[1, k])
                         cb = axes[2, k].imshow(ssens_plot[k, :, :])
                         plt.colorbar(cb, ax=axes[2, k])
-                        axes[0,k].set_title("heads k:{0},kper:{1}".format(k,kper),loc="left")
-                        axes[1,k].set_title("dsens kij:{2} k:{0},kper:{1}".format(k,kper,p_kij),loc="left")
+                        axes[0, k].set_title("heads k:{0},kper:{1}".format(k, kper), loc="left")
+                        axes[1, k].set_title("dsens kij:{2} k:{0},kper:{1}".format(k, kper, p_kij), loc="left")
                         axes[2, k].set_title("swrsens kij:{2} k:{0},kper:{1}".format(k, kper, p_kij), loc="left")
-                    np.savetxt("pert_dsens_pk{0}_pi{1}_pk{2}_k{3}.dat".format(pk,pi,pj,k),dsens_plot[k,:,:],fmt="%15.6E")
-                    np.savetxt("pert_swrsens_pk{0}_pi{1}_pk{2}_k{3}.dat".format(pk, pi, pj, k), ssens_plot[k, :, :],
-                               fmt="%15.6E")
+                    #np.savetxt("pert_dsens_pk{0}_pi{1}_pk{2}_k{3}_tag{4}.dat".format(pk, pi, pj, k, tag),
+                    #           dsens_plot[k, :, :], fmt="%15.6E")
+                    #np.savetxt("pert_swrsens_pk{0}_pi{1}_pk{2}_k{3}_tag{4}.dat".format(pk, pi, pj, k, tag),
+                    #           ssens_plot[k, :, :],
+                    #           fmt="%15.6E")
                 if plot_pert_results:
                     plt.tight_layout()
                     pdf.savefig()
                     plt.close(fig)
 
-        # reset to org karr
-        npf = flopy.mf6.ModflowGwfnpf(
-                gwf,
-                icelltype=0,
-                k=kk_arr,
-            )
+
+        fobj.__setattr__(fname, arr)
         sim.write_simulation()
-        sim.run_simulation()
+        #sim.run_simulation()
         if plot_pert_results:
             pdf.close()
+    os.chdir(bd)
 
+
+def xd_box_1_test():
+
+    # workflow flags
+    clean = True # run the pertbuation process
+    run_pert = True # the pertubations
+    plot_pert_results = True #plot the pertubation results
+    plot_adj_results = True # plot adj result
+    include_id0 = True #include an idomain = cell
+    include_sto = True
+
+    new_d = 'xd_box_1_test'
+
+
+    if clean:
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=20,ncol=20)
     else:
-        os.chdir(new_d)
-        sys.path.append(os.path.join("..",".."))
-        import mf6adj  
-        sim = flopy.mf6.MFSimulation.load()
-        gwf = sim.get_model()
-        id = gwf.dis.idomain.array
+        sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
+    gwf = sim.get_model()
+    id = gwf.dis.idomain.array
+    nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
+    obsval = 1.0
+
+    pert_mult = 1.001
+    weight = 1.0
+    p_kijs = []
+    for k in range(nlay):
+        for i in range(nrow):
+            for j in range(ncol):
+                p_kijs.append((k, i, j))
+
+    if run_pert:
+        run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval)
+
+    bd = os.getcwd()
+    os.chdir(new_d)
+    sys.path.append(os.path.join("..",".."))
+    import mf6adj
 
     
     print('calculating mf6adj sensitivity')
     with open("test.adj",'w') as f:
         f.write("\nbegin options\n\nend options\n\n")
-        for kper in range(len(tdis_pd)):
+        for kper in range(sim.tdis.nper.data):
             for p_kij in p_kijs:
                 k,i,j = p_kij
                 if id[k,i,j] <= 0:
                     continue
+                # just looking at one pm location for now...
                 if p_kij != (0,0,2):
                     continue
                 pm_name = "direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
@@ -3024,7 +3027,7 @@ def xd_box_test():
                 pm_name = "phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
                 f.write("begin performance_measure {0} type residual\n".format(pm_name))
                 # just use top as the obs val....
-                f.write("{0} 1 {1} {2} {3} {4} {4}\n".format(kper+1,k+1,i+1,j+1,top,weight))
+                f.write("{0} 1 {1} {2} {3} {4} {4}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
                 f.write("end performance_measure\n\n")
     
 
@@ -3050,11 +3053,11 @@ def xd_box_test():
                 print(afile,i,len(afiles_to_plot))
 
     
-    os.chdir('..')
+    os.chdir(bd)
 
 
 if __name__ == "__main__":
-    xd_box_test()
+    xd_box_1_test()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()

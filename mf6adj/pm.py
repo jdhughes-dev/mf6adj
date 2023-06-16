@@ -76,11 +76,12 @@ class PerfMeas(object):
 			dadk11,dadk22,dadk33,dadk123 = self._dadk(gwf_name, gwf, sat_dict[kk],amat_dict[kk])
 				
 			if iss[kk] == 0: #transient
+			#if False:
 				# get the derv of RHS WRT head
 				drhsdh = self._drhsdh(gwf_name,gwf,deltat_dict[kk])
 				rhs = (drhsdh * lamb) - dfdh
 			else:
-				rhs = dfdh
+				rhs = - dfdh
 			if np.all(rhs==0.0):
 				print("WARNING: adjoint solve rhs is all zeros, adjoint states cannot be calculated for {0} at kperkstp {1}".format(self._name,kk))
 				continue
