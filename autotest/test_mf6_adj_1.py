@@ -2718,7 +2718,9 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-3.0,
 
     # ### Create the storage (`STO`) Package
     if include_sto:
-        sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=0, steady_state=True)
+        if len(tdis_pd) > 1:
+            raise Exception("not implemented")
+        sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=0, steady_state=False)
 
     if ncol > 1 and nrow > 1:
         chd_rec = []
@@ -2981,7 +2983,7 @@ def xd_box_1_test():
 
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=20,ncol=20)
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=50,ncol=50)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
