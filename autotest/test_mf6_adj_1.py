@@ -2665,7 +2665,7 @@ def plot_freyberg_verbose_structured_output(test_d):
                 print(ppm_file)
 
 
-def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-3.0,
+def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-1.0,
                      nlay=1,nrow=10,ncol=10,delrowcol=1,
                      top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6"):
 
@@ -2834,7 +2834,7 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
 
     if include_sto:
         props.append(gwf.sto.ss.array.copy())
-        flopy_objects.append(gwf.npf)
+        flopy_objects.append(gwf.sto)
         flopy_prop_names.append("ss")
         tags.append("ss")
 
@@ -2893,7 +2893,7 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
                 mf6api.finalize()
                 success = True
             except:
-                raise RuntimeError
+                raise RuntimeError()
 
         pert_direct_sens = {}
         pert_swr_sens = {}
@@ -2911,27 +2911,26 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
             from matplotlib.backends.backend_pdf import PdfPages
             pdf = PdfPages("pert_sens_{0}.pdf".format(tag))
 
-        for p_kij in p_kijs:
+        for p_i_node,p_kij in enumerate(p_kijs):
             pk, pi, pj = p_kij
             if p_kij != (0, 0, 2):
                 continue
-            dsens = pert_direct_sens[p_kij]
-            swrsens = pert_swr_sens[p_kij]
+
             for kper in range(sim.tdis.nper.data):
                 head_plot = np.zeros((nlay, nrow, ncol))
                 for kij, h, p in zip(kijs, head_base[kper], head_pert[p_kij][kper]):
-                    head_plot[kij] = p - h
+                    head_plot[kij] = h
                 head_plot = head_plot.reshape((nlay, nrow, ncol))
                 head_plot[id == 0] = np.nan
                 dsens_plot = np.zeros((nlay, nrow, ncol))
-                for kij, h in zip(kijs, dsens[kper]):
-                    dsens_plot[kij] = h
+                ssens_plot = np.zeros((nlay, nrow, ncol))
+                for inode,kij in enumerate(kijs):
+                    dsens = pert_direct_sens[kij][kper][p_i_node]
+                    swrsens = pert_swr_sens[kij][kper][p_i_node]
+                    dsens_plot[kij] = dsens
+                    ssens_plot[kij] = swrsens
                 dsens_plot = dsens_plot.reshape((nlay, nrow, ncol))
                 dsens_plot[id == 0] = np.nan
-
-                ssens_plot = np.zeros((nlay, nrow, ncol))
-                for kij, h in zip(kijs, swrsens[kper]):
-                    ssens_plot[kij] = h
                 ssens_plot = ssens_plot.reshape((nlay, nrow, ncol))
                 ssens_plot[id == 0] = np.nan
 
@@ -2983,7 +2982,7 @@ def xd_box_1_test():
 
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=50,ncol=50)
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=20,ncol=20,delrowcol=1./20.)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -2992,7 +2991,7 @@ def xd_box_1_test():
     nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
     obsval = 1.0
 
-    pert_mult = 1.001
+    pert_mult = 1.01
     weight = 1.0
     p_kijs = []
     for k in range(nlay):
