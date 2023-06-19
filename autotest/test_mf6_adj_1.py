@@ -2882,9 +2882,9 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
                 head = mf6api.get_value(mf6api.get_var_address("X", "%s" % name))
                 head_pert[(k, i, j)].append(head.copy())
                 swr_pert[(k, i, j)].append(((head.copy() - obsval) * weight) ** 2)
-                if tag == "ss":
-                    np.savetxt("dpert_ss_k{0}_i{1}_j{2}.dat".format(k, i, j), head_pert[(k, i, j)][0], fmt="%15.6E")
-                    np.savetxt("swrpert_ss_k{0}_i{1}_j{2}.dat".format(k, i, j), swr_pert[(k, i, j)][0], fmt="%15.6E")
+                #if tag == "ss":
+                #    np.savetxt("dpert_ss_k{0}_i{1}_j{2}.dat".format(k, i, j), head_pert[(k, i, j)][0], fmt="%15.6E")
+                #    np.savetxt("swrpert_ss_k{0}_i{1}_j{2}.dat".format(k, i, j), swr_pert[(k, i, j)][0], fmt="%15.6E")
 
                 if not has_converged:
                     print("model did not converge")
@@ -2935,25 +2935,26 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
                 ssens_plot[id == 0] = np.nan
 
                 if plot_pert_results:
-                    fig, axes = plt.subplots(nlay, 3, figsize=(15, nlay * 5))
-                    if nlay == 1:
-                        axes = np.atleast_2d(axes).transpose()
+                    if nlay > 1:
+                        fig, axes = plt.subplots(nlay, 3, figsize=(nlay * 10,15))
+                    else:
+                        fig, axes = plt.subplots(nlay, 3, figsize=(15,5))
+                        axes = np.atleast_2d(axes)
                 for k in range(nlay):
                     if plot_pert_results:
-                        cb = axes[0, k].imshow(head_plot[k, :, :])
-                        plt.colorbar(cb, ax=axes[0, k])
-                        cb = axes[1, k].imshow(dsens_plot[k, :, :])
-                        plt.colorbar(cb, ax=axes[1, k])
-                        cb = axes[2, k].imshow(ssens_plot[k, :, :])
-                        plt.colorbar(cb, ax=axes[2, k])
-                        axes[0, k].set_title("heads k:{0},kper:{1}".format(k, kper), loc="left")
-                        axes[1, k].set_title("dsens kij:{2} k:{0},kper:{1}".format(k, kper, p_kij), loc="left")
-                        axes[2, k].set_title("swrsens kij:{2} k:{0},kper:{1}".format(k, kper, p_kij), loc="left")
-                    #np.savetxt("pert_dsens_pk{0}_pi{1}_pk{2}_k{3}_tag{4}.dat".format(pk, pi, pj, k, tag),
-                    #           dsens_plot[k, :, :], fmt="%15.6E")
-                    #np.savetxt("pert_swrsens_pk{0}_pi{1}_pk{2}_k{3}_tag{4}.dat".format(pk, pi, pj, k, tag),
-                    #           ssens_plot[k, :, :],
-                    #           fmt="%15.6E")
+                        cb = axes[k, 0].imshow(head_plot[k, :, :])
+                        plt.colorbar(cb, ax=axes[k,0])
+                        cb = axes[k, 1].imshow(dsens_plot[k, :, :])
+                        plt.colorbar(cb, ax=axes[k,1])
+                        cb = axes[k, 2].imshow(ssens_plot[k, :, :])
+                        plt.colorbar(cb, ax=axes[k,2])
+                        axes[k, 0].set_title("heads k:{0},kper:{1}".format(k, kper), loc="left")
+                        axes[k, 1].set_title("dsens kij:{2} k:{0},kper:{1}".format(k, kper, p_kij), loc="left")
+                        axes[k, 2].set_title("swrsens kij:{2} k:{0},kper:{1}".format(k, kper, p_kij), loc="left")
+                    np.savetxt("pert-direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pk{3:03d}_comp_sens_{4}_k{5:03d}.dat".format(kper,pk, pi, pj, tag,k),
+                               dsens_plot[k, :, :], fmt="%15.6E")
+                    np.savetxt("pert-phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pk{3:03d}_comp_sens_{4}_k{5:03d}.dat".format(kper,pk,pi,pj,tag,k),ssens_plot[k, :, :], fmt="%15.6E")
+
                 if plot_pert_results:
                     plt.tight_layout()
                     pdf.savefig()
@@ -2971,18 +2972,18 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
 def xd_box_1_test():
 
     # workflow flags
-    clean = True # run the pertbuation process
-    run_pert = True # the pertubations
+    clean = False # run the pertbuation process
+    run_pert = False # the pertubations
     plot_pert_results = True #plot the pertubation results
     plot_adj_results = True # plot adj result
-    include_id0 = True #include an idomain = cell
+    include_id0 = False #include an idomain = cell
     include_sto = True
 
     new_d = 'xd_box_1_test'
 
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=20,ncol=20,delrowcol=1./20.)
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=10,ncol=10,nlay=2)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -3007,7 +3008,6 @@ def xd_box_1_test():
     sys.path.append(os.path.join("..",".."))
     import mf6adj
 
-    
     print('calculating mf6adj sensitivity')
     with open("test.adj",'w') as f:
         f.write("\nbegin options\n\nend options\n\n")

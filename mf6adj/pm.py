@@ -73,7 +73,7 @@ class PerfMeas(object):
 			itime = kk[0]
 			print('solving',self._name,"(kper,kstp)",kk)
 			dfdh = self._dfdh(kk, gwf_name, gwf, deltat_dict, head_dict)
-			dadk11,dadk22,dadk33,dadk123 = self._dadk(gwf_name, gwf, sat_dict[kk],amat_dict[kk])
+			dadk11,dadk33 = self._dadk(gwf_name, gwf, sat_dict[kk],amat_dict[kk])
 				
 			if iss[kk] == 0: #transient
 			#if False:
@@ -98,7 +98,7 @@ class PerfMeas(object):
 				print("WARNING: nans in adjoint states for pm {0} at kperkstp {1}".format(self._name,kk))
 				continue
 				
-			k_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk123,head_dict[kk])
+			k_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk11,head_dict[kk])
 			k33_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk33,head_dict[kk])
 			
 			ss_sens = self.sens_ss_indirect(gwf_name,gwf,lamb, head_dict[kk],head_old_dict[kk],deltat_dict[kk])
@@ -250,9 +250,7 @@ class PerfMeas(object):
 		#TODO: check here for converible cells
 			
 		d_mat_k11 = np.zeros(ja.shape[0])
-		d_mat_k22 = np.zeros(ja.shape[0])
 		d_mat_k33 = np.zeros(ja.shape[0])
-		d_mat_k123 = np.zeros(ja.shape[0])
 
 		k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
 		k22 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K22", gwf)
@@ -270,8 +268,6 @@ class PerfMeas(object):
 			else:
 				sum1 = 0.
 				sum2 = 0.
-				sum3 = 0.
-				sum2temp = 0.
 				height1 = height[node]
 				pp = 1
 				for ii in range(offset+1,offset+ncon):
@@ -295,9 +291,12 @@ class PerfMeas(object):
 						v2 = PerfMeas.derivative_conductance_k1(k33[node],k33[mnode],height1, height2, cl1[jj]+cl2[jj], hwva[jj])
 						#derivative_conductance_k33(k1, k2, w1, w2, area)
 						v3 = PerfMeas.derivative_conductance_k33(k33[node],k33[mnode],height1, height2, hwva[jj])
+
 						d_mat_k33[ia[node]+pp] += v3
-						d_mat_k123[ia[node]+pp] += v3
-						sum1 += v1
+						#d_mat_k123[ia[node]+pp] += v3
+						sum1 += v2
+						if np.abs(v2) > 100 or np.abs(v3) > 100 or np.abs(sum1) > 100:
+							print(v2)
 						pp+=1
 						
 					else:
@@ -306,17 +305,16 @@ class PerfMeas(object):
 						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj],cl2[jj], hwva[jj],height1)
 						
 						d_mat_k11[ia[node]+pp] += v1
-						d_mat_k123[ia[node]+pp]  += v1
+						#d_mat_k123[ia[node]+pp] += v1
 						sum2 += v1
-						sum2temp += v2
 						pp+=1
 					
 				d_mat_k11[ia[node]] = -sum2
 				d_mat_k33[ia[node]] = -sum1
-				d_mat_k22[ia[node]] = -sum3
-				d_mat_k123[ia[node]] = d_mat_k11[ia[node]] + d_mat_k22[ia[node]] + d_mat_k33[ia[node]]
+				#d_mat_k22[ia[node]] = -sum3
+				#d_mat_k123[ia[node]] = d_mat_k11[ia[node]] + d_mat_k22[ia[node]] + d_mat_k33[ia[node]]
 
-		return d_mat_k11,d_mat_k22,d_mat_k33, d_mat_k123
+		return d_mat_k11,-d_mat_k33
 
 	@staticmethod
 	def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
