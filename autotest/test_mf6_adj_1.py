@@ -2666,10 +2666,8 @@ def plot_freyberg_verbose_structured_output(test_d):
 
 
 def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-1.0,
-                     nlay=1,nrow=10,ncol=10,delrowcol=1,
+                     nlay=1,nrow=10,ncol=10,delrowcol=1,icelltype=0,
                      top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6"):
-
-
 
     tdis_pd = [(sp_len, 1, 1.0) for _ in range(nper)]
     if botm is None:
@@ -2752,7 +2750,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-1.0,
     oc = flopy.mf6.ModflowGwfoc(gwf, saverecord=saverecord, head_filerecord=head_filerecord,
                                 budget_filerecord=budget_filerecord, printrecord=printrecord)
 
-    npf = flopy.mf6.ModflowGwfnpf(gwf, icelltype=0, k=hk, k33=k33)
+    npf = flopy.mf6.ModflowGwfnpf(gwf, icelltype=icelltype, k=hk, k33=k33)
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
@@ -2824,7 +2822,7 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
     props = [gwf.npf.k.array.copy()]
     flopy_objects = [gwf.npf]
     flopy_prop_names = ["k"]
-    tags = ["hk"]
+    tags = ["k11"]
 
     if nlay > 1:
         props.append(gwf.npf.k33.array.copy())
@@ -2951,9 +2949,9 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
                         axes[k, 0].set_title("heads k:{0},kper:{1}".format(k, kper), loc="left")
                         axes[k, 1].set_title("dsens kij:{2} k:{0},kper:{1}".format(k, kper, p_kij), loc="left")
                         axes[k, 2].set_title("swrsens kij:{2} k:{0},kper:{1}".format(k, kper, p_kij), loc="left")
-                    np.savetxt("pert-direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pk{3:03d}_comp_sens_{4}_k{5:03d}.dat".format(kper,pk, pi, pj, tag,k),
+                    np.savetxt("pert-direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}_comp_sens_{4}_k{5:03d}.dat".format(kper,pk, pi, pj, tag,k),
                                dsens_plot[k, :, :], fmt="%15.6E")
-                    np.savetxt("pert-phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pk{3:03d}_comp_sens_{4}_k{5:03d}.dat".format(kper,pk,pi,pj,tag,k),ssens_plot[k, :, :], fmt="%15.6E")
+                    np.savetxt("pert-phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}_comp_sens_{4}_k{5:03d}.dat".format(kper,pk,pi,pj,tag,k),ssens_plot[k, :, :], fmt="%15.6E")
 
                 if plot_pert_results:
                     plt.tight_layout()
@@ -2969,18 +2967,86 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
     os.chdir(bd)
 
 
+def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
+    sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
+    gwf = sim.get_model()
+    id = gwf.dis.idomain.array
+    nlay, nrow, ncol = gwf.dis.nlay.data, gwf.dis.nrow.data, gwf.dis.ncol.data
+
+    pm_files = [os.path.join(new_d,f) for f in os.listdir(new_d) if f.startswith("pm-phi") and f.endswith(".dat") and "comp_sens" in f]
+    if nlay == 1:
+        pm_files = [f for f in pm_files if "k33" not in f]
+    assert len(pm_files) > 0
+
+    # temp filter
+    pm_files = [f for f in pm_files if "ghb" not in f and "wel" not in f]
+
+    pm_files.sort()
+    pert_files = [f.replace("pm-","pert-") for f in pm_files]
+    if plot_compare:
+        from matplotlib.backends.backend_pdf import PdfPages
+        pdf = PdfPages(os.path.join(new_d,"compare.pdf"))
+    for pm_file,pert_file in zip(pm_files,pert_files):
+        k = int(pm_file.split(".")[0].split("_")[-1][1:])
+        pm_arr = np.loadtxt(pm_file)
+        pm_arr[id[k,:,:]==0] = 0
+        pert_arr = np.loadtxt(pert_file)
+        pm_arr[id[k, :, :] == 0] = 0
+        d = pm_arr - pert_arr
+        demon = pert_arr.copy()
+        demon[demon==0] = 1e-10
+        p = 100 * np.abs(d) / np.abs(pert_arr)
+        # todo checks for closeness...
+
+        print(pert_file,np.nanmax(np.abs(d)),np.nanmax(np.abs(p)))
+        if plot_compare:
+            fig,axes = plt.subplots(1,4,figsize=(30,4))
+            absd = np.abs(d)
+            absp = np.abs(p)
+
+            absd[absd<plt_zero_thres] = 0
+            #pert_arr[absd==0] = np.nan
+            #pm_arr[absd==0] = np.nan
+            d[absd==0] = np.nan
+            p[absd==0] = np.nan
+            mx = max(np.nanmax(pert_arr),np.nanmax(pm_arr))
+            mn = min(np.nanmin(pert_arr), np.nanmin(pm_arr))
+            cb = axes[0].imshow(pert_arr,vmax=mx,vmin=mn)
+            plt.colorbar(cb,ax=axes[0])
+            axes[0].set_title(pert_file,loc="left")
+            cb = axes[1].imshow(pm_arr, vmax=mx, vmin=mn)
+            plt.colorbar(cb, ax=axes[1])
+            axes[1].set_title(pm_file,loc="left")
+            mx = np.nanmax(absd)
+            cb = axes[2].imshow(d,vmin=-mx,vmax=mx,cmap="coolwarm")
+            plt.colorbar(cb,ax=axes[2])
+            axes[2].set_title("pert - pm, not showing abs(diff) <= {0}".format(plt_zero_thres),loc="left")
+            mx = np.nanmax(absp)
+            cb = axes[3].imshow(p)
+            plt.colorbar(cb, ax=axes[3])
+            axes[3].set_title("percent diff pert - pm",loc="left")
+
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close(fig)
+    if plot_compare:
+        pdf.close()
+
+
+
 def xd_box_1_test():
 
     # workflow flags
-    clean = False # run the pertbuation process
-    run_pert = False # the pertubations
+    clean = True # run the pertbuation process
+    run_pert = True # the pertubations
     plot_pert_results = True #plot the pertubation results
+    run_adj = True
     plot_adj_results = True # plot adj result
     include_id0 = False #include an idomain = cell
     include_sto = True
+    plot_compare = True
 
     new_d = 'xd_box_1_test'
-
 
     if clean:
        sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=10,ncol=10,nlay=2)
@@ -2994,6 +3060,7 @@ def xd_box_1_test():
 
     pert_mult = 1.01
     weight = 1.0
+
     p_kijs = []
     for k in range(nlay):
         for i in range(nrow):
@@ -3003,58 +3070,61 @@ def xd_box_1_test():
     if run_pert:
         run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval)
 
-    bd = os.getcwd()
-    os.chdir(new_d)
-    sys.path.append(os.path.join("..",".."))
-    import mf6adj
+    if run_adj:
+        bd = os.getcwd()
+        os.chdir(new_d)
+        sys.path.append(os.path.join("..",".."))
+        import mf6adj
 
-    print('calculating mf6adj sensitivity')
-    with open("test.adj",'w') as f:
-        f.write("\nbegin options\n\nend options\n\n")
-        for kper in range(sim.tdis.nper.data):
-            for p_kij in p_kijs:
-                k,i,j = p_kij
-                if id[k,i,j] <= 0:
-                    continue
-                # just looking at one pm location for now...
-                if p_kij != (0,0,2):
-                    continue
-                pm_name = "direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
-                f.write("begin performance_measure {0} type direct\n".format(pm_name))
-                f.write("{0} 1 {1} {2} {3} {4} \n".format(kper+1,k+1,i+1,j+1,weight))
-                f.write("end performance_measure\n\n")
+        print('calculating mf6adj sensitivity')
+        with open("test.adj",'w') as f:
+            f.write("\nbegin options\n\nend options\n\n")
+            for kper in range(sim.tdis.nper.data):
+                for p_kij in p_kijs:
+                    k,i,j = p_kij
+                    if id[k,i,j] <= 0:
+                        continue
+                    # just looking at one pm location for now...
+                    if p_kij != (0,0,2):
+                        continue
+                    pm_name = "direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
+                    f.write("begin performance_measure {0} type direct\n".format(pm_name))
+                    f.write("{0} 1 {1} {2} {3} {4} \n".format(kper+1,k+1,i+1,j+1,weight))
+                    f.write("end performance_measure\n\n")
 
 
-                pm_name = "phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
-                f.write("begin performance_measure {0} type residual\n".format(pm_name))
-                # just use top as the obs val....
-                f.write("{0} 1 {1} {2} {3} {4} {4}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
-                f.write("end performance_measure\n\n")
-    
+                    pm_name = "phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
+                    f.write("begin performance_measure {0} type residual\n".format(pm_name))
+                    # just use top as the obs val....
+                    f.write("{0} 1 {1} {2} {3} {4} {4}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
+                    f.write("end performance_measure\n\n")
 
-    adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=1)
-    adj.solve_gwf()
-    adj.solve_adjoint()
-    adj.finalize()
 
-    if plot_adj_results:
-        afiles_to_plot = [f for f in os.listdir(".") if (f.startswith("pm-direct") or f.startswith("pm-phi")) and f.endswith(".dat")]
-        afiles_to_plot.sort()
-        from matplotlib.backends.backend_pdf import PdfPages
-        with PdfPages('adj.pdf') as pdf:
-            for i,afile in enumerate(afiles_to_plot):
-                arr = np.atleast_2d(np.loadtxt(afile))
-                fig,ax = plt.subplots(1,1,figsize=(10,10))
-                cb = ax.imshow(arr)
-                plt.colorbar(cb,ax=ax)
-                ax.set_title(afile,loc="left")
-                plt.tight_layout()
-                pdf.savefig()
-                plt.close(fig)
-                print(afile,i,len(afiles_to_plot))
+        adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=1)
+        adj.solve_gwf()
+        adj.solve_adjoint()
+        adj.finalize()
 
-    
-    os.chdir(bd)
+        if plot_adj_results:
+            afiles_to_plot = [f for f in os.listdir(".") if (f.startswith("pm-direct") or f.startswith("pm-phi")) and f.endswith(".dat")]
+            afiles_to_plot.sort()
+            from matplotlib.backends.backend_pdf import PdfPages
+            with PdfPages('adj.pdf') as pdf:
+                for i,afile in enumerate(afiles_to_plot):
+                    arr = np.atleast_2d(np.loadtxt(afile))
+                    fig,ax = plt.subplots(1,1,figsize=(10,10))
+                    cb = ax.imshow(arr)
+                    plt.colorbar(cb,ax=ax)
+                    ax.set_title(afile,loc="left")
+                    plt.tight_layout()
+                    pdf.savefig()
+                    plt.close(fig)
+                    print(afile,i,len(afiles_to_plot))
+
+
+        os.chdir(bd)
+
+    xd_box_compare(new_d,plot_compare)
 
 
 if __name__ == "__main__":

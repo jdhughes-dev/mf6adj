@@ -129,7 +129,7 @@ class PerfMeas(object):
 			if self.verbose_level > 1:
 				self.save_array("adjstates_kper{0:05d}".format(itime),lamb,gwf_name,gwf,mg_structured)
 				self.save_array("sens_k33_kper{0:05d}".format(itime), k33_sens, gwf_name, gwf, mg_structured)
-				self.save_array("sens_k_kper{0:05d}".format(itime),k_sens,gwf_name,gwf,mg_structured)
+				self.save_array("sens_k11_kper{0:05d}".format(itime),k_sens,gwf_name,gwf,mg_structured)
 				self.save_array("sens_ss_kper{0:05d}".format(itime),ss_sens,gwf_name,gwf,mg_structured)
 				self.save_array("head_kper{0:05d}".format(itime),head_dict[kk],gwf_name,gwf,mg_structured)
 				if self.verbose_level > 2:
@@ -146,9 +146,13 @@ class PerfMeas(object):
 						np.savetxt("pm-{0}_{1}_kper{2:05d}.dat".format(self._name,tag,itime),arr,fmt="%15.6E")
 		
 		self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
-		self.save_array("comp_sens_k",comp_k_sens,gwf_name,gwf,mg_structured)
+		self.save_array("comp_sens_k11",comp_k_sens,gwf_name,gwf,mg_structured)
 		self.save_array("comp_sens_ss",comp_ss_sens,gwf_name,gwf,mg_structured)
-		
+		if "wel6" in gwf_package_dict:
+			self.save_array("comp_sens_welq", comp_welq_sens, gwf_name, gwf, mg_structured)
+		if "ghb6" in gwf_package_dict:
+			self.save_array("comp_sens_ghbhead", comp_ghb_head_sens, gwf_name, gwf, mg_structured)
+			self.save_array("comp_sens_ghbcond", comp_ghb_cond_sens, gwf_name, gwf, mg_structured)
 
 	def lam_drhs_dghb(self,lamb,head,sp_dict):
 		result_head = np.zeros_like(lamb)
@@ -216,8 +220,9 @@ class PerfMeas(object):
 		chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
 		for name in chds:
 			chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
-			chd_list = set(list(chd))
+			chd_list.extend(list(chd))
 			is_chd = True
+		chd_list = set(chd_list)
 
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
 		ib = np.array(PerfMeas.get_value_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf)).reshape(-1)
@@ -263,8 +268,8 @@ class PerfMeas(object):
 			
 			if ib[node]==0:	
 				pass
-			if is_chd and node in chd_list:
-				pass
+			#if is_chd and node in chd_list:
+			#	pass
 			else:
 				sum1 = 0.
 				sum2 = 0.
@@ -295,8 +300,6 @@ class PerfMeas(object):
 						d_mat_k33[ia[node]+pp] += v3
 						#d_mat_k123[ia[node]+pp] += v3
 						sum1 += v2
-						if np.abs(v2) > 100 or np.abs(v3) > 100 or np.abs(sum1) > 100:
-							print(v2)
 						pp+=1
 						
 					else:
@@ -370,15 +373,15 @@ class PerfMeas(object):
 		iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
 		ib = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf).reshape(-1)
 
-		# is_chd = False
-		# chd_list = []
-		# names = list(gwf.get_input_var_names())
-		# chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
-		# for name in chds:
-		# 	chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
-		# 	chd_list.append(chd)
-		# 	is_chd = True
-
+		is_chd = False
+		chd_list = []
+		names = list(gwf.get_input_var_names())
+		chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
+		for name in chds:
+			chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
+			chd_list.extend(list(chd))
+			is_chd = True
+		chd_list = set(chd_list)
 		
 		result = np.zeros_like(lamb)
 		for i in range(len(lamb)):
@@ -388,12 +391,13 @@ class PerfMeas(object):
 				sum1 += dAdk[ia[i] + ii] * head[ja[ia[i] + ii]]
 			sum1 *= lamb[i]
 			for ii in list(range(iac[i]))[1:]:
-				#if is_chd and ja[ia[i]+ii] in chd_list[0]:
+				#if is_chd and ja[ia[i]+ii] in chd_list:
 				#	pass
 				#elif ib[ja[ia[i]+ii]] == 0:
-				#		pass
-				#else:
-				sum2 += lamb[ja[ia[i] + ii]] * dAdk[ia[i] + ii] * (head[i] - head[ja[ia[i] + ii]])
+				if ib[ja[ia[i] + ii]] == 0:
+						pass
+				else:
+					sum2 += lamb[ja[ia[i] + ii]] * dAdk[ia[i] + ii] * (head[i] - head[ja[ia[i] + ii]])
 			sums = sum1 + sum2
 			#print(list(range(iac[i]))[1:])
 			#print(sum1,sum2,sums)
