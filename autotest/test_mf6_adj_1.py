@@ -2665,8 +2665,8 @@ def plot_freyberg_verbose_structured_output(test_d):
                 print(ppm_file)
 
 
-def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,
-                     nlay=1,nrow=10,ncol=10,delrowcol=1,icelltype=0,
+def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
+                     nlay=1,nrow=10,ncol=10,delrowcol=1,icelltype=0,iconvert=0,newton=False,
                      top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6"):
 
     tdis_pd = [(sp_len, 1, 1.0) for _ in range(nper)]
@@ -2694,15 +2694,18 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,
 
 
     sim = flopy.mf6.MFSimulation(sim_name=name, exe_name=local_mf6_bin, version="mf6", sim_ws=new_d,
-                                 memory_print_option="ALL")
+                                 memory_print_option="ALL",continue_=True)
 
     tdis = flopy.mf6.ModflowTdis(sim, pname="tdis", time_units="DAYS", nper=len(tdis_pd), perioddata=tdis_pd)
 
     ims = flopy.mf6.ModflowIms(sim, pname="ims", complexity="SIMPLE", linear_acceleration="BICGSTAB",
-                               inner_dvclose=1e-10, outer_dvclose=1e-10, outer_maximum=1000, inner_maximum=1000)
+                               inner_dvclose=1e-4, outer_dvclose=1e-4, outer_maximum=1000, inner_maximum=1000)
 
     model_nam_file = f"{name}.nam"
-    gwf = flopy.mf6.ModflowGwf(sim, modelname=name, model_nam_file=model_nam_file, save_flows=True)
+    newtonoptions = []
+    if newton:
+        newtonoptions = ["NEWTON"]
+    gwf = flopy.mf6.ModflowGwf(sim, modelname=name, model_nam_file=model_nam_file, save_flows=True,newtonoptions=newtonoptions)
 
     idm = np.ones((nlay, nrow, ncol))
     if ncol > 1 and nrow > 1 and include_id0:
@@ -2718,20 +2721,32 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,
     if include_sto:
         if len(tdis_pd) > 1:
             raise Exception("not implemented")
-        sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=0, steady_state=False)
+        sy = []
+        geo = [top]
+        geo.extend(botm)
+        for k in range(nlay):
+            t,b = geo[k],geo[k+1]
+            sy.append(ss/(t-b))
+        sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=iconvert, steady_state=False,ss=ss,sy=sy)
 
     if ncol > 1 and nrow > 1:
+        chd_stage = top
+        if icelltype != 0:
+            chd_stage = (top-botm[0])/2.0
         chd_rec = []
         for k in range(nlay):
             for i in range(nrow):
-                chd_rec.append(((k, i, 0), top))
+                chd_rec.append(((k, i, 0), chd_stage))
 
         chd = flopy.mf6.ModflowGwfchd(gwf, stress_period_data=chd_rec)
 
     ghb_rec = []
+    ghb_stage = top+1
+    if icelltype != 0:
+        ghb_stage = top
     for k in range(nlay):
         for i in range(nrow):
-            ghb_rec.append(((k, i, ncol - 1), top + 1, 10000.0))
+            ghb_rec.append(((k, i, ncol - 1), ghb_stage, 10000.0))
 
     ghb = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_rec)
 
@@ -3048,9 +3063,31 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
 
 def xd_box_1_test():
 
+    """
+    permutations:
+     - w and w/o sto
+     - icelltype (including spatially varying)
+     - inconvert (including spatially varying)
+     - 2d/3d
+     - nrow == 1 or not
+     - ncol == 1 or not
+     - has/has not id 0
+     - spatially varying props
+     - multiple kper (including mix of ss and tr, stresses turning on and off)
+     - newton/nonnewton
+     - newton with dry cells/upstream weighting
+     - unit/nonunit delrowcol
+     - spatially varying top and/or botm
+     - unstructured (pass thru gridgen with no refinement)
+
+    Todo:
+     - add bcs to pert
+     - setup assertions in compare
+
+    """
     # workflow flags
     clean = True # run the pertbuation process
-    run_pert = False # the pertubations
+    run_pert = True # the pertubations
     plot_pert_results = True #plot the pertubation results
     run_adj = True
     plot_adj_results = True # plot adj result
@@ -3060,8 +3097,12 @@ def xd_box_1_test():
 
     new_d = 'xd_box_1_test'
 
+    # this set of inputs results in the sim water level at the well just below cell botm
+    #sim = setup_xd_box_model(new_d, include_sto=include_sto, include_id0=include_id0, nrow=3, ncol=10, nlay=1, q=-0.5,
+    #                         icelltype=1, iconvert=0, newton=True)
+
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=10,nlay=1,q=-2,icelltype=1)
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=10,nlay=1,q=-0.5,icelltype=1,iconvert=0,newton=True)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -3070,7 +3111,7 @@ def xd_box_1_test():
     nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
     obsval = 1.0
 
-    pert_mult = 1.1
+    pert_mult = 1.01
     weight = 1.0
 
     p_kijs = []

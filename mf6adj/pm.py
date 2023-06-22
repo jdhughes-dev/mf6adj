@@ -45,6 +45,12 @@ class PerfMeas(object):
 		self.is_structured = is_structured
 		self.verbose_level = int(verbose_level)
 
+	@staticmethod
+	def has_sto_iconvert(gwf):
+		names = [n for n in list(gwf.get_input_var_names()) if "STO" in n and "ICONVERT" in n]
+		if len(names) == 0:
+			return False
+		return True
 
 	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, 
 		   			  sat_dict, sat_old_dict,gwf, gwf_name,mg_structured, gwf_package_dict):
@@ -57,7 +63,11 @@ class PerfMeas(object):
 
 		comp_k33_sens = np.zeros(nnodes)
 		comp_k_sens = np.zeros(nnodes)
-		comp_ss_sens = np.zeros(nnodes)
+		comp_ss_sens = None
+
+		has_sto = PerfMeas.has_sto_iconvert(gwf)
+		if has_sto:
+			comp_ss_sens = np.zeros(nnodes)
 
 		comp_welq_sens = None
 		comp_ghb_head_sens = None
@@ -100,11 +110,13 @@ class PerfMeas(object):
 				
 			k_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk11,head_dict[kk])
 			k33_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk33,head_dict[kk])
-			
-			ss_sens = self.sens_ss_indirect(gwf_name,gwf,lamb, head_dict[kk],head_old_dict[kk],deltat_dict[kk],sat_dict[kk],sat_old_dict[kk])
+
 			comp_k_sens += k_sens
 			comp_k33_sens += k33_sens
-			comp_ss_sens += ss_sens
+
+			if has_sto:
+				ss_sens = self.sens_ss_indirect(gwf_name,gwf,lamb, head_dict[kk],head_old_dict[kk],deltat_dict[kk],sat_dict[kk],sat_old_dict[kk])
+				comp_ss_sens += ss_sens
 
 			if "wel6" in gwf_package_dict and kk in gwf_package_dict["wel6"]:
 				sens_welq = self.lam_drhs_dqwel(lamb,gwf_package_dict["wel6"][kk])
@@ -130,7 +142,8 @@ class PerfMeas(object):
 				self.save_array("adjstates_kper{0:05d}".format(itime),lamb,gwf_name,gwf,mg_structured)
 				self.save_array("sens_k33_kper{0:05d}".format(itime), k33_sens, gwf_name, gwf, mg_structured)
 				self.save_array("sens_k11_kper{0:05d}".format(itime),k_sens,gwf_name,gwf,mg_structured)
-				self.save_array("sens_ss_kper{0:05d}".format(itime),ss_sens,gwf_name,gwf,mg_structured)
+				if has_sto:
+					self.save_array("sens_ss_kper{0:05d}".format(itime),ss_sens,gwf_name,gwf,mg_structured)
 				self.save_array("head_kper{0:05d}".format(itime),head_dict[kk],gwf_name,gwf,mg_structured)
 				if self.verbose_level > 2:
 					self.save_array("dadk11_kper{0:05d}".format(itime),dadk11,gwf_name,gwf,mg_structured)
@@ -147,7 +160,8 @@ class PerfMeas(object):
 		
 		self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
 		self.save_array("comp_sens_k11",comp_k_sens,gwf_name,gwf,mg_structured)
-		self.save_array("comp_sens_ss",comp_ss_sens,gwf_name,gwf,mg_structured)
+		if has_sto:
+			self.save_array("comp_sens_ss",comp_ss_sens,gwf_name,gwf,mg_structured)
 		if "wel6" in gwf_package_dict:
 			self.save_array("comp_sens_welq", comp_welq_sens, gwf_name, gwf, mg_structured)
 		if "ghb6" in gwf_package_dict:
@@ -224,9 +238,9 @@ class PerfMeas(object):
 			is_chd = True
 		chd_list = set(chd_list)
 
-		nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
-		ib = np.array(PerfMeas.get_value_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf)).reshape(-1)
-		nlay = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NLAY", gwf)[0]
+		#nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
+		#ib = np.array(PerfMeas.get_value_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf)).reshape(-1)
+		#nlay = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NLAY", gwf)[0]
 		ihc = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IHC", gwf)
 		#IHC tells us whether connection is vertical (and if so, whether connection is above or below) or horizontal (and if so, whether it is a vertically staggered grid). 
 		#It is of size NJA (or number of connections)
@@ -247,10 +261,13 @@ class PerfMeas(object):
 		#bottom elevation for all nodes
 		iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
 		#array of number of connections per node (size ndoes)
-		
-		icelltype = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "ICELLTYPE", gwf)
-		
-		height = sat * (top - bot)	
+
+		icelltype = PerfMeas.get_ptr_from_gwf(gwf_name,"NPF","ICELLTYPE",gwf)
+
+		sat_mod = sat.copy()
+		sat_mod[icelltype==0] = 1.0
+
+		height = sat_mod * (top - bot)
 		
 		#TODO: check here for converible cells
 			
@@ -358,9 +375,17 @@ class PerfMeas(object):
 		top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
 		bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
 		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
-		#todo: weave sat into this and check for iconvert/icelltype to scale
-		# thickness
-		result = -1. * lamb * head * area * (top - bot) / dt
+		iconvert = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "ICONVERT", gwf)
+
+		# handle iconvert
+		sat_mod = sat.copy()
+		sat_mod[iconvert==0] = 1.0
+
+		# correction for solved head below cell bot
+		#head[head<bot] = bot[head<bot]
+		#head[head < bot] = bot[head < bot]
+
+		result = -1. * lamb * head * area * ((top - bot) * sat_mod) / dt
 		return result
 	
 	def sens_ss_indirect(self,gwf_name,gwf,lamb,head,head_old,dt,sat,sat_old):
@@ -373,7 +398,7 @@ class PerfMeas(object):
 		ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
 		#JA is an array containing all cells for which there is a connection (including self) for each node. it is of size NJA
 		iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
-		ib = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf).reshape(-1)
+		#ib = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf).reshape(-1)
 
 		is_chd = False
 		chd_list = []
@@ -413,9 +438,7 @@ class PerfMeas(object):
 		bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
 		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
 		storage = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "SS", gwf)
-		#todo: weave sat into this and check icelltype/iconvert and scale
-		# height if needed
-		drhsdh = -1. * storage * area * (top - bot) / dt
+		drhsdh = -1. * storage * area * ((top - bot) * sat) / dt
 		return drhsdh
 
 	def _dfdh(self, kk, gwf_name, gwf,head_dict):

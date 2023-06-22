@@ -363,6 +363,9 @@ class Mf6Adj(object):
             kiter = 0
             # prep to solve
             self._gwf.prepare_solve(1)
+            sat = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
+            if sat_old is None:
+                sat_old = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
             # the current one-based stress period number
             stress_period = self._gwf.get_value(self._gwf.get_var_address("KPER", "TDIS"))[0]
             time_step = self._gwf.get_value(self._gwf.get_var_address("KSTP", "TDIS"))[0]
@@ -406,10 +409,7 @@ class Mf6Adj(object):
             self._iss[kperkstp] = iss
             sat = self._gwf.get_value(self._gwf.get_var_address("SAT",self._gwf_name,"NPF"))
             self._sat[kperkstp] = sat
-            if sat_old is None:
-                self._sat_old[kperkstp] = sat
-            else:
-                self._sat_old[kperkstp] = sat_old
+            self._sat_old[kperkstp] = sat_old
             sat_old = sat.copy()
             for package_type in self._gwf_package_types:
                 if package_type in self._gwf_package_dict:
