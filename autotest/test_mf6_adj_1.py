@@ -2665,7 +2665,7 @@ def plot_freyberg_verbose_structured_output(test_d):
                 print(ppm_file)
 
 
-def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-1.0,
+def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,
                      nlay=1,nrow=10,ncol=10,delrowcol=1,icelltype=0,
                      top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6"):
 
@@ -2858,13 +2858,14 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
                 swr_pert[kij] = []
             fobj.__setattr__(fname, kk_arr)
             sim.write_simulation()
+            np.savetxt("pert_arr_{0}_pk{1}_pi{2}_pj{3}.dat".format(tag,k,i,j), kk_arr.flatten(), fmt="%15.6E")
             # sim.run_simulation()
             mf6api = modflowapi.ModflowApi(local_lib_name)
             mf6api.initialize()
             current_time = mf6api.get_current_time()
             end_time = mf6api.get_end_time()
             max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
-
+            kper = 0
             while current_time < end_time:
 
                 dt = mf6api.get_time_step()
@@ -2883,8 +2884,8 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
                 head_pert[(k, i, j)].append(head.copy())
                 swr_pert[(k, i, j)].append(((head.copy() - obsval) * weight) ** 2)
                 #if tag == "ss":
-                np.savetxt("dpert_ss_k{0}_i{1}_j{2}_{3}.dat".format(k, i, j,tag), head_pert[(k, i, j)][0], fmt="%15.6E")
-                np.savetxt("swrpert_ss_k{0}_i{1}_j{2}_{3}.dat".format(k, i, j,tag), swr_pert[(k, i, j)][0], fmt="%15.6E")
+                np.savetxt("dpert_{3}_kper{4}_pk{0}_pi{1}_pj{2}.dat".format(k, i, j,tag,kper), head_pert[(k, i, j)][-1], fmt="%15.6E")
+                np.savetxt("swrpert_{3}_kper{4}_pk{0}_pi{1}_pj{2}.dat".format(k, i, j,tag,kper), swr_pert[(k, i, j)][-1], fmt="%15.6E")
 
                 if not has_converged:
                     print("model did not converge")
@@ -2894,6 +2895,7 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
                 success = True
             except:
                 raise RuntimeError()
+            kper += 1
 
         pert_direct_sens = {}
         pert_swr_sens = {}
@@ -2912,11 +2914,11 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
             pdf = PdfPages("pert_sens_{0}.pdf".format(tag))
 
         #for p_i_node,p_kij in enumerate(p_kijs):
-        for p_i_node,p_kij in enumerate(pm_locs):
+        for p_kij in pm_locs:
             pk, pi, pj = p_kij
             #if p_kij != (0, 0, 2):
             #    continue
-
+            p_i_node = kijs.index(p_kij)
             for kper in range(sim.tdis.nper.data):
                 head_plot = np.zeros((nlay, nrow, ncol))
                 for kij, h, p in zip(kijs, head_base[kper], head_pert[p_kij][kper]):
@@ -2989,6 +2991,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
     if plot_compare:
         from matplotlib.backends.backend_pdf import PdfPages
         pdf = PdfPages(os.path.join(new_d,"compare.pdf"))
+
     for pm_file,pert_file in zip(pm_files,pert_files):
         k = int(pm_file.split(".")[0].split("_")[-1][1:])
         pm_arr = np.loadtxt(pm_file)
@@ -3017,6 +3020,8 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
             cb = axes[0].imshow(pert_arr,vmax=mx,vmin=mn)
             plt.colorbar(cb,ax=axes[0])
             axes[0].set_title(pert_file,loc="left")
+
+
             cb = axes[1].imshow(pm_arr, vmax=mx, vmin=mn)
             plt.colorbar(cb, ax=axes[1])
             axes[1].set_title(pm_file,loc="left")
@@ -3028,7 +3033,11 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
             cb = axes[3].imshow(p)
             plt.colorbar(cb, ax=axes[3])
             axes[3].set_title("percent diff pert - pm",loc="left")
-
+            if np.any(id==0):
+                idp = id[k,:,:].copy().astype(float)
+                idp[idp!=0] = np.nan
+                axes[0].imshow(idp,cmap="magma")
+                axes[1].imshow(idp, cmap="magma")
             plt.tight_layout()
             pdf.savefig()
             plt.close(fig)
@@ -3052,7 +3061,7 @@ def xd_box_1_test():
     new_d = 'xd_box_1_test'
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=10,nlay=1)
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=10,nlay=1,q=2.0)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -3061,7 +3070,7 @@ def xd_box_1_test():
     nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
     obsval = 1.0
 
-    pert_mult = 1.01
+    pert_mult = 1.1
     weight = 1.0
 
     p_kijs = []

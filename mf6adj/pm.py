@@ -266,10 +266,12 @@ class PerfMeas(object):
 			
 			#ncon -= 1 # for self
 			
-			if ib[node]==0:	
-				pass
+			#if ib[node]==0:
+			#	pass
 			#if is_chd and node in chd_list:
 			#	pass
+			if False:
+				pass
 			else:
 				sum1 = 0.
 				sum2 = 0.
@@ -394,10 +396,10 @@ class PerfMeas(object):
 				#if is_chd and ja[ia[i]+ii] in chd_list:
 				#	pass
 				#elif ib[ja[ia[i]+ii]] == 0:
-				if ib[ja[ia[i] + ii]] == 0:
-						pass
-				else:
-					sum2 += lamb[ja[ia[i] + ii]] * dAdk[ia[i] + ii] * (head[i] - head[ja[ia[i] + ii]])
+				#if ib[ja[ia[i] + ii]] == 0:
+				#		pass
+				#else:
+				sum2 += lamb[ja[ia[i] + ii]] * dAdk[ia[i] + ii] * (head[i] - head[ja[ia[i] + ii]])
 			sums = sum1 + sum2
 			#print(list(range(iac[i]))[1:])
 			#print(sum1,sum2,sums)
