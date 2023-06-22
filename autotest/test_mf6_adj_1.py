@@ -3073,12 +3073,13 @@ def xd_box_1_test():
      - ncol == 1 or not
      - has/has not id 0
      - spatially varying props
-     - multiple kper (including mix of ss and tr, stresses turning on and off)
+     - multiple kper (including mix of ss and tr, stresses turning on and off, different lengths, with and without multiple timesteps)
      - newton/nonnewton
-     - newton with dry cells/upstream weighting
+     - newton with dry cells/upstream weighting - possibly with turning off pumping well
      - unit/nonunit delrowcol
      - spatially varying top and/or botm
      - unstructured (pass thru gridgen with no refinement)
+     - multiple instances of the same package type
 
     Todo:
      - add bcs to pert

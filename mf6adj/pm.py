@@ -382,6 +382,7 @@ class PerfMeas(object):
 		sat_mod[iconvert==0] = 1.0
 
 		# correction for solved head below cell bot
+		# not sure about this one...
 		#head[head<bot] = bot[head<bot]
 		#head[head < bot] = bot[head < bot]
 

@@ -19,6 +19,9 @@ class Mf6Adj(object):
         check for unsupported vertical conductance formulation
         check for unsupported aniso options
         check for unsupported xt3d option/horizontal anisotropy!
+
+        add chd,drn,and riv to bc types
+
         """
         self.verbose_level = int(verbose_level)
         if not os.path.exists(adj_filename):
@@ -284,8 +287,7 @@ class Mf6Adj(object):
 
     @staticmethod
     def get_package_names_from_gwfname(gwf_nam_file):
-        
-       
+
         if not os.path.exists(gwf_nam_file):
             raise Exception("gwf nam file '{0}' not found".format(gwf_nam_file))
         package_dict = {}
@@ -330,6 +332,8 @@ class Mf6Adj(object):
     def solve_gwf(self):
         """solve the flow across the modflow sim times
 
+        todo: move to hdf5
+
         """
         if self._gwf is None:
             # raise Exception("gwf is None")
@@ -353,6 +357,7 @@ class Mf6Adj(object):
         self._sat = {}
         self._sat_old = {}
         sat_old = None
+        visited = list()
         self._sp_package_data = {}
         while ctime < etime:
             sol_start = datetime.now()
@@ -377,7 +382,6 @@ class Mf6Adj(object):
                     print("flow stress period,time step {0},{1} converged with {2} iters, took {3:10.5G} mins".format(
                         stress_period, time_step, kiter, td))
                     break
-
                 kiter += 1
 
             if not convg:
@@ -397,7 +401,9 @@ class Mf6Adj(object):
             amat = self._gwf.get_value(self._gwf.get_var_address("AMAT", "SLN_1")).copy()
             kper,kstp = stress_period - 1,time_step - 1
             kperkstp = (kper,kstp)
-            #todo: add some checks to make sure kperkstp isnt already in these containers
+            if kperkstp in visited:
+                raise Exception("{0} already visited".format(kperkstp))
+            visited.append(kperkstp)
             self._amat[kperkstp] = amat
             head = self._gwf.get_value(self._gwf.get_var_address("X", self._gwf_name.upper()))
             self._head[kperkstp] = head
@@ -417,7 +423,6 @@ class Mf6Adj(object):
                         self._sp_package_data[package_type] = {}
                     for tag in self._gwf_package_dict[package_type]:
                         nbound = self._gwf.get_value(self._gwf.get_var_address("NBOUND",self._gwf_name,tag.upper()))[0]
-                        
                         if nbound > 0:
                             if kperkstp in self._sp_package_data[package_type]:
                                 if len(self._gwf_package_dict[package_type]) == 1:
@@ -434,8 +439,6 @@ class Mf6Adj(object):
                                 # note bound is an array!
                                 self._sp_package_data[package_type][kperkstp].append({"node":nodelist[i],"bound":bound[i],
                                                                                      "hcof":hcof[i],"rhs":rhs[i]})
-
-
 
         sim_end = datetime.now()
         td = (sim_end - sim_start).total_seconds() / 60.0
