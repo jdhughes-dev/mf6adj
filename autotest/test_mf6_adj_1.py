@@ -2759,7 +2759,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-1.0,
 
 
 def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.001,
-                    name = "freyberg6",obsval=1.0):
+                    name = "freyberg6",obsval=1.0,pm_locs=None):
     import modflowapi
     # # now run with API
     bd = os.getcwd()
@@ -2777,6 +2777,8 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
     sim = flopy.mf6.MFSimulation.load(sim_ws=".")
     gwf = sim.get_model()
     nlay, nrow, ncol = gwf.dis.nlay.data, gwf.dis.nrow.data, gwf.dis.ncol.data
+    if pm_locs is None:
+        pm_locs = [(nlay-1,nrow-1,ncol-2)]
     include_sto = True
     if gwf.sto is None:
         include_sto = False
@@ -2803,8 +2805,8 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
             print("model did not converge")
             break
 
-    np.savetxt("dbase_ss.dat", head_base[0], fmt="%15.6E")
-    np.savetxt("swrbase_ss.dat", swr_head_base[0], fmt="%15.6E")
+    np.savetxt("dbase.dat", head_base[0], fmt="%15.6E")
+    np.savetxt("swrbase.dat", swr_head_base[0], fmt="%15.6E")
 
     addr = ["NODEUSER", "FREYBERG6", "DIS"]
     wbaddr = mf6api.get_var_address(*addr)
@@ -2881,8 +2883,8 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
                 head_pert[(k, i, j)].append(head.copy())
                 swr_pert[(k, i, j)].append(((head.copy() - obsval) * weight) ** 2)
                 #if tag == "ss":
-                #    np.savetxt("dpert_ss_k{0}_i{1}_j{2}.dat".format(k, i, j), head_pert[(k, i, j)][0], fmt="%15.6E")
-                #    np.savetxt("swrpert_ss_k{0}_i{1}_j{2}.dat".format(k, i, j), swr_pert[(k, i, j)][0], fmt="%15.6E")
+                np.savetxt("dpert_ss_k{0}_i{1}_j{2}_{3}.dat".format(k, i, j,tag), head_pert[(k, i, j)][0], fmt="%15.6E")
+                np.savetxt("swrpert_ss_k{0}_i{1}_j{2}_{3}.dat".format(k, i, j,tag), swr_pert[(k, i, j)][0], fmt="%15.6E")
 
                 if not has_converged:
                     print("model did not converge")
@@ -2909,10 +2911,11 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
             from matplotlib.backends.backend_pdf import PdfPages
             pdf = PdfPages("pert_sens_{0}.pdf".format(tag))
 
-        for p_i_node,p_kij in enumerate(p_kijs):
+        #for p_i_node,p_kij in enumerate(p_kijs):
+        for p_i_node,p_kij in enumerate(pm_locs):
             pk, pi, pj = p_kij
-            if p_kij != (0, 0, 2):
-                continue
+            #if p_kij != (0, 0, 2):
+            #    continue
 
             for kper in range(sim.tdis.nper.data):
                 head_plot = np.zeros((nlay, nrow, ncol))
@@ -3000,7 +3003,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
 
         print(pert_file,np.nanmax(np.abs(d)),np.nanmax(np.abs(p)))
         if plot_compare:
-            fig,axes = plt.subplots(1,4,figsize=(30,4))
+            fig,axes = plt.subplots(1,4,figsize=(35,4))
             absd = np.abs(d)
             absp = np.abs(p)
 
@@ -3042,14 +3045,14 @@ def xd_box_1_test():
     plot_pert_results = True #plot the pertubation results
     run_adj = True
     plot_adj_results = True # plot adj result
-    include_id0 = False #include an idomain = cell
+    include_id0 = True #include an idomain = cell
     include_sto = True
     plot_compare = True
 
     new_d = 'xd_box_1_test'
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=10,ncol=10,nlay=2)
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=10,nlay=1)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -3066,9 +3069,9 @@ def xd_box_1_test():
         for i in range(nrow):
             for j in range(ncol):
                 p_kijs.append((k, i, j))
-
+    pm_locs = [(nlay-1,nrow-1,ncol-2)]
     if run_pert:
-        run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval)
+        run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 
     if run_adj:
         bd = os.getcwd()
@@ -3080,13 +3083,13 @@ def xd_box_1_test():
         with open("test.adj",'w') as f:
             f.write("\nbegin options\n\nend options\n\n")
             for kper in range(sim.tdis.nper.data):
-                for p_kij in p_kijs:
+                for p_kij in pm_locs:
                     k,i,j = p_kij
-                    if id[k,i,j] <= 0:
-                        continue
+                    #if id[k,i,j] <= 0:
+                    #    continue
                     # just looking at one pm location for now...
-                    if p_kij != (0,0,2):
-                        continue
+                    #if p_kij != (0,0,2):
+                    #    continue
                     pm_name = "direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
                     f.write("begin performance_measure {0} type direct\n".format(pm_name))
                     f.write("{0} 1 {1} {2} {3} {4} \n".format(kper+1,k+1,i+1,j+1,weight))
