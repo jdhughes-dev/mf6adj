@@ -439,7 +439,13 @@ class PerfMeas(object):
 		bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
 		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
 		storage = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "SS", gwf)
-		drhsdh = -1. * storage * area * ((top - bot) * sat) / dt
+		sat_mod = sat.copy()
+		if PerfMeas.has_sto_iconvert(gwf):
+			iconvert = PerfMeas.get_ptr_from_gwf(gwf_name,"STO","ICONVERT",gwf)
+			sat_mod[iconvert==0] = 1.0
+		else:
+			sat_mod = np.ones_like(top)
+		drhsdh = -1. * storage * area * ((top - bot)*sat_mod) / dt
 		return drhsdh
 
 	def _dfdh(self, kk, gwf_name, gwf,head_dict):
