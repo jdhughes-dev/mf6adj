@@ -47,7 +47,7 @@ class PerfMeas(object):
 
 
 	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, 
-		   			  sat_dict, gwf, gwf_name,mg_structured, gwf_package_dict):
+		   			  sat_dict, sat_old_dict,gwf, gwf_name,mg_structured, gwf_package_dict):
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name,"DIS","NODES",gwf)[0]
 
 		lamb = np.zeros(nnodes)
@@ -72,13 +72,13 @@ class PerfMeas(object):
 		for itime,kk in enumerate(kperkstp[::-1]):
 			itime = kk[0]
 			print('solving',self._name,"(kper,kstp)",kk)
-			dfdh = self._dfdh(kk, gwf_name, gwf, deltat_dict, head_dict)
+			dfdh = self._dfdh(kk, gwf_name, gwf, head_dict)
 			dadk11,dadk33 = self._dadk(gwf_name, gwf, sat_dict[kk],amat_dict[kk])
 				
 			if iss[kk] == 0: #transient
 			#if False:
 				# get the derv of RHS WRT head
-				drhsdh = self._drhsdh(gwf_name,gwf,deltat_dict[kk])
+				drhsdh = self._drhsdh(gwf_name,gwf,deltat_dict[kk],sat_dict[kk])
 				rhs = (drhsdh * lamb) - dfdh
 			else:
 				rhs = - dfdh
@@ -101,7 +101,7 @@ class PerfMeas(object):
 			k_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk11,head_dict[kk])
 			k33_sens = self.lam_dAdk_h(gwf_name,gwf,lamb, dadk33,head_dict[kk])
 			
-			ss_sens = self.sens_ss_indirect(gwf_name,gwf,lamb, head_dict[kk],head_old_dict[kk],deltat_dict[kk])
+			ss_sens = self.sens_ss_indirect(gwf_name,gwf,lamb, head_dict[kk],head_old_dict[kk],deltat_dict[kk],sat_dict[kk],sat_old_dict[kk])
 			comp_k_sens += k_sens
 			comp_k33_sens += k33_sens
 			comp_ss_sens += ss_sens
@@ -354,7 +354,7 @@ class PerfMeas(object):
 		d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
 		return d
 
-	def lam_dAdss_h(self,gwf_name,gwf,lamb,head,dt):
+	def lam_dAdss_h(self,gwf_name,gwf,lamb,head,dt,sat):
 		top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
 		bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
 		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
@@ -363,9 +363,9 @@ class PerfMeas(object):
 		result = -1. * lamb * head * area * (top - bot) / dt
 		return result
 	
-	def sens_ss_indirect(self,gwf_name,gwf,lamb,head,head_old,dt):
+	def sens_ss_indirect(self,gwf_name,gwf,lamb,head,head_old,dt,sat,sat_old):
 		#todo: check that sy is equivalent to ss - I think it might be...but maybe not...
-		return self.lam_dAdss_h(gwf_name,gwf,lamb,head,dt) - self.lam_dAdss_h(gwf_name,gwf,lamb,head_old,dt)
+		return self.lam_dAdss_h(gwf_name,gwf,lamb,head,dt,sat) - self.lam_dAdss_h(gwf_name,gwf,lamb,head_old,dt,sat_old)
 
 	def lam_dAdk_h(self, gwf_name, gwf, lamb, dAdk, head):
 		ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
@@ -377,13 +377,13 @@ class PerfMeas(object):
 
 		is_chd = False
 		chd_list = []
-		names = list(gwf.get_input_var_names())
-		chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
-		for name in chds:
-			chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
-			chd_list.extend(list(chd))
-			is_chd = True
-		chd_list = set(chd_list)
+		# names = list(gwf.get_input_var_names())
+		# chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
+		# for name in chds:
+		# 	chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
+		# 	chd_list.extend(list(chd))
+		# 	is_chd = True
+		# chd_list = set(chd_list)
 		
 		result = np.zeros_like(lamb)
 		for i in range(len(lamb)):
@@ -407,11 +407,8 @@ class PerfMeas(object):
 
 		return result
 
-	
-	
 
-
-	def _drhsdh(self, gwf_name,gwf, dt):
+	def _drhsdh(self, gwf_name,gwf, dt, sat):
 		top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
 		bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
 		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
@@ -421,7 +418,7 @@ class PerfMeas(object):
 		drhsdh = -1. * storage * area * (top - bot) / dt
 		return drhsdh
 
-	def _dfdh(self, kk, gwf_name, gwf, deltat_dict,head_dict):
+	def _dfdh(self, kk, gwf_name, gwf,head_dict):
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
 		dfdh = np.zeros(nnodes)
 		for pfr in self._entries:

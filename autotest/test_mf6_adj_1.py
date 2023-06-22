@@ -3050,7 +3050,7 @@ def xd_box_1_test():
 
     # workflow flags
     clean = True # run the pertbuation process
-    run_pert = True # the pertubations
+    run_pert = False # the pertubations
     plot_pert_results = True #plot the pertubation results
     run_adj = True
     plot_adj_results = True # plot adj result
@@ -3061,7 +3061,7 @@ def xd_box_1_test():
     new_d = 'xd_box_1_test'
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=10,nlay=1,q=2.0)
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=10,nlay=1,q=-2,icelltype=1)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 

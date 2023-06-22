@@ -67,6 +67,7 @@ class Mf6Adj(object):
         self._deltat = {}
         self._iss = {}
         self._sat = {}
+        self._sat_old = {}
         self._gwf_package_types = ["wel6","ghb6","rch6","rcha6"]
 
 
@@ -350,6 +351,8 @@ class Mf6Adj(object):
         self._deltat = {}
         self._iss = {}
         self._sat = {}
+        self._sat_old = {}
+        sat_old = None
         self._sp_package_data = {}
         while ctime < etime:
             sol_start = datetime.now()
@@ -398,11 +401,16 @@ class Mf6Adj(object):
             head_old = self._gwf.get_value(self._gwf.get_var_address("XOLD", self._gwf_name.upper()))
             self._head_old[kperkstp] = head_old
             self._kperkstp.append(kperkstp)
-            self._deltat[(kper,kstp)] = dt1
+            self._deltat[kperkstp ] = dt1
             iss = self._gwf.get_value(self._gwf.get_var_address("ISS", self._gwf_name.upper()))
             self._iss[kperkstp] = iss
             sat = self._gwf.get_value(self._gwf.get_var_address("SAT",self._gwf_name,"NPF"))
-            self._sat[(kper,kstp)] = sat
+            self._sat[kperkstp] = sat
+            if sat_old is None:
+                self._sat_old[kperkstp] = sat
+            else:
+                self._sat_old[kperkstp] = sat_old
+            sat_old = sat.copy()
             for package_type in self._gwf_package_types:
                 if package_type in self._gwf_package_dict:
                     if package_type not in self._sp_package_data:
@@ -441,7 +449,7 @@ class Mf6Adj(object):
             raise Exception("need to call solve_gwf() first")
         for pm in self._performance_measures:
             pm.solve_adjoint(self._kperkstp,self._iss, self._deltat,self._amat,
-                             self._head,self._head_old, self._sat, self._gwf, 
+                             self._head,self._head_old, self._sat, self._sat_old,self._gwf,
                              self._gwf_name, self._structured_mg,self._sp_package_data)
 
     def _initialize_gwf(self,lib_name,flow_dir):
