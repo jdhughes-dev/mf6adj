@@ -2734,7 +2734,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
         if icelltype != 0:
             chd_stage = (top-botm[0])/2.0
         chd_rec = []
-        for k in range(nlay):
+        for k in [nlay-1]:
             for i in range(nrow):
                 chd_rec.append(((k, i, 0), chd_stage))
 
@@ -2744,7 +2744,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     ghb_stage = top+1
     if icelltype != 0:
         ghb_stage = top
-    for k in range(nlay):
+    for k in [0]:
         for i in range(nrow):
             ghb_rec.append(((k, i, ncol - 1), ghb_stage, 10000.0))
 
@@ -2993,14 +2993,13 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
     id = gwf.dis.idomain.array
     nlay, nrow, ncol = gwf.dis.nlay.data, gwf.dis.nrow.data, gwf.dis.ncol.data
 
-    pm_files = [os.path.join(new_d,f) for f in os.listdir(new_d) if f.startswith("pm-phi") and f.endswith(".dat") and "comp_sens" in f]
+    pm_files = [os.path.join(new_d,f) for f in os.listdir(new_d) if f.startswith("pm-") and f.endswith(".dat") and "comp_sens" in f]
     if nlay == 1:
         pm_files = [f for f in pm_files if "k33" not in f]
     assert len(pm_files) > 0
 
     # temp filter
     pm_files = [f for f in pm_files if "ghb" not in f and "wel" not in f]
-
     pm_files.sort()
     pert_files = [f.replace("pm-","pert-") for f in pm_files]
     if plot_compare:
@@ -3103,7 +3102,7 @@ def xd_box_1_test():
     #                         icelltype=1, iconvert=0, newton=True)
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=10,nlay=3,q=-0.5,icelltype=1,iconvert=0,newton=True)
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=7,ncol=7,nlay=3,q=-0.5,icelltype=1,iconvert=0,newton=True)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
