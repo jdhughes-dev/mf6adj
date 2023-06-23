@@ -2729,24 +2729,25 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
             sy.append(ss/(t-b))
         sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=iconvert, steady_state=False,ss=ss,sy=sy)
 
+    chd_rec = []
     if ncol > 1 and nrow > 1:
         chd_stage = top
         if icelltype != 0:
             chd_stage = (top-botm[0])/2.0
-        chd_rec = []
+
         for k in [nlay-1]:
             for i in range(nrow):
-                chd_rec.append(((k, i, 0), chd_stage))
+                chd_rec.append(((k, i, 0), chd_stage,1000.0))
 
-        chd = flopy.mf6.ModflowGwfchd(gwf, stress_period_data=chd_rec)
+        #chd = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=chd_rec)
 
-    ghb_rec = []
+    ghb_rec = chd_rec
     ghb_stage = top+1
     if icelltype != 0:
         ghb_stage = top
     for k in [0]:
         for i in range(nrow):
-            ghb_rec.append(((k, i, ncol - 1), ghb_stage, 10000.0))
+            ghb_rec.append(((k, i, ncol - 1), ghb_stage, 1000.0))
 
     ghb = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_rec)
 
@@ -2754,7 +2755,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
         wel_rec = [(nlay - 1, int(nrow / 2), int(ncol / 2), q)]
         wel = flopy.mf6.ModflowGwfwel(gwf, stress_period_data=wel_rec)
 
-        flopy.mf6.ModflowGwfrcha(gwf, recharge=0.0001)
+    flopy.mf6.ModflowGwfrcha(gwf, recharge=0.0001)
 
     headfile = f"{name}.hds"
     head_filerecord = [headfile]
@@ -2766,6 +2767,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
                                 budget_filerecord=budget_filerecord, printrecord=printrecord)
 
     npf = flopy.mf6.ModflowGwfnpf(gwf, icelltype=icelltype, k=hk, k33=k33)
+
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
@@ -3083,6 +3085,7 @@ def xd_box_1_test():
     Todo:
      - add bcs to pert
      - setup assertions in compare
+     - add trap for CHDs and warn...
 
     """
     # workflow flags
@@ -3097,9 +3100,6 @@ def xd_box_1_test():
 
     new_d = 'xd_box_1_test'
 
-    # this set of inputs results in the sim water level at the well just below cell botm
-    #sim = setup_xd_box_model(new_d, include_sto=include_sto, include_id0=include_id0, nrow=3, ncol=10, nlay=1, q=-0.5,
-    #                         icelltype=1, iconvert=0, newton=True)
 
     if clean:
        sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=7,ncol=7,nlay=3,q=-0.5,icelltype=1,iconvert=0,newton=True)
@@ -3119,7 +3119,7 @@ def xd_box_1_test():
         for i in range(nrow):
             for j in range(ncol):
                 p_kijs.append((k, i, j))
-    pm_locs = [(nlay-1,nrow-1,ncol-2)]
+    pm_locs = [(nlay-1,int(nrow/2),ncol-2),(0,int(nrow/2),ncol-2)]
     if run_pert:
         run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 

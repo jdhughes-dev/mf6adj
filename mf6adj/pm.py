@@ -230,13 +230,13 @@ class PerfMeas(object):
 		"""
 		is_chd = False
 		chd_list = []
-		names = list(gwf.get_input_var_names())
-		chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
-		for name in chds:
-			chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
-			chd_list.extend(list(chd))
-			is_chd = True
-		chd_list = set(chd_list)
+		# names = list(gwf.get_input_var_names())
+		# chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
+		# for name in chds:
+		# 	chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
+		# 	chd_list.extend(list(chd))
+		# 	is_chd = True
+		# chd_list = set(chd_list)
 
 		#nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
 		#ib = np.array(PerfMeas.get_value_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf)).reshape(-1)
@@ -286,7 +286,7 @@ class PerfMeas(object):
 			#if ib[node]==0:
 			#	pass
 			#if is_chd and node in chd_list:
-			#	pass
+			#		continue
 			if False:
 				pass
 			else:
@@ -296,7 +296,8 @@ class PerfMeas(object):
 				pp = 1
 				for ii in range(offset+1,offset+ncon):
 					mnode = ja[ii]
-
+					#if is_chd and mnode in chd_list:
+					#		continue
 					height2 = height[mnode]
 					#if icelltype[mnode] != 0:
 					#height2 *= sat[mnode]
@@ -307,23 +308,23 @@ class PerfMeas(object):
 					iihc = ihc[jj]
 
 					if iihc == 0: # vertical con
-						v1 = PerfMeas._dconddvk(k33[node],height1,sat[node],k33[mnode],
-			      								height2,sat[mnode],hwva[jj],amat[jj])
+						#v1 = PerfMeas._dconddvk(k33[node],height1,sat[node],k33[mnode],
+			      		#						height2,sat[mnode],hwva[jj],amat[jj])
 						#def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
 						#	d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
 						#	return d
 						v2 = PerfMeas.derivative_conductance_k1(k33[node],k33[mnode],height1, height2, cl1[jj]+cl2[jj], hwva[jj])
 						#derivative_conductance_k33(k1, k2, w1, w2, area)
-						v3 = PerfMeas.derivative_conductance_k33(k33[node],k33[mnode],height1, height2, hwva[jj])
+						#v3 = PerfMeas.derivative_conductance_k33(k33[node],k33[mnode],height1, height2, hwva[jj])
 
-						d_mat_k33[ia[node]+pp] += v3
+						d_mat_k33[ia[node]+pp] += v2
 						#d_mat_k123[ia[node]+pp] += v3
 						sum1 += v2
 						pp+=1
 						
 					else:
 						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
-						v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
+						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
 						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj],cl2[jj], hwva[jj],height1)
 						
 						d_mat_k11[ia[node]+pp] += v1
@@ -420,7 +421,7 @@ class PerfMeas(object):
 			sum1 *= lamb[i]
 			for ii in list(range(iac[i]))[1:]:
 				#if is_chd and ja[ia[i]+ii] in chd_list:
-				#	pass
+				#	continue
 				#elif ib[ja[ia[i]+ii]] == 0:
 				#if ib[ja[ia[i] + ii]] == 0:
 				#		pass
