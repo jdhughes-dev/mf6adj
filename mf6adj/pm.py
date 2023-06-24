@@ -267,7 +267,8 @@ class PerfMeas(object):
 		sat_mod = sat.copy()
 		sat_mod[icelltype==0] = 1.0
 
-		height = sat_mod * (top - bot)
+		#height = sat_mod * (top - bot)
+		height = top - bot
 		
 		#TODO: check here for converible cells
 			
@@ -323,7 +324,9 @@ class PerfMeas(object):
 						pp+=1
 						
 					else:
-						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1,height2)
+						#v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1*sat_mod[node],height2*sat_mod[mnode])
+						v1 = PerfMeas._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
+												height1, height2)
 						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
 						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj],cl2[jj], hwva[jj],height1)
 						

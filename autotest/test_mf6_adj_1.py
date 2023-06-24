@@ -2667,7 +2667,8 @@ def plot_freyberg_verbose_structured_output(test_d):
 
 def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
                      nlay=1,nrow=10,ncol=10,delrowcol=1,icelltype=0,iconvert=0,newton=False,
-                     top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6"):
+                     top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6",
+                       full_sat_ghb=True):
 
     tdis_pd = [(sp_len, 1, 1.0) for _ in range(nper)]
     if botm is None:
@@ -2732,7 +2733,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     chd_rec = []
     if ncol > 1 and nrow > 1:
         chd_stage = top
-        if icelltype != 0:
+        if not full_sat_ghb:
             chd_stage = (top-botm[0])/2.0
 
         for k in [nlay-1]:
@@ -2743,7 +2744,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
 
     ghb_rec = chd_rec
     ghb_stage = top+1
-    if icelltype != 0:
+    if not full_sat_ghb:
         ghb_stage = top
     for k in [0]:
         for i in range(nrow):
@@ -2935,6 +2936,9 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
             pk, pi, pj = p_kij
             #if p_kij != (0, 0, 2):
             #    continue
+            if p_kij not in kijs:
+                print("pm kij missing",p_kij)
+                continue
             p_i_node = kijs.index(p_kij)
             for kper in range(sim.tdis.nper.data):
                 head_plot = np.zeros((nlay, nrow, ncol))
@@ -3017,7 +3021,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
         d = pm_arr - pert_arr
         demon = pert_arr.copy()
         demon[demon==0] = 1e-10
-        p = 100 * np.abs(d) / np.abs(pert_arr)
+        p = 100 * np.abs(d) / np.abs(np.nanmax(pert_arr))
         # todo checks for closeness...
 
         print(pert_file,np.nanmax(np.abs(d)),np.nanmax(np.abs(p)))
@@ -3089,20 +3093,24 @@ def xd_box_1_test():
 
     """
     # workflow flags
+    include_id0 = True  # include an idomain = cell
+    include_sto = True
+
     clean = True # run the pertbuation process
     run_pert = True # the pertubations
     plot_pert_results = True #plot the pertubation results
+
     run_adj = True
-    plot_adj_results = True # plot adj result
-    include_id0 = True #include an idomain = cell
-    include_sto = True
+    plot_adj_results = False # plot adj result
+
     plot_compare = True
 
     new_d = 'xd_box_1_test'
 
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=7,ncol=7,nlay=3,q=-0.5,icelltype=1,iconvert=0,newton=True)
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=10,ncol=10,nlay=3,
+                                q=-0.5,icelltype=1,iconvert=0,newton=True,delrowcol=10,botm=[-2,-20,-35],full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -3115,11 +3123,16 @@ def xd_box_1_test():
     weight = 1.0
 
     p_kijs = []
+    # pm_locs = [(nlay-1,int(nrow/2),ncol-2),(0,int(nrow/2),ncol-2)]
+
+    pm_locs = []
     for k in range(nlay):
         for i in range(nrow):
             for j in range(ncol):
                 p_kijs.append((k, i, j))
-    pm_locs = [(nlay-1,int(nrow/2),ncol-2),(0,int(nrow/2),ncol-2)]
+                if i % 2 == 0 and j % 2 == 0:
+                    pm_locs.append((k, i, j))
+
     if run_pert:
         run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 
@@ -3135,8 +3148,8 @@ def xd_box_1_test():
             for kper in range(sim.tdis.nper.data):
                 for p_kij in pm_locs:
                     k,i,j = p_kij
-                    #if id[k,i,j] <= 0:
-                    #    continue
+                    if id[k,i,j] <= 0:
+                        continue
                     # just looking at one pm location for now...
                     #if p_kij != (0,0,2):
                     #    continue
