@@ -2700,7 +2700,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     tdis = flopy.mf6.ModflowTdis(sim, pname="tdis", time_units="DAYS", nper=len(tdis_pd), perioddata=tdis_pd)
 
     ims = flopy.mf6.ModflowIms(sim, pname="ims", complexity="SIMPLE", linear_acceleration="BICGSTAB",
-                               inner_dvclose=1e-4, outer_dvclose=1e-4, outer_maximum=1000, inner_maximum=1000)
+                               inner_dvclose=1e-6, outer_dvclose=1e-6, outer_maximum=1000, inner_maximum=1000)
 
     model_nam_file = f"{name}.nam"
     newtonoptions = []
@@ -3014,14 +3014,14 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
 
     for pm_file,pert_file in zip(pm_files,pert_files):
         k = int(pm_file.split(".")[0].split("_")[-1][1:])
-        pm_arr = np.loadtxt(pm_file)
+        pm_arr = np.atleast_2d(np.loadtxt(pm_file))
         pm_arr[id[k,:,:]==0] = 0
-        pert_arr = np.loadtxt(pert_file)
+        pert_arr = np.atleast_2d(np.loadtxt(pert_file))
         pm_arr[id[k, :, :] == 0] = 0
         d = pm_arr - pert_arr
         demon = pert_arr.copy()
         demon[demon==0] = 1e-10
-        p = 100 * np.abs(d) / np.abs(np.nanmax(pert_arr))
+        p = 100 * np.abs(d) / np.nanmax(np.abs(pert_arr))
         # todo checks for closeness...
 
         print(pert_file,np.nanmax(np.abs(d)),np.nanmax(np.abs(p)))
@@ -3109,8 +3109,8 @@ def xd_box_1_test():
 
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=10,ncol=10,nlay=3,
-                                q=-0.5,icelltype=1,iconvert=0,newton=True,delrowcol=10,botm=[-2,-20,-35],full_sat_ghb=False)
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=9,ncol=9,nlay=3,
+                                q=-0.5,icelltype=0,iconvert=0,newton=True,delrowcol=0.3333,full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
