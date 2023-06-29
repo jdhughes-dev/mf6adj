@@ -13,6 +13,7 @@ dependencies:
   - pytest-cov
   - pytest-xdist
   - nbmake
+  - shapely
   - pip
   - pip:
     - git+https://github.com/pypest/pyemu@develop
