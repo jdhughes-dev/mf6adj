@@ -18,7 +18,7 @@ import flopy.utils.cvfdutil
 if "linux" in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "linux", "libmf6.so")
     mf6_bin = os.path.join("..", "bin", "linux", "mf6")
-    local_lib_name = "libmf6.so"
+    local_lib_name = "./libmf6.so"
     local_mf6_bin = "mf6"
     gg_bin = "gridgen"
 elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
@@ -2787,7 +2787,7 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
     os.chdir(new_d)
     sys.path.append(os.path.join("..", ".."))
     import mf6adj
-    print(os.listdir(".'"))
+    print(os.listdir("."))
     print('test run to completion with API')
     mf6api = modflowapi.ModflowApi(local_lib_name)
     mf6api.initialize()
