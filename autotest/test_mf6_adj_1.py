@@ -3261,7 +3261,7 @@ def test_xd_box_unstruct_1():
     gwf.remove_package("dis")
     flopy.mf6.ModflowGwfdisv(gwf, **gridprops)
 
-    exit()
+    return
 
     nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
     obsval = 1.0
