@@ -20,16 +20,19 @@ if "linux" in platform.platform().lower():
     mf6_bin = os.path.join("..", "bin", "linux", "mf6")
     local_lib_name = "libmf6.so"
     local_mf6_bin = "mf6"
+    gg_bin = "gridgen"
 elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "mac", "libmf6.dylib")
     mf6_bin = os.path.join("..", "bin", "mac", "mf6")
     local_lib_name = "libmf6.dylib"
     local_mf6_bin = "mf6"
+    gg_bin = "gridgen"
 else:
     lib_name = os.path.join("..", "bin", "win", "libmf6.dll")
     mf6_bin = os.path.join("..", "bin", "win", "mf6.exe")
     local_lib_name = "libmf6.dll"
     local_mf6_bin = "mf6.exe"
+    gg_bin = "gridgen.exe"
 
 
 #some plotting functions
@@ -2784,7 +2787,7 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
     os.chdir(new_d)
     sys.path.append(os.path.join("..", ".."))
     import mf6adj
-
+    print(os.listdir(".'"))
     print('test run to completion with API')
     mf6api = modflowapi.ModflowApi(local_lib_name)
     mf6api.initialize()
@@ -3200,13 +3203,157 @@ def test_xd_box_1():
     xd_box_compare(new_d,plot_compare)
 
 
+def test_xd_box_unstruct_1():
+
+
+    # workflow flags
+    include_id0 = False  # include an idomain = cell
+    include_sto = True
+
+    clean = True # run the pertbuation process
+    run_pert = True # the pertubations
+    plot_pert_results = True #plot the pertubation results
+
+    run_adj = True
+    plot_adj_results = False # plot adj result
+
+    plot_compare = True
+
+    temp_d = 'xd_box_1_temp'
+
+    if clean:
+       sim = setup_xd_box_model(temp_d,include_sto=include_sto,include_id0=include_id0,nrow=15,ncol=15,nlay=2,
+                                q=-0.1,icelltype=1,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
+    else:
+        sim = flopy.mf6.MFSimulation.load(sim_ws=temp_d)
+
+    gwf = sim.get_model()
+    id = gwf.dis.idomain.array
+
+    new_d = temp_d.replace("_temp","_unstruct")
+    if os.path.exists(new_d):
+        shutil.rmtree(new_d)
+    shutil.copytree(temp_d,new_d)
+
+    xcc, ycc = np.atleast_2d(gwf.modelgrid.xcellcenters),np.atleast_2d(gwf.modelgrid.ycellcenters)
+
+    from flopy.utils.gridgen import Gridgen
+    g = Gridgen(gwf.dis, model_ws=new_d, exe_name=gg_bin)
+    g.build(verbose=True)
+    gridprops = g.get_gridprops_disv()
+
+    ghb = gwf.get_package("ghb")
+
+    if ghb is not None:
+        ghb_spd = {}
+        for kper in range(sim.tdis.nper.data):
+            rarray = ghb.stress_period_data.data[kper]
+            #print(rarray)
+            xs = [xcc[cid[1],cid[2]] for cid in rarray.cellid]
+            ys = [ycc[cid[1], cid[2]] for cid in rarray.cellid]
+            ilay = [cid[0] for cid in rarray.cellid]
+            xys = [(x,y) for x,y in zip(xs,ys)]
+            inodes = [g.intersect([xy],"point",il)[0] for xy,il in zip(xys,ilay)]
+            data = [[(il,inode),bhead,cond] for il,inode,bhead,cond in zip(ilay,inodes,rarray.bhead,rarray.cond)]
+            ghb_spd[kper] = data
+
+
+    gwf.remove_package("dis")
+    flopy.mf6.ModflowGwfdisv(gwf, **gridprops)
+
+    exit()
+
+    nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
+    obsval = 1.0
+
+    pert_mult = 1.01
+    weight = 1.0
+
+    p_kijs = []
+    # pm_locs = [(nlay-1,int(nrow/2),ncol-2),(0,int(nrow/2),ncol-2)]
+
+    for i in range(gwf.disv.nnodes):
+        print(i)
+
+    pm_locs = []
+    for k in [0, int(nlay / 2), nlay-1]:
+        for i in [0, int(nrow / 2), nrow-1]:
+            for j in [0, int(ncol / 2), ncol-1]:
+                    pm_locs.append((k, i, j))
+            break
+    pm_locs = list(set(pm_locs))
+    pm_locs.sort()
+
+    assert len(pm_locs) > 0
+    if run_pert:
+        run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
+
+    if run_adj:
+        bd = os.getcwd()
+        os.chdir(new_d)
+        sys.path.append(os.path.join("..",".."))
+        import mf6adj
+
+        print('calculating mf6adj sensitivity')
+        with open("test.adj",'w') as f:
+            f.write("\nbegin options\n\nend options\n\n")
+            for kper in range(sim.tdis.nper.data):
+                for p_kij in pm_locs:
+                    k,i,j = p_kij
+                    if id[k,i,j] <= 0:
+                        continue
+                    # just looking at one pm location for now...
+                    #if p_kij != (0,0,2):
+                    #    continue
+                    pm_name = "direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
+                    f.write("begin performance_measure {0} type direct\n".format(pm_name))
+                    f.write("{0} 1 {1} {2} {3} {4} \n".format(kper+1,k+1,i+1,j+1,weight))
+                    f.write("end performance_measure\n\n")
+
+
+                    pm_name = "phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
+                    f.write("begin performance_measure {0} type residual\n".format(pm_name))
+                    # just use top as the obs val....
+                    f.write("{0} 1 {1} {2} {3} {4} {4}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
+                    f.write("end performance_measure\n\n")
+
+
+        adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=1)
+        adj.solve_gwf()
+        adj.solve_adjoint()
+        adj.finalize()
+
+        if plot_adj_results:
+            afiles_to_plot = [f for f in os.listdir(".") if (f.startswith("pm-direct") or f.startswith("pm-phi")) and f.endswith(".dat")]
+            afiles_to_plot.sort()
+            from matplotlib.backends.backend_pdf import PdfPages
+            with PdfPages('adj.pdf') as pdf:
+                for i,afile in enumerate(afiles_to_plot):
+                    arr = np.atleast_2d(np.loadtxt(afile))
+                    fig,ax = plt.subplots(1,1,figsize=(10,10))
+                    cb = ax.imshow(arr)
+                    plt.colorbar(cb,ax=ax)
+                    ax.set_title(afile,loc="left")
+                    plt.tight_layout()
+                    pdf.savefig()
+                    plt.close(fig)
+                    print(afile,i,len(afiles_to_plot))
+
+
+        os.chdir(bd)
+
+
+
+
 if __name__ == "__main__":
+    test_xd_box_unstruct_1()
     #test_xd_box_1()
+
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()
     #_skip_for_now_freyberg()
-    test_freyberg_mh()
+    #test_freyberg_mh()
 
     #test_3d_freyberg()
     #test_freyberg_unstruct()
