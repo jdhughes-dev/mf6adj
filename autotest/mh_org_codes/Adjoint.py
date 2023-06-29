@@ -115,8 +115,8 @@ fo.write(MF6LOGO)
 list_of_SENSI_NAMES = ['COND', 'CONDV', 'STOR', 'HGHB', 'CGHB', 'QWEL']
 
 # ### k
-d_mat_k11, d_mat_k22, d_mat_k33, d_mat_k123 = d_amat_k()
-for arr,tag in zip([d_mat_k11,d_mat_k22,d_mat_k33,d_mat_k123],["dadk11","dadk22","dadk33","dadk123"]):
+d_mat_k11, d_mat_k22, d_mat_k33, d_mat_k12 = d_amat_k()
+for arr,tag in zip([d_mat_k11,d_mat_k22,d_mat_k33,d_mat_k12],["dadk11","dadk22","dadk33","dadk12"]):
     np.savetxt(tag+".dat",arr,fmt="%15.6E")
     
 inputfile = "MF6-ADJ.INP"
@@ -153,7 +153,7 @@ with open(inputfile, 'r') as f:
                 for k in range(NPROB):
                     # Adjoint States
                     list_AS.append(SolveAdjointSWH(len(IA) - 1, list_regions[k][0], len(deltat), list_regions[k][1], list_regions[k][2], reverse_deltat))
-                    list_lam_dAdk_h.append([lam_dAdk_h(list_AS[k][::-1][kk - 1], d_mat_k123, h[kk]) for kk in range(len(time))[1:]])
+                    list_lam_dAdk_h.append([lam_dAdk_h(list_AS[k][::-1][kk - 1], d_mat_k12, h[kk]) for kk in range(len(time))[1:]])
                     list_lam_dAdk33_h.append([lam_dAdk_h(list_AS[k][::-1][kk - 1], d_mat_k33, h[kk]) for kk in range(len(time))[1:]])
                     list_sens_ss_indirect = [sens_ss_indirect(list_AS[k][::-1][kk - 1], h[kk], h[kk - 1], deltat[kk - 1]) for kk in range(len(time))[1:]]
                     # list_S_ss_adj.append(sum(map(np.array,[sens_ss_indirect(list_AS[k][::-1][kk - 1], h[kk], h[kk - 1], deltat[kk - 1]) for kk in range(len(time))[1:]])))
@@ -286,7 +286,7 @@ with open(inputfile, 'r') as f:
                     np.savetxt("head_k{0:04d}".format(kkk-1),h[kkk],fmt="%15.6E")
                 list_AS_LS = SolveAdjointLS(len(IA) - 1, len(deltat), list_obs, h, reverse_deltat)
                 # Local Sensitivity Coefficients (for each grid element)
-                list_lam_dAdk_h_LS = [lam_dAdk_h(list_AS_LS[::-1][kkk-1], d_mat_k123, h[kkk]) for kkk in range(len(time))[1:]]
+                list_lam_dAdk_h_LS = [lam_dAdk_h(list_AS_LS[::-1][kkk-1], d_mat_k12, h[kkk]) for kkk in range(len(time))[1:]]
                 list_lam_dAdk33_h_LS = [lam_dAdk_h(list_AS_LS[::-1][kkk-1], d_mat_k33, h[kkk]) for kkk in range(len(time))[1:]]
                 # list_lam_dAdss_h_LS = [lam_dAdss_h(list_AS_LS[::-1][kkk-1], h[kkk], deltat[kkk-1]) for kkk in range(len(time))[1:]]
                 # list_lam_drhsdss = [drhsdss(list_AS_LS[::-1][kkk-2], h[kkk], deltat[kkk-1]) for kkk in range(len(time))[1:]]
@@ -316,7 +316,7 @@ with open(inputfile, 'r') as f:
                 nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
                 nper = sim.tdis.nper.data
                 data_arrays = [list_S_K_adj_LS,list_S_K33_adj_LS,list_S_ss_adj_LS,list_S_HGHB_adj_LS,list_S_CGHB_adj_LS]
-                tags = ["comp_sens_k","comp_sens_k33","comp_sens_ss","comp_sens_hghb","comp_sens_cghb"]
+                tags = ["comp_sens_k11","comp_sens_k33","comp_sens_ss","comp_sens_hghb","comp_sens_cghb"]
                 for data,tag in zip(data_arrays,tags):
                     arr = data.reshape(nlay,nrow,ncol)
                     for k in range(nlay):

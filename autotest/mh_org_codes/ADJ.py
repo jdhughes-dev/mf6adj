@@ -292,7 +292,7 @@ def d_amat_k():
     d_mat_k11 = np.zeros(len(MAT[0]))
     d_mat_k22 = np.zeros(len(MAT[0]))
     d_mat_k33 = np.zeros(len(MAT[0]))
-    d_mat_k123 = np.zeros(len(MAT[0]))
+    d_mat_k12 = np.zeros(len(MAT[0]))
     for nn in range(len(IA)-1):
         # (k, j, i) = gwf.modelgrid.get_lrc(nn)[0]
         # (k, j, i) = getlrc()[nn]
@@ -302,7 +302,7 @@ def d_amat_k():
                 d_mat_k11[IA_p[nn] + ij] = 0.0
                 d_mat_k22[IA_p[nn] + ij] = 0.0
                 d_mat_k33[IA_p[nn] + ij] = 0.0
-                d_mat_k123[IA_p[nn] + ij] = d_mat_k11[IA_p[nn] + ij] + d_mat_k22[IA_p[nn] + ij] + d_mat_k33[IA_p[nn] + ij]
+                d_mat_k12[IA_p[nn] + ij] = d_mat_k11[IA_p[nn] + ij] + d_mat_k22[IA_p[nn] + ij]
         else:
             sum1 = 0.0
             sum2 = 0.0
@@ -316,7 +316,7 @@ def d_amat_k():
                     d_mat_k11[IA_p[nn] + ii] = 0.0
                     d_mat_k22[IA_p[nn] + ii] = 0.0
                     d_mat_k33[IA_p[nn] + ii] = derivative_conductance_k1(K33[nn], K33[JA_p[IA_p[nn]+nc]], CELLTOP[nn] - CELLBOT[nn], CELLTOP[JA_p[IA_p[nn]+nc]] - CELLBOT[JA_p[IA_p[nn]+nc]], DELR[i], DELC[j])
-                    d_mat_k123[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii] + d_mat_k33[IA_p[nn] + ii]
+                    d_mat_k12[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii] 
                     sum1 += d_mat_k11[IA_p[nn] + ii]
                     sum2 += d_mat_k22[IA_p[nn] + ii]
                     sum3 += d_mat_k33[IA_p[nn] + ii]
@@ -325,7 +325,7 @@ def d_amat_k():
                     d_mat_k11[IA_p[nn] + ii] = 0.0
                     d_mat_k22[IA_p[nn] + ii] = derivative_conductance_k1(K22[nn], K22[JA_p[IA_p[nn]+nc]], DELC[j], DELC[j-1], DELR[i], CELLTOP[nn] - CELLBOT[nn])
                     d_mat_k33[IA_p[nn] + ii] = 0.0
-                    d_mat_k123[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii] + d_mat_k33[IA_p[nn] + ii]
+                    d_mat_k12[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii] 
                     sum1 += d_mat_k11[IA_p[nn] + ii]
                     sum2 += d_mat_k22[IA_p[nn] + ii]
                     sum3 += d_mat_k33[IA_p[nn] + ii]
@@ -334,7 +334,7 @@ def d_amat_k():
                     d_mat_k11[IA_p[nn] + ii] = derivative_conductance_k1(K11[nn], K11[JA_p[IA_p[nn]+nc]], DELR[i], DELR[i-1], DELC[j], CELLTOP[nn] - CELLBOT[nn])
                     d_mat_k22[IA_p[nn] + ii] = 0.0
                     d_mat_k33[IA_p[nn] + ii] = 0.0
-                    d_mat_k123[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii] + d_mat_k33[IA_p[nn] + ii]
+                    d_mat_k12[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii]
                     sum1 += d_mat_k11[IA_p[nn] + ii]
                     sum2 += d_mat_k22[IA_p[nn] + ii]
                     sum3 += d_mat_k33[IA_p[nn] + ii]
@@ -343,7 +343,7 @@ def d_amat_k():
                     d_mat_k11[IA_p[nn] + ii] = derivative_conductance_k1(K11[nn], K11[JA_p[IA_p[nn]+nc]], DELR[i], DELR[i+1], DELC[j], CELLTOP[nn] - CELLBOT[nn])
                     d_mat_k22[IA_p[nn] + ii] = 0.0
                     d_mat_k33[IA_p[nn] + ii] = 0.0
-                    d_mat_k123[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii] + d_mat_k33[IA_p[nn] + ii]
+                    d_mat_k12[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii]
                     sum1 += d_mat_k11[IA_p[nn] + ii]
                     sum2 += d_mat_k22[IA_p[nn] + ii]
                     sum3 += d_mat_k33[IA_p[nn] + ii]
@@ -352,7 +352,7 @@ def d_amat_k():
                     d_mat_k11[IA_p[nn] + ii] = 0.0
                     d_mat_k22[IA_p[nn] + ii] = derivative_conductance_k1(K22[nn], K22[JA_p[IA_p[nn]+nc]], DELC[j], DELC[j+1], DELR[i], CELLTOP[nn] - CELLBOT[nn])
                     d_mat_k33[IA_p[nn] + ii] = 0.0
-                    d_mat_k123[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii] + d_mat_k33[IA_p[nn] + ii]
+                    d_mat_k12[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii]
                     sum1 += d_mat_k11[IA_p[nn] + ii]
                     sum2 += d_mat_k22[IA_p[nn] + ii]
                     sum3 += d_mat_k33[IA_p[nn] + ii]
@@ -361,7 +361,7 @@ def d_amat_k():
                     d_mat_k11[IA_p[nn] + ii] = 0.0
                     d_mat_k22[IA_p[nn] + ii] = 0.0
                     d_mat_k33[IA_p[nn] + ii] = derivative_conductance_k1(K33[nn], K33[JA_p[IA_p[nn]+nc]], CELLTOP[nn] - CELLBOT[nn], CELLTOP[JA_p[IA_p[nn]+nc]] - CELLBOT[JA_p[IA_p[nn]+nc]], DELR[i], DELC[j])
-                    d_mat_k123[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii] + d_mat_k33[IA_p[nn] + ii]
+                    d_mat_k12[IA_p[nn] + ii] = d_mat_k11[IA_p[nn] + ii] + d_mat_k22[IA_p[nn] + ii]
                     sum1 += d_mat_k11[IA_p[nn] + ii]
                     sum2 += d_mat_k22[IA_p[nn] + ii]
                     sum3 += d_mat_k33[IA_p[nn] + ii]
@@ -369,8 +369,8 @@ def d_amat_k():
             d_mat_k11[IA_p[nn]] = - sum1
             d_mat_k22[IA_p[nn]] = - sum2
             d_mat_k33[IA_p[nn]] = - sum3
-            d_mat_k123[IA_p[nn]] = d_mat_k11[IA_p[nn]] + d_mat_k22[IA_p[nn]] + d_mat_k33[IA_p[nn]]
-    return d_mat_k11, d_mat_k22, d_mat_k33, d_mat_k123
+            d_mat_k12[IA_p[nn]] = d_mat_k11[IA_p[nn]] + d_mat_k22[IA_p[nn]]
+    return d_mat_k11, d_mat_k22, d_mat_k33, d_mat_k12
 
 def lam_dAdk_h(lam, dAdk, h):
     my_list = []

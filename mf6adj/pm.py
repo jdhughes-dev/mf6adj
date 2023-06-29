@@ -83,6 +83,8 @@ class PerfMeas(object):
 			itime = kk[0]
 			print('solving',self._name,"(kper,kstp)",kk)
 			dfdh = self._dfdh(kk, gwf_name, gwf, head_dict)
+			# jwhite: I think it should be sat old since the head (and therefore sat) from the last
+			# timestep/stress period is used to scale T...
 			dadk11,dadk33 = self._dadk(gwf_name, gwf, sat_dict[kk],amat_dict[kk])
 				
 			if iss[kk] == 0: #transient
@@ -147,15 +149,17 @@ class PerfMeas(object):
 				self.save_array("head_kper{0:05d}".format(itime),head_dict[kk],gwf_name,gwf,mg_structured)
 				if self.verbose_level > 2:
 					self.save_array("dadk11_kper{0:05d}".format(itime),dadk11,gwf_name,gwf,mg_structured)
-					self.save_array("dadk22_kper{0:05d}".format(itime),dadk22,gwf_name,gwf,mg_structured)
+					#self.save_array("dadk22_kper{0:05d}".format(itime),dadk22,gwf_name,gwf,mg_structured)
 					self.save_array("dadk33_kper{0:05d}".format(itime),dadk33,gwf_name,gwf,mg_structured)
-					self.save_array("dadk123_kper{0:05d}".format(itime),dadk123,gwf_name,gwf,mg_structured)
+					#self.save_array("dadk123_kper{0:05d}".format(itime),dadk123,gwf_name,gwf,mg_structured)
 					np.savetxt("pm-{0}_amattodense_kper{1:04d}.dat".format(self._name,itime),amat_sp_t.todense(),fmt="%15.6E")
 					np.savetxt("pm-{0}_amat_kper{1:04d}.dat".format(self._name,itime),amat,fmt="%15.6E")
 					np.savetxt("pm-{0}_rhs_kper{1:04d}.dat".format(self._name,itime),rhs,fmt="%15.6E")
 					np.savetxt("pm-{0}_ia_kper{1:04d}.dat".format(self._name,itime),ia)
 					np.savetxt("pm-{0}_ja_kper{1:04d}.dat".format(self._name,itime),ja)
-					for arr,tag in zip([dadk11,dadk22,dadk33,dadk123],["dadk11","dadk22","dadk33","dadk123"]):
+					#for arr,tag in zip([dadk11,dadk22,dadk33,dadk123],["dadk11","dadk22","dadk33","dadk123"]):
+					for arr, tag in zip([dadk11, dadk33],
+										["dadk11", "dadk33"]):
 						np.savetxt("pm-{0}_{1}_kper{2:05d}.dat".format(self._name,tag,itime),arr,fmt="%15.6E")
 		
 		self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
@@ -309,8 +313,8 @@ class PerfMeas(object):
 					iihc = ihc[jj]
 
 					if iihc == 0: # vertical con
-						#v1 = PerfMeas._dconddvk(k33[node],height1,sat[node],k33[mnode],
-			      		#						height2,sat[mnode],hwva[jj],amat[jj])
+						v1 = PerfMeas._dconddvk(k33[node],height1,sat[node],k33[mnode],
+			      								height2,sat[mnode],hwva[jj],amat[jj])
 						#def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
 						#	d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
 						#	return d
@@ -327,12 +331,12 @@ class PerfMeas(object):
 						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1*sat_mod[node],height2*sat_mod[mnode])
 						#v1 = PerfMeas._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
 						#							height1, height2)
-						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height1)
+						v2 = -PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height2*sat_mod[mnode])
 						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj],cl2[jj], hwva[jj],height1)
 						
-						d_mat_k11[ia[node]+pp] += v1
+						d_mat_k11[ia[node]+pp] += v2
 						#d_mat_k123[ia[node]+pp] += v1
-						sum2 += v1
+						sum2 += v2
 						pp+=1
 					
 				d_mat_k11[ia[node]] = -sum2
@@ -362,7 +366,7 @@ class PerfMeas(object):
 
 		#condsq = (1./((1./((area*k1)/(0.5*(top1-bot1)))) + (1./((area*k2)/(0.5*(top2-bot2))))))**2
 		#return condsq / ((area * k1**2)/(0.5*(top1-bot1)))
-		d = (vcond_12**2) / (((area * k1)**2)/(0.5*(height1)))
+		d = (sat1*vcond_12**2) / (((area * k1)**2)/(0.5*(height1)))
 		return d
 
 	@staticmethod
@@ -390,7 +394,8 @@ class PerfMeas(object):
 		#head[head<bot] = bot[head<bot]
 		#head[head < bot] = bot[head < bot]
 
-		result = -1. * lamb * head * area * ((top - bot) * sat_mod) / dt
+		#result = -1. * lamb * head * area * ((top - bot) * sat_mod) / dt
+		result = -1. * lamb * head * area * (top - bot) / dt
 		return result
 	
 	def sens_ss_indirect(self,gwf_name,gwf,lamb,head,head_old,dt,sat,sat_old):
@@ -449,7 +454,8 @@ class PerfMeas(object):
 			sat_mod[iconvert==0] = 1.0
 		else:
 			sat_mod = np.ones_like(top)
-		drhsdh = -1. * storage * area * ((top - bot)*sat_mod) / dt
+		#drhsdh = -1. * storage * area * ((top - bot)*sat_mod) / dt
+		drhsdh = -1. * storage * area * (top - bot) / dt
 		return drhsdh
 
 	def _dfdh(self, kk, gwf_name, gwf,head_dict):
