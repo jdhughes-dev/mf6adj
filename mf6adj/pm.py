@@ -29,6 +29,8 @@ class PerfMeasRecord(object):
 		self.obsval = None
 		if obsval is not None:
 			self.obsval = float(obsval)
+
+
 class PerfMeas(object):
 	"""todo: preprocess all the connectivity in to faster look dict containers, 
 	including nnode to kij info for structured grids
@@ -36,6 +38,8 @@ class PerfMeas(object):
 	todo: convert several class methods to static methods - this might make testing easier
 
 	todo: add a no-data value var to fill empty spots in output arrays.  currently using zero :(
+
+	todo: check that each entry's kperkstp is in the dicts being passed to solve_adjoint()
 	
 	"""
 	def __init__(self,name,type,entries,is_structured,verbose_level=1):
@@ -45,12 +49,28 @@ class PerfMeas(object):
 		self.is_structured = is_structured
 		self.verbose_level = int(verbose_level)
 
+
+	@property
+	def name(self):
+		return str(self._name)
+
 	@staticmethod
 	def has_sto_iconvert(gwf):
 		names = [n for n in list(gwf.get_input_var_names()) if "STO" in n and "ICONVERT" in n]
 		if len(names) == 0:
 			return False
 		return True
+
+	def solve_forward(self, head_dict):
+		"""for testing only"""
+		result = 0.0
+		for pfr in self._entries:
+			if self._type == "direct":
+				result += pfr.weight * head_dict[pfr.kperkstp][pfr.nnode]
+			elif self._type == "residual":
+				result += (pfr.weight * (head_dict[pfr.kperkstp][pfr.nnode] - pfr.obsval))**2
+		return result
+
 
 	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, 
 		   			  sat_dict, sat_old_dict,gwf, gwf_name,mg_structured, gwf_package_dict):

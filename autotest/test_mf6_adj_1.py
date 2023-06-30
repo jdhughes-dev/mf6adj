@@ -2669,7 +2669,7 @@ def plot_freyberg_verbose_structured_output(test_d):
 
 
 def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
-                     nlay=1,nrow=10,ncol=10,delrowcol=1,icelltype=0,iconvert=0,newton=False,
+                     nlay=1,nrow=10,ncol=10,delrowcol=1.0,icelltype=0,iconvert=0,newton=False,
                      top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6",
                        full_sat_ghb=True):
 
@@ -2779,7 +2779,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     return sim
 
 
-def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.001,
+def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.01,
                     name = "freyberg6",obsval=1.0,pm_locs=None):
     import modflowapi
     # # now run with API
@@ -3068,7 +3068,6 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
         pdf.close()
 
 
-
 def test_xd_box_1():
 
     """
@@ -3113,7 +3112,7 @@ def test_xd_box_1():
 
     if clean:
        sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=1,ncol=3,nlay=2,
-                                q=-0.1,icelltype=1,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
+                                q=-0.1,icelltype=0,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -3143,8 +3142,8 @@ def test_xd_box_1():
     pm_locs.sort()
 
     assert len(pm_locs) > 0
-    if run_pert:
-        run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
+    #if run_pert:
+    #    run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 
     if run_adj:
         bd = os.getcwd()
@@ -3172,15 +3171,17 @@ def test_xd_box_1():
                     pm_name = "phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
                     f.write("begin performance_measure {0} type residual\n".format(pm_name))
                     # just use top as the obs val....
-                    f.write("{0} 1 {1} {2} {3} {4} {4}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
+                    f.write("{0} 1 {1} {2} {3} {4} {5}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
                     f.write("end performance_measure\n\n")
 
 
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
-        adj.finalize()
 
+        adj._perturbation_test()
+        adj.finalize()
+        exit()
         if plot_adj_results:
             afiles_to_plot = [f for f in os.listdir(".") if (f.startswith("pm-direct") or f.startswith("pm-phi")) and f.endswith(".dat")]
             afiles_to_plot.sort()
@@ -3207,7 +3208,7 @@ def test_xd_box_unstruct_1():
 
 
     # workflow flags
-    include_id0 = False  # include an idomain = cell
+    include_id0 = False  # include an idomain = cell - has to be false for unstructured...
     include_sto = True
 
     clean = True # run the pertbuation process
@@ -3219,21 +3220,15 @@ def test_xd_box_unstruct_1():
 
     plot_compare = True
 
-    temp_d = 'xd_box_1_temp'
-
+    new_d = 'xd_box_1_unstruct'
+    nrow = ncol = 15
     if clean:
-       sim = setup_xd_box_model(temp_d,include_sto=include_sto,include_id0=include_id0,nrow=15,ncol=15,nlay=2,
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=nrow, ncol=ncol,nlay=2,
                                 q=-0.1,icelltype=1,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
     else:
-        sim = flopy.mf6.MFSimulation.load(sim_ws=temp_d)
+        sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
     gwf = sim.get_model()
-    id = gwf.dis.idomain.array
-
-    new_d = temp_d.replace("_temp","_unstruct")
-    if os.path.exists(new_d):
-        shutil.rmtree(new_d)
-    shutil.copytree(temp_d,new_d)
 
     xcc, ycc = np.atleast_2d(gwf.modelgrid.xcellcenters),np.atleast_2d(gwf.modelgrid.ycellcenters)
 
@@ -3241,8 +3236,15 @@ def test_xd_box_unstruct_1():
     g = Gridgen(gwf.dis, model_ws=new_d, exe_name=gg_bin)
     g.build(verbose=True)
     gridprops = g.get_gridprops_disv()
-
+    gwf.remove_package("dis")
+    disv = flopy.mf6.ModflowGwfdisv(gwf, **gridprops)
+    disv.write()
     ghb = gwf.get_package("ghb")
+
+    f_ghb = open(os.path.join(new_d,"freyberg6_disv.ghb"),'w')
+    f_ghb.write("begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n")
+
+    f_ghb.write("begin dimensions\nmaxbound {0}\nend dimensions\n\n".format(ghb.stress_period_data.data[0].shape[0]))
 
     if ghb is not None:
         ghb_spd = {}
@@ -3253,40 +3255,58 @@ def test_xd_box_unstruct_1():
             ys = [ycc[cid[1], cid[2]] for cid in rarray.cellid]
             ilay = [cid[0] for cid in rarray.cellid]
             xys = [(x,y) for x,y in zip(xs,ys)]
-            inodes = [g.intersect([xy],"point",il)[0] for xy,il in zip(xys,ilay)]
+            # use zero for the layer so that we get the cell2d value back
+            inodes = [g.intersect([xy],"point",0)[0][0] for xy,il in zip(xys,ilay)]
             data = [[(il,inode),bhead,cond] for il,inode,bhead,cond in zip(ilay,inodes,rarray.bhead,rarray.cond)]
             ghb_spd[kper] = data
+            f_ghb.write("begin period {0}\n".format(kper+1))
+            [f_ghb.write("{0:9d} {1:9d} {2:15.6E} {3:15.6E}\n".format(il+1,inode+1,bhead,cond)) for il, inode, bhead, cond in
+                    zip(ilay, inodes, rarray.bhead, rarray.cond)]
+            f_ghb.write("end period {0}\n\n".format(kper+1))
+    f_ghb.close()
+
+    # now hack the nam file
+    nam_file = os.path.join(new_d,"freyberg6.nam")
+    lines = open(nam_file,'r').readlines()
+
+    print(lines)
+
+    with open(nam_file,'w') as f:
+        for line in lines:
+            if "dis" in line.lower():
+                line = "DISV6 freyberg6.disv disv\n"
+            elif "ghb" in line.lower():
+                line = "GHB6 freyberg6_disv.ghb ghb\n"
+            f.write(line)
+
+    bd = os.getcwd()
+    os.chdir(new_d)
+    os.system(os.path.split(mf6_bin)[-1])
+    os.chdir(bd)
+
+    #gwf.remove_package("ghb")
+    #ghb = flopy.mf6.ModflowGwfghb(gwf,stress_period_data=ghb_spd)
+    #ghb.write()
 
 
-    gwf.remove_package("dis")
-    flopy.mf6.ModflowGwfdisv(gwf, **gridprops)
+    #sim.write_simulation()
 
-    return
-
-    nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
-    obsval = 1.0
-
-    pert_mult = 1.01
-    weight = 1.0
-
-    p_kijs = []
-    # pm_locs = [(nlay-1,int(nrow/2),ncol-2),(0,int(nrow/2),ncol-2)]
-
-    for i in range(gwf.disv.nnodes):
-        print(i)
+    p_kinodes = []
+    for k in range(nlay):
+        for inode in range(gwf.disv.ncpl.data):
+            p_kinodes.append((k, inode))
 
     pm_locs = []
     for k in [0, int(nlay / 2), nlay-1]:
-        for i in [0, int(nrow / 2), nrow-1]:
-            for j in [0, int(ncol / 2), ncol-1]:
-                    pm_locs.append((k, i, j))
-            break
+        for inode in range(0,gwf.disv.ncpl.data,int(nrow/2)):
+            pm_locs.append((k, inode))
+
     pm_locs = list(set(pm_locs))
     pm_locs.sort()
 
     assert len(pm_locs) > 0
     if run_pert:
-        run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
+        run_xd_box_pert(new_d,p_kinodes,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 
     if run_adj:
         bd = os.getcwd()
@@ -3298,25 +3318,17 @@ def test_xd_box_unstruct_1():
         with open("test.adj",'w') as f:
             f.write("\nbegin options\n\nend options\n\n")
             for kper in range(sim.tdis.nper.data):
-                for p_kij in pm_locs:
-                    k,i,j = p_kij
-                    if id[k,i,j] <= 0:
-                        continue
-                    # just looking at one pm location for now...
-                    #if p_kij != (0,0,2):
-                    #    continue
-                    pm_name = "direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
+                for p_kinode in pm_locs:
+                    k,inode = p_kinode
+                    pm_name = "direct_kper{0:03d}_pk{1:03d}_pinode{2:03d}".format(kper,k,inode)
                     f.write("begin performance_measure {0} type direct\n".format(pm_name))
-                    f.write("{0} 1 {1} {2} {3} {4} \n".format(kper+1,k+1,i+1,j+1,weight))
+                    f.write("{0} 1 {1} {2} {3} \n".format(kper+1,k+1,inode+1,weight))
                     f.write("end performance_measure\n\n")
 
-
-                    pm_name = "phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
+                    pm_name = "phi_kper{0:03d}_pk{1:03d}_pinode{2:03d}".format(kper, k, inode)
                     f.write("begin performance_measure {0} type residual\n".format(pm_name))
-                    # just use top as the obs val....
-                    f.write("{0} 1 {1} {2} {3} {4} {4}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
+                    f.write("{0} 1 {1} {2} {3} {4}\n".format(kper+1,k+1,inode+1,obsval,weight))
                     f.write("end performance_measure\n\n")
-
 
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=1)
         adj.solve_gwf()
@@ -3346,8 +3358,8 @@ def test_xd_box_unstruct_1():
 
 
 if __name__ == "__main__":
-    test_xd_box_unstruct_1()
-    #test_xd_box_1()
+    #test_xd_box_unstruct_1()
+    test_xd_box_1()
 
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()

@@ -329,7 +329,7 @@ class Mf6Adj(object):
                     break
         return package_dict
 
-    def solve_gwf(self):
+    def solve_gwf(self,verbose=True):
         """solve the flow across the modflow sim times
 
         todo: move to hdf5
@@ -339,7 +339,8 @@ class Mf6Adj(object):
             # raise Exception("gwf is None")
             self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
         sim_start = datetime.now()
-        print("...starting flow solution at {0}".format(sim_start.strftime(DT_FMT)))
+        if verbose:
+            print("...starting flow solution at {0}".format(sim_start.strftime(DT_FMT)))
         # get current sim time
         ctime = self._gwf.get_current_time()
         # get ending sim time
@@ -379,15 +380,17 @@ class Mf6Adj(object):
                 convg = self._gwf.solve(1)
                 if convg:
                     td = (datetime.now() - sol_start).total_seconds() / 60.0
-                    print("flow stress period,time step {0},{1} converged with {2} iters, took {3:10.5G} mins".format(
-                        stress_period, time_step, kiter, td))
+                    if verbose:
+                        print("flow stress period,time step {0},{1} converged with {2} iters, took {3:10.5G} mins".format(
+                            stress_period, time_step, kiter, td))
                     break
                 kiter += 1
 
             if not convg:
                 td = (datetime.now() - sol_start).total_seconds() / 60.0
-                print("flow stress period,time step {0},{1} did not converge, {2} iters, took {3:10.5G} mins".format(
-                    stress_period, time_step, kiter, td))
+                if verbose:
+                    print("flow stress period,time step {0},{1} did not converge, {2} iters, took {3:10.5G} mins".format(
+                        stress_period, time_step, kiter, td))
                 num_fails += 1
             try:
                 self._gwf.finalize_solve(1)
@@ -442,10 +445,11 @@ class Mf6Adj(object):
 
         sim_end = datetime.now()
         td = (sim_end - sim_start).total_seconds() / 60.0
-        print("\n...flow solution finished at {0}, took: {1:10.5G} mins".format(sim_end.strftime(DT_FMT), td))
-        if num_fails > 0:
-            print("...failed to converge {0} times".format(num_fails))
-        print("\n")
+        if verbose:
+            print("\n...flow solution finished at {0}, took: {1:10.5G} mins".format(sim_end.strftime(DT_FMT), td))
+            if num_fails > 0:
+                print("...failed to converge {0} times".format(num_fails))
+            print("\n")
 
     def solve_adjoint(self):
         if len(self._kperkstp) == 0:
@@ -457,6 +461,9 @@ class Mf6Adj(object):
 
     def _initialize_gwf(self,lib_name,flow_dir):
         # instantiate the flow model api
+        if self._gwf is not None:
+            self._gwf.finalize()
+            self._gwf = None
         gwf = modflowapi.ModflowApi(os.path.join(flow_dir, lib_name), working_directory=flow_dir)
         gwf.initialize()
         return gwf
@@ -469,4 +476,49 @@ class Mf6Adj(object):
             self._gwf.finalize()
         except:
             pass
+        self._gwf = None
+
+    def _perturbation_test(self,pert_mult=1.01):
+        """run the pertubation testing - this is for dev and testing only"""
+
+        self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
+        self.solve_gwf()
+        base_results = {pm.name:pm.solve_forward(self._head) for pm in self._performance_measures}
+        base_head = self._head.copy()
+        assert len(base_results) == len(self._performance_measures)
+
+        addr = ["NLAY", self._gwf_name, "DIS"]
+        wbaddr = self._gwf.get_var_address(*addr)
+        nlay = self._gwf.get_value(wbaddr)[0]
+
+        address = [["K11", self._gwf_name, "NPF"]]
+
+        tags = ["k11"]
+
+        if nlay > 1:
+            address.append(["K33", self._gwf_name, "NPF"])
+
+        if PerfMeas.has_sto_iconvert(self._gwf):
+            address.append(["SS", self._gwf_name, "STO"])
+
+        for addr in address:
+            print("running perturbations for ",addr)
+            wbaddr = self._gwf.get_var_address(*addr)
+            inodes = self._gwf.get_value_ptr(wbaddr).shape[0]
+            epsilons = []
+            for inode in range(inodes):
+                self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
+                pert_arr = self._gwf.get_value_ptr(wbaddr)
+                delt = pert_arr[inode] * pert_mult
+                epsilons.append(delt - pert_arr[inode])
+                pert_arr[inode] = delt
+                self.solve_gwf(verbose=False)
+                pert_head = self._head.copy()
+                pert_arr1 = self._gwf.get_value_ptr(wbaddr)
+                pert_results = {pm.name: (pm.solve_forward(self._head)-base_results[pm.name])/epsilons[-1] for pm in self._performance_measures}
+                print(pert_results)
+
+
+
+
 
