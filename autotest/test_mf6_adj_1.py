@@ -3095,7 +3095,7 @@ def test_xd_box_1():
 
     """
     # workflow flags
-    include_id0 = False  # include an idomain = cell
+    include_id0 = True  # include an idomain = cell
     include_sto = True
 
     clean = True # run the pertbuation process
@@ -3109,9 +3109,8 @@ def test_xd_box_1():
 
     new_d = 'xd_box_1_test'
 
-
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=1,ncol=3,nlay=2,
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=1,ncol=3,nlay=3,
                                 q=-0.1,icelltype=0,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
@@ -3142,8 +3141,8 @@ def test_xd_box_1():
     pm_locs.sort()
 
     assert len(pm_locs) > 0
-    #if run_pert:
-    #    run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
+    if run_pert:
+        run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 
     if run_adj:
         bd = os.getcwd()
@@ -3178,10 +3177,9 @@ def test_xd_box_1():
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
-
         adj._perturbation_test()
         adj.finalize()
-        exit()
+
         if plot_adj_results:
             afiles_to_plot = [f for f in os.listdir(".") if (f.startswith("pm-direct") or f.startswith("pm-phi")) and f.endswith(".dat")]
             afiles_to_plot.sort()

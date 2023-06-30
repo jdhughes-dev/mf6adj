@@ -336,7 +336,7 @@ class Mf6Adj(object):
 
         """
         if self._gwf is None:
-            # raise Exception("gwf is None")
+            raise Exception("gwf is None")
             self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
         sim_start = datetime.now()
         if verbose:
@@ -349,7 +349,6 @@ class Mf6Adj(object):
         max_iter = self._gwf.get_value(self._gwf.get_var_address("MXITER", "SLN_1"))
         # let's do it!
         num_fails = 0
-
         self._amat = {}
         self._head = {}
         self._kperkstp = []
@@ -487,25 +486,35 @@ class Mf6Adj(object):
         base_head = self._head.copy()
         assert len(base_results) == len(self._performance_measures)
 
+        addr = ["NODEUSER", self._gwf_name.upper(), "DIS"]
+        wbaddr = self._gwf.get_var_address(*addr)
+        nuser = self._gwf.get_value(wbaddr) - 1
+        if len(nuser) == 1:
+            nuser = np.arange(self._head[self._kperkstp[0]].shape[0],dtype=int)
+
+        kijs = None
+        if self.is_structured:
+            kijs = self._structured_mg.get_lrc(list(nuser))
+
         addr = ["NLAY", self._gwf_name, "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
         nlay = self._gwf.get_value(wbaddr)[0]
 
         address = [["K11", self._gwf_name, "NPF"]]
 
-        tags = ["k11"]
-
         if nlay > 1:
             address.append(["K33", self._gwf_name, "NPF"])
 
         if PerfMeas.has_sto_iconvert(self._gwf):
             address.append(["SS", self._gwf_name, "STO"])
-
+        dfs = []
         for addr in address:
             print("running perturbations for ",addr)
+            pert_results_dict = {pm.name: [] for pm in self._performance_measures}
             wbaddr = self._gwf.get_var_address(*addr)
             inodes = self._gwf.get_value_ptr(wbaddr).shape[0]
             epsilons = []
+
             for inode in range(inodes):
                 self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
                 pert_arr = self._gwf.get_value_ptr(wbaddr)
@@ -513,10 +522,31 @@ class Mf6Adj(object):
                 epsilons.append(delt - pert_arr[inode])
                 pert_arr[inode] = delt
                 self.solve_gwf(verbose=False)
-                pert_head = self._head.copy()
                 pert_arr1 = self._gwf.get_value_ptr(wbaddr)
+                forward_results = {pm.name: pm.solve_forward(self._head) for pm in self._performance_measures}
+                pert_head = self._head.copy()
+                base_head
                 pert_results = {pm.name: (pm.solve_forward(self._head)-base_results[pm.name])/epsilons[-1] for pm in self._performance_measures}
-                print(pert_results)
+                for pm,result in pert_results.items():
+                    pert_results_dict[pm].append(result)
+                node = nuser[inode]
+
+            df = pd.DataFrame(pert_results_dict)
+            df.index = [nuser[inode] for inode in range(inodes)]
+            df.index.name = "node"
+            df.loc[:,"epsilon"] = epsilons
+            if kijs is not None:
+                for idx,lab in zip([0,1,2],["k","i","j"]):
+                    df.loc[:,lab] = [kij[idx] for kij in kijs]
+            tag = '_'.join(addr).lower()
+            df.loc[:,"addr"] = tag
+            dfs.append(df)
+
+        df = pd.concat(dfs)
+        df.to_csv("pert_results.csv")
+
+
+
 
 
 
