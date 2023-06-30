@@ -3286,7 +3286,7 @@ def test_xd_box_unstruct_1():
     #ghb = flopy.mf6.ModflowGwfghb(gwf,stress_period_data=ghb_spd)
     #ghb.write()
 
-
+    return
     #sim.write_simulation()
 
     p_kinodes = []
@@ -3356,8 +3356,8 @@ def test_xd_box_unstruct_1():
 
 
 if __name__ == "__main__":
-    #test_xd_box_unstruct_1()
-    test_xd_box_1()
+    test_xd_box_unstruct_1()
+    #test_xd_box_1()
 
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
