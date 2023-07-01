@@ -3099,7 +3099,7 @@ def test_xd_box_1():
     include_sto = True
 
     clean = True # run the pertbuation process
-    run_pert = False # the pertubations
+    run_pert = True # the pertubations
     plot_pert_results = True #plot the pertubation results
 
     run_adj = True
