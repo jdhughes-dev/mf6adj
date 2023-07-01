@@ -518,13 +518,18 @@ class Mf6Adj(object):
             for inode in range(inodes):
                 self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
                 pert_arr = self._gwf.get_value_ptr(wbaddr)
+                base_arr = pert_arr.copy()
                 delt = pert_arr[inode] * pert_mult
                 epsilons.append(delt - pert_arr[inode])
                 pert_arr[inode] = delt
-                self.solve_gwf(verbose=False)
+
                 pert_arr1 = self._gwf.get_value_ptr(wbaddr)
+                #condsat = self._gwf.get_value_ptr(self._gwf.get_var_address("CONDSAT", self._gwf_name, "NPF"))
+                #condsat[0] *= pert_mult
+                self.solve_gwf(verbose=False)
                 forward_results = {pm.name: pm.solve_forward(self._head) for pm in self._performance_measures}
                 pert_head = self._head.copy()
+
                 base_head
                 pert_results = {pm.name: (pm.solve_forward(self._head)-base_results[pm.name])/epsilons[-1] for pm in self._performance_measures}
                 for pm,result in pert_results.items():
