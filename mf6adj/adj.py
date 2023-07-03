@@ -569,6 +569,10 @@ class Mf6Adj(object):
             df.loc[:,"node"] = nodes
             df.loc[:,"epsiloon"] = epsilons
             df.index = df.pop("node")
+            if kijs is not None:
+                for idx,lab in zip([0,1,2],["k","i","j"]):
+                    df.loc[:,lab] = df.index.map(lambda x: kijs[x-1][idx])
+            dfs.append(df)
 
 
 
