@@ -477,6 +477,7 @@ class Mf6Adj(object):
             pass
         self._gwf = None
 
+
     def _perturbation_test(self,pert_mult=1.01):
         """run the pertubation testing - this is for dev and testing only"""
 
@@ -486,27 +487,34 @@ class Mf6Adj(object):
         base_head = self._head.copy()
         assert len(base_results) == len(self._performance_measures)
 
-        addr = ["NODEUSER", self._gwf_name.upper(), "DIS"]
+        gwf_name = self._gwf_name.upper()
+        addr = ["NODEUSER", gwf_name, "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
         nuser = self._gwf.get_value(wbaddr) - 1
         if len(nuser) == 1:
             nuser = np.arange(self._head[self._kperkstp[0]].shape[0],dtype=int)
 
+
+        ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", self._gwf) - 1
+        ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", self._gwf) - 1
+        jas = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JAS", self._gwf) - 1
+        iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
+
         kijs = None
         if self.is_structured:
             kijs = self._structured_mg.get_lrc(list(nuser))
 
-        addr = ["NLAY", self._gwf_name, "DIS"]
+        addr = ["NLAY", gwf_name, "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
         nlay = self._gwf.get_value(wbaddr)[0]
 
-        address = [["K11", self._gwf_name, "NPF"]]
+        address = [["K11",gwf_name, "NPF"]]
 
         if nlay > 1:
-            address.append(["K33", self._gwf_name, "NPF"])
+            address.append(["K33", gwf_name, "NPF"])
 
         if PerfMeas.has_sto_iconvert(self._gwf):
-            address.append(["SS", self._gwf_name, "STO"])
+            address.append(["SS", gwf_name, "STO"])
         dfs = []
         for addr in address:
             print("running perturbations for ",addr)
@@ -518,19 +526,25 @@ class Mf6Adj(object):
             for inode in range(inodes):
                 self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
                 pert_arr = self._gwf.get_value_ptr(wbaddr)
-                base_arr = pert_arr.copy()
+
                 delt = pert_arr[inode] * pert_mult
                 epsilons.append(delt - pert_arr[inode])
                 pert_arr[inode] = delt
 
-                pert_arr1 = self._gwf.get_value_ptr(wbaddr)
-                #condsat = self._gwf.get_value_ptr(self._gwf.get_var_address("CONDSAT", self._gwf_name, "NPF"))
-                #condsat[0] *= pert_mult
+                #hack to deal with K11 and K33 perturbations
+                if "K11" in wbaddr.upper() or "K33" in wbaddr.upper():
+                    condsat = self._gwf.get_value_ptr(self._gwf.get_var_address("CONDSAT", self._gwf_name, "NPF"))
+                    offset,ncon = ia[inode],iac[inode]
+                    for ii in range(offset + 1, offset + ncon):
+                        mnode = ja[ii]
+
+                        jj = jas[ii]
+                        if jj < 0:
+                            raise Exception()
+                        condsat[jj] *= pert_mult
+
                 self.solve_gwf(verbose=False)
                 forward_results = {pm.name: pm.solve_forward(self._head) for pm in self._performance_measures}
-                pert_head = self._head.copy()
-
-                base_head
                 pert_results = {pm.name: (pm.solve_forward(self._head)-base_results[pm.name])/epsilons[-1] for pm in self._performance_measures}
                 for pm,result in pert_results.items():
                     pert_results_dict[pm].append(result)
