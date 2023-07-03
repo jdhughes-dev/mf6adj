@@ -21,13 +21,13 @@ if "linux" in platform.platform().lower():
     mf6_bin = os.path.join("..", "bin", "linux", "mf6")
     local_lib_name = "./libmf6.so"
     local_mf6_bin = "./mf6"
-    gg_bin = "./gridgen"
+    gg_bin = "gridgen"
 elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "mac", "libmf6.dylib")
     mf6_bin = os.path.join("..", "bin", "mac", "mf6")
     local_lib_name = "./libmf6.dylib"
     local_mf6_bin = "./mf6"
-    gg_bin = "./gridgen"
+    gg_bin = "gridgen"
 else:
     lib_name = os.path.join("..", "bin", "win", "libmf6.dll")
     mf6_bin = os.path.join("..", "bin", "win", "mf6.exe")

@@ -502,7 +502,7 @@ class Mf6Adj(object):
 
         self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
         gwf_name = self._gwf_name.upper()
-        
+
         self.solve_gwf()
         base_results = {pm.name:pm.solve_forward(self._head) for pm in self._performance_measures}
         assert len(base_results) == len(self._performance_measures)
