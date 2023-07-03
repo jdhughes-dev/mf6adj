@@ -3127,7 +3127,7 @@ def test_xd_box_1():
     new_d = 'xd_box_1_test'
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=1,ncol=3,nlay=3,
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=1,ncol=3,nlay=32,
                                 q=-0.1,icelltype=0,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
@@ -3158,7 +3158,6 @@ def test_xd_box_1():
     pm_locs.sort()
 
     assert len(pm_locs) > 0
-
 
     if run_adj:
         bd = os.getcwd()

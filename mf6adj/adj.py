@@ -329,7 +329,7 @@ class Mf6Adj(object):
                     break
         return package_dict
 
-    def solve_gwf(self,verbose=True,force_k_update=False):
+    def solve_gwf(self,verbose=True,_force_k_update=False,_sp_pert_dict=None):
         """solve the flow across the modflow sim times
 
         todo: move to hdf5
@@ -359,7 +359,7 @@ class Mf6Adj(object):
         sat_old = None
         visited = list()
 
-        nodekchange = self._gwf.get_value_ptr(self._gwf.get_var_address("NODEKCHANGE", self._gwf_name, "NPF"))
+        #nodekchange = self._gwf.get_value_ptr(self._gwf.get_var_address("NODEKCHANGE", self._gwf_name, "NPF"))
         #k11 = self._gwf.get_value_ptr(self._gwf.get_var_address("K11", self._gwf_name, "NPF"))
         #k11input = self._gwf.get_value_ptr(self._gwf.get_var_address("K11INPUT", self._gwf_name, "NPF"))
         #condsat = self._gwf.get_value_ptr(self._gwf.get_var_address("CONDSAT", self._gwf_name, "NPF"))
@@ -376,10 +376,11 @@ class Mf6Adj(object):
             stress_period = self._gwf.get_value(self._gwf.get_var_address("KPER", "TDIS"))[0]
             time_step = self._gwf.get_value(self._gwf.get_var_address("KSTP", "TDIS"))[0]
             kper, kstp = stress_period - 1, time_step - 1
+            kperkstp = (kper, kstp)
 
             # this is to force mf6 to update cond sat using the k11 and k33 arrays
             # which is needed for the perturbation testing
-            if kper == 0 and kstp == 0 and force_k_update:
+            if kper == 0 and kstp == 0 and _force_k_update:
                 kchangeper = self._gwf.get_value_ptr(self._gwf.get_var_address("KCHANGEPER", self._gwf_name, "NPF"))
                 kchangestp = self._gwf.get_value_ptr(self._gwf.get_var_address("KCHANGESTP", self._gwf_name, "NPF"))
                 kchangestp[0] = time_step
@@ -387,11 +388,24 @@ class Mf6Adj(object):
                 nodekchange = self._gwf.get_value_ptr(self._gwf.get_var_address("NODEKCHANGE", self._gwf_name, "NPF"))
                 nodekchange[:] = 1
 
+            # apply any boundary condition perturbation info
+            if _sp_pert_dict is not None:
+                if _sp_pert_dict["kperkstp"] != kperkstp:
+                    continue
+                addr = ["BOUND",self._gwf_name,_sp_pert_dict["packagename"].upper()]
+                wbaddr = self._gwf.get_var_address(*addr)
+                bnd_ptr = self._gwf.get_value_ptr(wbaddr)
+                wbaddr = self._gwf.get_var_address("NODELIST", self._gwf_name, _sp_pert_dict["packagename"].upper())
+                nodelist = self._gwf.get_value_ptr(wbaddr)
+                idx = np.where(nodelist == _sp_pert_dict["node"])
+                bnd_ptr[idx] = _sp_pert_dict["bound"]
+
+
             self._gwf.prepare_solve(1)
             sat = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
             if sat_old is None:
                 sat_old = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
-            # the current one-based stress period number
+
 
             # solve until converged
             while kiter < max_iter:
@@ -421,7 +435,7 @@ class Mf6Adj(object):
             dt1 = self._gwf.get_time_step()
             amat = self._gwf.get_value(self._gwf.get_var_address("AMAT", "SLN_1")).copy()
 
-            kperkstp = (kper,kstp)
+
             if kperkstp in visited:
                 raise Exception("{0} already visited".format(kperkstp))
             visited.append(kperkstp)
@@ -459,7 +473,7 @@ class Mf6Adj(object):
                             for i in range(nbound):
                                 # note bound is an array!
                                 self._sp_package_data[package_type][kperkstp].append({"node":nodelist[i],"bound":bound[i],
-                                                                                     "hcof":hcof[i],"rhs":rhs[i]})
+                                                                                     "hcof":hcof[i],"rhs":rhs[i],"packagename":tag})
 
         sim_end = datetime.now()
         td = (sim_end - sim_start).total_seconds() / 60.0
@@ -521,14 +535,51 @@ class Mf6Adj(object):
         wbaddr = self._gwf.get_var_address(*addr)
         nlay = self._gwf.get_value(wbaddr)[0]
 
-        address = [["K11",gwf_name, "NPF"]]
 
+        dfs = []
+
+        # boundary condition perturbations
+        org_sp_package_data = self._sp_package_data.copy()
+        for paktype, pdict in org_sp_package_data.items():
+            epsilons = []
+            bound_idx = []
+            nodes = []
+            pert_results_dict = {pm.name: [] for pm in self._performance_measures}
+            print("running perturbations for ", paktype)
+            for kk,infolist in pdict.items():
+                for infodict in infolist:
+                    bnd_items = infodict["bound"].shape[0]
+                    for ibnd in range(bnd_items):
+                        new_bound = infodict["bound"].copy()
+                        delt = new_bound[ibnd] * pert_mult
+                        epsilons.append(delt - new_bound[ibnd])
+                        new_bound[ibnd] = delt
+                        pakname = infodict["packagename"]
+                        pert_dict = {"kperkstp":kk,"packagename":pakname,"node":infodict["node"],"bound":new_bound}
+                        #print(pert_dict)
+                        self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
+                        self.solve_gwf(verbose=False,_sp_pert_dict=pert_dict)
+                        pert_results = {pm.name: (pm.solve_forward(self._head) - base_results[pm.name]) / epsilons[-1]
+                                        for pm in self._performance_measures}
+                        for pm, result in pert_results.items():
+                            pert_results_dict[pm].append(result)
+                        bound_idx.append(ibnd)
+                        nodes.append(infodict["node"])
+            df = pd.DataFrame(pert_results_dict)
+            df.loc[:,"node"] = nodes
+            df.loc[:,"epsiloon"] = epsilons
+            df.index = df.pop("node")
+
+
+
+
+        # property perturbations
+        address = [["K11", gwf_name, "NPF"]]
         if nlay > 1:
             address.append(["K33", gwf_name, "NPF"])
 
         if PerfMeas.has_sto_iconvert(self._gwf):
             address.append(["SS", gwf_name, "STO"])
-        dfs = []
         for addr in address:
             print("running perturbations for ",addr)
             pert_results_dict = {pm.name: [] for pm in self._performance_measures}
@@ -544,7 +595,7 @@ class Mf6Adj(object):
                 epsilons.append(delt - pert_arr[inode])
                 pert_arr[inode] = delt
 
-                self.solve_gwf(verbose=False,force_k_update=True)
+                self.solve_gwf(verbose=False,_force_k_update=True)
                 pert_results = {pm.name: (pm.solve_forward(self._head)-base_results[pm.name])/epsilons[-1] for pm in self._performance_measures}
                 for pm,result in pert_results.items():
                     pert_results_dict[pm].append(result)
@@ -559,6 +610,9 @@ class Mf6Adj(object):
             tag = '_'.join(addr).lower()
             df.loc[:,"addr"] = tag
             dfs.append(df)
+
+
+
 
         df = pd.concat(dfs)
         df.to_csv("pert_results.csv")
