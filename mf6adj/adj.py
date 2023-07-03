@@ -329,7 +329,7 @@ class Mf6Adj(object):
                     break
         return package_dict
 
-    def solve_gwf(self,verbose=True):
+    def solve_gwf(self,verbose=True,force_k_update=False):
         """solve the flow across the modflow sim times
 
         todo: move to hdf5
@@ -358,6 +358,12 @@ class Mf6Adj(object):
         self._sat_old = {}
         sat_old = None
         visited = list()
+
+        nodekchange = self._gwf.get_value_ptr(self._gwf.get_var_address("NODEKCHANGE", self._gwf_name, "NPF"))
+        #k11 = self._gwf.get_value_ptr(self._gwf.get_var_address("K11", self._gwf_name, "NPF"))
+        #k11input = self._gwf.get_value_ptr(self._gwf.get_var_address("K11INPUT", self._gwf_name, "NPF"))
+        #condsat = self._gwf.get_value_ptr(self._gwf.get_var_address("CONDSAT", self._gwf_name, "NPF"))
+
         self._sp_package_data = {}
         while ctime < etime:
             sol_start = datetime.now()
@@ -367,13 +373,26 @@ class Mf6Adj(object):
             self._gwf.prepare_time_step(dt)
             kiter = 0
             # prep to solve
+            stress_period = self._gwf.get_value(self._gwf.get_var_address("KPER", "TDIS"))[0]
+            time_step = self._gwf.get_value(self._gwf.get_var_address("KSTP", "TDIS"))[0]
+            kper, kstp = stress_period - 1, time_step - 1
+
+            # this is to force mf6 to update cond sat using the k11 and k33 arrays
+            # which is needed for the perturbation testing
+            if kper == 0 and kstp == 0 and force_k_update:
+                kchangeper = self._gwf.get_value_ptr(self._gwf.get_var_address("KCHANGEPER", self._gwf_name, "NPF"))
+                kchangestp = self._gwf.get_value_ptr(self._gwf.get_var_address("KCHANGESTP", self._gwf_name, "NPF"))
+                kchangestp[0] = time_step
+                kchangeper[0] = stress_period
+                nodekchange = self._gwf.get_value_ptr(self._gwf.get_var_address("NODEKCHANGE", self._gwf_name, "NPF"))
+                nodekchange[:] = 1
+
             self._gwf.prepare_solve(1)
             sat = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
             if sat_old is None:
                 sat_old = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
             # the current one-based stress period number
-            stress_period = self._gwf.get_value(self._gwf.get_var_address("KPER", "TDIS"))[0]
-            time_step = self._gwf.get_value(self._gwf.get_var_address("KSTP", "TDIS"))[0]
+
             # solve until converged
             while kiter < max_iter:
                 convg = self._gwf.solve(1)
@@ -401,7 +420,7 @@ class Mf6Adj(object):
             ctime = self._gwf.get_current_time()
             dt1 = self._gwf.get_time_step()
             amat = self._gwf.get_value(self._gwf.get_var_address("AMAT", "SLN_1")).copy()
-            kper,kstp = stress_period - 1,time_step - 1
+
             kperkstp = (kper,kstp)
             if kperkstp in visited:
                 raise Exception("{0} already visited".format(kperkstp))
@@ -482,23 +501,17 @@ class Mf6Adj(object):
         """run the pertubation testing - this is for dev and testing only"""
 
         self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
+        gwf_name = self._gwf_name.upper()
+        
         self.solve_gwf()
         base_results = {pm.name:pm.solve_forward(self._head) for pm in self._performance_measures}
-        base_head = self._head.copy()
         assert len(base_results) == len(self._performance_measures)
 
-        gwf_name = self._gwf_name.upper()
         addr = ["NODEUSER", gwf_name, "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
         nuser = self._gwf.get_value(wbaddr) - 1
         if len(nuser) == 1:
             nuser = np.arange(self._head[self._kperkstp[0]].shape[0],dtype=int)
-
-
-        ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", self._gwf) - 1
-        ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", self._gwf) - 1
-        jas = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JAS", self._gwf) - 1
-        iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
 
         kijs = None
         if self.is_structured:
@@ -531,24 +544,10 @@ class Mf6Adj(object):
                 epsilons.append(delt - pert_arr[inode])
                 pert_arr[inode] = delt
 
-                #hack to deal with K11 and K33 perturbations
-                if "K11" in wbaddr.upper() or "K33" in wbaddr.upper():
-                    condsat = self._gwf.get_value_ptr(self._gwf.get_var_address("CONDSAT", self._gwf_name, "NPF"))
-                    offset,ncon = ia[inode],iac[inode]
-                    for ii in range(offset + 1, offset + ncon):
-                        mnode = ja[ii]
-
-                        jj = jas[ii]
-                        if jj < 0:
-                            raise Exception()
-                        condsat[jj] *= pert_mult
-
-                self.solve_gwf(verbose=False)
-                forward_results = {pm.name: pm.solve_forward(self._head) for pm in self._performance_measures}
+                self.solve_gwf(verbose=False,force_k_update=True)
                 pert_results = {pm.name: (pm.solve_forward(self._head)-base_results[pm.name])/epsilons[-1] for pm in self._performance_measures}
                 for pm,result in pert_results.items():
                     pert_results_dict[pm].append(result)
-                node = nuser[inode]
 
             df = pd.DataFrame(pert_results_dict)
             df.index = [nuser[inode] for inode in range(inodes)]
