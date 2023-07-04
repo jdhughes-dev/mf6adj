@@ -486,10 +486,13 @@ class Mf6Adj(object):
     def solve_adjoint(self):
         if len(self._kperkstp) == 0:
             raise Exception("need to call solve_gwf() first")
+        dfs = {}
         for pm in self._performance_measures:
-            pm.solve_adjoint(self._kperkstp,self._iss, self._deltat,self._amat,
-                             self._head,self._head_old, self._sat, self._sat_old,self._gwf,
-                             self._gwf_name, self._structured_mg,self._sp_package_data)
+            df = pm.solve_adjoint(self._kperkstp,self._iss, self._deltat,self._amat,
+                                  self._head,self._head_old, self._sat, self._sat_old,self._gwf,
+                                  self._gwf_name, self._structured_mg,self._sp_package_data)
+            dfs[pm.name] = df
+        return dfs
 
     def _initialize_gwf(self,lib_name,flow_dir):
         # instantiate the flow model api
