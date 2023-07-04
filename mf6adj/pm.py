@@ -74,6 +74,10 @@ class PerfMeas(object):
 
 	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, 
 		   			  sat_dict, sat_old_dict,gwf, gwf_name,mg_structured, gwf_package_dict):
+		"""
+
+
+		"""
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name,"DIS","NODES",gwf)[0]
 
 		lamb = np.zeros(nnodes)
@@ -83,6 +87,7 @@ class PerfMeas(object):
 
 		comp_k33_sens = np.zeros(nnodes)
 		comp_k_sens = np.zeros(nnodes)
+
 		comp_ss_sens = None
 
 		has_sto = PerfMeas.has_sto_iconvert(gwf)
@@ -92,13 +97,18 @@ class PerfMeas(object):
 		comp_welq_sens = None
 		comp_ghb_head_sens = None
 		comp_ghb_cond_sens = None
+		comp_rch_sens = None
+
 
 		if "wel6" in gwf_package_dict:
 			comp_welq_sens = np.zeros(nnodes)
 		if "ghb6" in gwf_package_dict:
 			comp_ghb_head_sens = np.zeros(nnodes)
 			comp_ghb_cond_sens = np.zeros(nnodes)
-			
+		if "rch6" in gwf_package_dict or "rcha6" in gwf_package_dict:
+			comp_rch_sens = np.zeros((nnodes))
+
+		data = {}
 		for itime,kk in enumerate(kperkstp[::-1]):
 			itime = kk[0]
 			print('solving',self._name,"(kper,kstp)",kk)
@@ -136,6 +146,7 @@ class PerfMeas(object):
 			comp_k_sens += k_sens
 			comp_k33_sens += k33_sens
 
+
 			if has_sto:
 				ss_sens = self.sens_ss_indirect(gwf_name,gwf,lamb, head_dict[kk],head_old_dict[kk],deltat_dict[kk],sat_dict[kk],sat_old_dict[kk])
 				comp_ss_sens += ss_sens
@@ -144,6 +155,7 @@ class PerfMeas(object):
 				sens_welq = self.lam_drhs_dqwel(lamb,gwf_package_dict["wel6"][kk])
 				if self.verbose_level > 1:
 					self.save_array("sens_welq_kper{0:05d}".format(itime),sens_welq,gwf_name,gwf,mg_structured)
+					data["welq_kper{0:05d}".format(itime)] = sens_welq
 				comp_welq_sens += sens_welq				
 
 			if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
@@ -151,27 +163,50 @@ class PerfMeas(object):
 				if self.verbose_level > 1:
 					self.save_array("sens_ghbhead_kper{0:05d}".format(itime),sens_ghb_head,gwf_name,gwf,mg_structured)
 					self.save_array("sens_ghbcond_kper{0:05d}".format(itime),sens_ghb_cond,gwf_name,gwf,mg_structured)
+					data["ghbhead_kper{0:05d}".format(itime)] = sens_ghb_head
+					data["ghbcond_kper{0:05d}".format(itime)] = sens_ghb_cond
+
 				comp_ghb_head_sens += sens_ghb_head
 				comp_ghb_cond_sens += sens_ghb_cond
 			
 			if "rch" in gwf_package_dict and kk in gwf_package_dict["rch6"]:
-				pass
+				sens_rch = self.rch_sens(lamb,gwf_package_dict["rch6"][kk])
+				if self.verbose_level > 1:
+					self.save_array("sens_rch_kper{0:05d}".format(itime),sens_rch,gwf_name,gwf,mg_structured)
+					if "rch_kper{0:05d}".format(itime) in data:
+						data["rch_kper{0:05d}".format(itime)] += sens_rch
+					else:
+						data["rch_kper{0:05d}".format(itime)] = sens_rch
 
+				comp_rch_sens += sens_rch
+
+			# todo: think about what it would do to have both rch and recha active..for now just accumulating them
 			if "rcha" in gwf_package_dict and kk in gwf_package_dict["rcha6"]:
-				pass
+				sens_rch = self.rch_sens(lamb, gwf_package_dict["rcha6"][kk])
+				if self.verbose_level > 1:
+					self.save_array("sens_rch_kper{0:05d}".format(itime),sens_rch,gwf_name,gwf,mg_structured)
+					if "rch_kper{0:05d}".format(itime) in data:
+						data["rch_kper{0:05d}".format(itime)] += sens_rch
+					else:
+						data["rch_kper{0:05d}".format(itime)] = sens_rch
+				comp_rch_sens += sens_rch
 
+			# this is just temp stuff - will be replaced with a more scalable solution...
 			if self.verbose_level > 1:
 				self.save_array("adjstates_kper{0:05d}".format(itime),lamb,gwf_name,gwf,mg_structured)
+				data["adjstates_kper{0:05d}".format(itime)] = lamb
 				self.save_array("sens_k33_kper{0:05d}".format(itime), k33_sens, gwf_name, gwf, mg_structured)
+				data["sens_k33_kper{0:05d}".format(itime)] = k33_sens
 				self.save_array("sens_k11_kper{0:05d}".format(itime),k_sens,gwf_name,gwf,mg_structured)
+				data["sens_k11_kper{0:05d}".format(itime)] = k_sens
 				if has_sto:
 					self.save_array("sens_ss_kper{0:05d}".format(itime),ss_sens,gwf_name,gwf,mg_structured)
+					data["sens_ss_kper{0:05d}".format(itime)] = ss_sens
 				self.save_array("head_kper{0:05d}".format(itime),head_dict[kk],gwf_name,gwf,mg_structured)
+				data["head_kper{0:05d}".format(itime)] = head_dict[kk]
 				if self.verbose_level > 2:
 					self.save_array("dadk11_kper{0:05d}".format(itime),dadk11,gwf_name,gwf,mg_structured)
-					#self.save_array("dadk22_kper{0:05d}".format(itime),dadk22,gwf_name,gwf,mg_structured)
 					self.save_array("dadk33_kper{0:05d}".format(itime),dadk33,gwf_name,gwf,mg_structured)
-					#self.save_array("dadk123_kper{0:05d}".format(itime),dadk123,gwf_name,gwf,mg_structured)
 					np.savetxt("pm-{0}_amattodense_kper{1:04d}.dat".format(self._name,itime),amat_sp_t.todense(),fmt="%15.6E")
 					np.savetxt("pm-{0}_amat_kper{1:04d}.dat".format(self._name,itime),amat,fmt="%15.6E")
 					np.savetxt("pm-{0}_rhs_kper{1:04d}.dat".format(self._name,itime),rhs,fmt="%15.6E")
@@ -181,16 +216,44 @@ class PerfMeas(object):
 					for arr, tag in zip([dadk11, dadk33],
 										["dadk11", "dadk33"]):
 						np.savetxt("pm-{0}_{1}_kper{2:05d}.dat".format(self._name,tag,itime),arr,fmt="%15.6E")
-		
+
+		data ["k11"] = comp_k_sens
+		data["k33"] = comp_k33_sens
 		self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
 		self.save_array("comp_sens_k11",comp_k_sens,gwf_name,gwf,mg_structured)
+		addr = ["NODEUSER", gwf_name, "DIS"]
+		wbaddr = gwf.get_var_address(*addr)
+		nuser = gwf.get_value(wbaddr) - 1
+		if len(nuser) == 1:
+			nuser = np.arange(nnodes, dtype=int)
+		df = pd.DataFrame(data, index=nuser)
+
 		if has_sto:
 			self.save_array("comp_sens_ss",comp_ss_sens,gwf_name,gwf,mg_structured)
+			df.loc[:, "ss"] = comp_ss_sens
 		if "wel6" in gwf_package_dict:
 			self.save_array("comp_sens_welq", comp_welq_sens, gwf_name, gwf, mg_structured)
+			df.loc[:, "welq"] = comp_welq_sens
 		if "ghb6" in gwf_package_dict:
 			self.save_array("comp_sens_ghbhead", comp_ghb_head_sens, gwf_name, gwf, mg_structured)
 			self.save_array("comp_sens_ghbcond", comp_ghb_cond_sens, gwf_name, gwf, mg_structured)
+			df.loc[:,"ghbhead"] = comp_ghb_head_sens
+			df.loc[:,"ghbcond"] = comp_ghb_cond_sens
+
+		if "rch" in gwf_package_dict or "rcha" in gwf_package_dict:
+			self.save_array("comp_sens_rch",comp_rch_sens,gwf_name,gwf,mg_structured)
+			df.loc[:,"rch"] = comp_rch_sens
+		df.to_csv("{0}_adj_results.csv".format(self._name))
+		return df
+
+	def rch_sens(self,lamb, sp_dict):
+		result = np.zeros_like(lamb)
+		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AERA", gwf)
+
+		for id in sp_dict:
+			n = id["node"] - 1
+			result[n] = lamb[n] * area[n]
+		return result
 
 	def lam_drhs_dghb(self,lamb,head,sp_dict):
 		result_head = np.zeros_like(lamb)
@@ -241,12 +304,8 @@ class PerfMeas(object):
 				rarr = np.array((jas,avec)).transpose()
 			else:
 				raise Exception("unrecognized unstructed vector length: {0} for filename {1}".format(avec.shape[0],filename))
-			#print(rarr)
 			np.savetxt(filename,rarr,fmt=["%10d","%15.6E"])
-			# with open(filename,'w') as f:
-			# 	f.write("node,value\n")
-			# 	for n,v in zip(nodeuser,avec):
-			# 		f.write("{0},{1:15.6E}\n".format(n,v))
+
 
 
 	def _dadk(self,gwf_name,gwf, sat, amat):
@@ -333,8 +392,8 @@ class PerfMeas(object):
 					iihc = ihc[jj]
 
 					if iihc == 0: # vertical con
-						v1 = PerfMeas._dconddvk(k33[node],height1,sat[node],k33[mnode],
-			      								height2,sat[mnode],hwva[jj],amat[jj])
+						#v1 = PerfMeas._dconddvk(k33[node],height1,sat[node],k33[mnode],
+			      		#							height2,sat[mnode],hwva[jj],amat[jj])
 						#def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
 						#	d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
 						#	return d
@@ -351,12 +410,12 @@ class PerfMeas(object):
 						v1 = PerfMeas._dconddhk(k11[node],k11[mnode],cl1[jj],cl2[jj],hwva[jj],height1*sat_mod[node],height2*sat_mod[mnode])
 						#v1 = PerfMeas._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
 						#							height1, height2)
-						v2 = -PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height2*sat_mod[mnode])
+						#v2 = -PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height2*sat_mod[mnode])
 						#v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj],cl2[jj], hwva[jj],height1)
 						
-						d_mat_k11[ia[node]+pp] += v2
+						d_mat_k11[ia[node]+pp] += v1
 						#d_mat_k123[ia[node]+pp] += v1
-						sum2 += v2
+						sum2 += v1
 						pp+=1
 					
 				d_mat_k11[ia[node]] = -sum2

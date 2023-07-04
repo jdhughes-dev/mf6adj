@@ -14,18 +14,19 @@ sys.path.insert(0,".")
 import modflowapi
 import flopy
 import flopy.utils.cvfdutil
+import pyemu
 
 if "linux" in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "linux", "libmf6.so")
     mf6_bin = os.path.join("..", "bin", "linux", "mf6")
     local_lib_name = "./libmf6.so"
-    local_mf6_bin = "mf6"
+    local_mf6_bin = "./mf6"
     gg_bin = "gridgen"
 elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "mac", "libmf6.dylib")
     mf6_bin = os.path.join("..", "bin", "mac", "mf6")
-    local_lib_name = "libmf6.dylib"
-    local_mf6_bin = "mf6"
+    local_lib_name = "./libmf6.dylib"
+    local_mf6_bin = "./mf6"
     gg_bin = "gridgen"
 else:
     lib_name = os.path.join("..", "bin", "win", "libmf6.dll")
@@ -420,7 +421,7 @@ def twod_ss_nested_hetero_head_at_point():
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
-    sim.run_simulation()
+    pyemu.os_utils.run(local_mf6_bin,cwd=".'")
 
     # now run with API
     print('test run to completion with API')
@@ -1032,7 +1033,7 @@ def twod_ss_hetero_coarsegrid_test():
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
-    sim.run_simulation()
+    pyemu.os_utils.run(local_mf6_bin)
 
     # now run with API
     print('test run to completion with API')
@@ -1660,7 +1661,7 @@ def twod_ss_hetero_head_at_point():
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
-    sim.run_simulation()
+    pyemu.os_utils.run(local_mf6_bin)
 
     # now run with API
     print('test run to completion with API')
@@ -2005,7 +2006,7 @@ def _skip_for_now_freyberg():
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
-    sim.run_simulation()
+    pyemu.os_utils.run(local_mf6_bin)
 
     pert_results = os.path.join(test_d,"pert_results.csv")
     if not os.path.exists(pert_results):
@@ -2770,12 +2771,27 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     oc = flopy.mf6.ModflowGwfoc(gwf, saverecord=saverecord, head_filerecord=head_filerecord,
                                 budget_filerecord=budget_filerecord, printrecord=printrecord)
 
+
+
     npf = flopy.mf6.ModflowGwfnpf(gwf, icelltype=icelltype, k=hk, k33=k33)
 
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
-    sim.run_simulation()
+
+    # hack in tvk so we can use pert within api later
+    with open(os.path.join(new_d, "blank.tvk"), 'w') as f:
+        f.write("\n")
+
+    # npf_file = os.path.join(new_d,name+".npf")
+    # lines = open(npf_file,'r').readlines()
+    # with open(npf_file,'w') as f:
+    #     for line in lines:
+    #         f.write(line)
+    #         if "begin options" in line.lower():
+    #             f.write("tvk6_filename blank.tvk\n")
+
+    pyemu.os_utils.run(local_mf6_bin,cwd=new_d)
     return sim
 
 
@@ -2886,6 +2902,7 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
             current_time = mf6api.get_current_time()
             end_time = mf6api.get_end_time()
             max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
+            #condsat = mf6api.get_value_ptr(mf6api.get_var_address("CONDSAT", name, "NPF"))
             kper = 0
             while current_time < end_time:
 
@@ -3110,7 +3127,7 @@ def test_xd_box_1():
     new_d = 'xd_box_1_test'
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=1,ncol=3,nlay=3,
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=3,nlay=1,
                                 q=-0.1,icelltype=0,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
@@ -3141,8 +3158,6 @@ def test_xd_box_1():
     pm_locs.sort()
 
     assert len(pm_locs) > 0
-    if run_pert:
-        run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 
     if run_adj:
         bd = os.getcwd()
@@ -3198,6 +3213,9 @@ def test_xd_box_1():
 
 
         os.chdir(bd)
+
+    if run_pert:
+        run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 
     xd_box_compare(new_d,plot_compare)
 
