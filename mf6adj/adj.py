@@ -354,9 +354,10 @@ class Mf6Adj(object):
             grp[name] = val
 
     def _open_hdf(self,tag):
-        fname = tag +"_" + datetime.now().strftime("%Y%m%d-%H:%M%:%S") +".hd5"
+        fname = tag +"_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S") +".hd5"
         if os.path.exists(fname):
-            raise Exception("hdf5 file '{0}' exists somehow...".format(fname))
+            #raise Exception("hdf5 file '{0}' exists somehow...".format(fname))
+            os.remove(fname)
         f = h5py.File(fname,'w')
         return f
 
