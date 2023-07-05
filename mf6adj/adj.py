@@ -396,7 +396,6 @@ class Mf6Adj(object):
         data_dict["k33"] = k33
         condsat = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "CONDSAT", gwf)
         data_dict["condsat"] = condsat
-        print(condsat)
         area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
         data_dict["area"] = area
         iconvert = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "ICONVERT", gwf)
@@ -715,10 +714,11 @@ class Mf6Adj(object):
                 #     pert_arr1 = self._gwf.get_value_ptr(wbaddr1)
                 #     pert_arr1 = pert_arr.copy()
                 #     print("K22",pert_arr1)
-                addr1 = ["IK22OVERK",gwf_name,"NPF"]
-                wbaddr1 = self._gwf.get_var_address(*addr1)
-                k22 = self._gwf.get_value_ptr(wbaddr)
-                print("ik22 flag",k22)
+                #addr1 = ["IK22OVERK",gwf_name,"NPF"]
+                #wbaddr1 = self._gwf.get_var_address(*addr1)
+                #k22 = self._gwf.get_value_ptr(wbaddr1)
+                #print("ik22 flag",k22)
+
                 self.solve_gwf(verbose=False,_force_k_update=True)
                 pert_results = {pm.name: (pm.solve_forward(self._head)-base_results[pm.name])/epsilons[-1] for pm in self._performance_measures}
                 for pm,result in pert_results.items():
