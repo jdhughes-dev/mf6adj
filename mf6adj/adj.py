@@ -3,6 +3,7 @@ import shutil
 from datetime import datetime
 import numpy as np
 import pandas as pd
+import h5py
 import modflowapi
 import flopy
 
@@ -329,6 +330,84 @@ class Mf6Adj(object):
                     break
         return package_dict
 
+    def _write_group_to_hdf(self,hdf,group_name,data_dict,attr_dict={}):
+        if group_name in hdf:
+            raise Exception("group_name {0} already in hdf file".format(group_name))
+        grp = hdf.create_group(group_name)
+        for tag,item in data_dict.items():
+            if isinstance(item,list):
+                item = np.array(item)
+            if isinstance(item,np.ndarray):
+                dset = grp.create_dataset(tag,item.shape,dtype=item.dtype,data=item)   
+            elif isinstance(item,dict):
+                if "nodelist" in item:
+                    iitem = item["nodelist"] 
+                    dset = grp.create_dataset(tag,iitem.shape,dtype=iitem.dtype,data=iitem)
+                elif "bound" in item:
+                    iitem = item["bound"] 
+                    dset = grp.create_dataset(tag,iitem.shape,dtype=iitem.dtype,data=iitem)
+                else:
+                    print("Mf6Adj._write_group_to_hdf(): unused data_dict item {0}".format(tag))
+            else:
+                raise Exception("unrecognized data_dict entry: {0},type:{1}".format(tag,type(item)))
+        for name,val in attr_dict.items():
+            grp[name] = val
+
+    def _open_hdf(self,tag):
+        fname = tag +"_" + datetime.now().strftime("%Y%m%d-%H:%M%:%S") +".hd5"
+        if os.path.exists(fname):
+            raise Exception("hdf5 file '{0}' exists somehow...".format(fname))
+        f = h5py.File(fname,'w')
+        return f
+
+    def _add_gwf_info_to_hdf(self,fhd):
+        """
+        todo: add kij info for structure grids
+        """
+        gwf_name = self._gwf_name
+        gwf = self._gwf
+        data_dict = {}
+        ihc = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IHC", gwf)
+        data_dict["ihc"] = ihc
+        ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
+        data_dict["ia"] = ia
+        ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
+        data_dict["ja"] = ja
+        jas = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JAS", gwf) -1
+        data_dict["jas"] = jas
+        cl1 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL1", gwf)
+        data_dict["cl1"] = cl1
+        cl2 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL2", gwf)
+        data_dict["cl2"] = cl2
+        hwva = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "HWVA", gwf)
+        data_dict["hwva"] = hwva
+        top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
+        data_dict["top"] = top
+        bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
+        data_dict["bot"] = bot
+        iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
+        data_dict["iac"] = iac
+        icelltype = PerfMeas.get_ptr_from_gwf(gwf_name,"NPF","ICELLTYPE",gwf)
+        data_dict["icelltype"] = icelltype
+        k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
+        data_dict["k11"] = k11
+        k22 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K22", gwf)
+        data_dict["k22"] = k22
+        assert np.all(k11==k22)
+        k33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
+        data_dict["k33"] = k33
+        area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
+        data_dict["area"] = area
+        iconvert = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "ICONVERT", gwf)
+        data_dict["iconvert"] = iconvert
+        storage = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "SS", gwf)
+        data_dict["storage"] = storage
+        nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name,"DIS","NODEUSER",gwf)-1
+        data_dict["nodeuser"] = nodeuser
+        nnodes = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NODES", gwf)
+        data_dict["nnodes"] = nnodes
+        self._write_group_to_hdf(fhd,"gwf_info",data_dict)
+
     def solve_gwf(self,verbose=True,_force_k_update=False,_sp_pert_dict=None):
         """solve the flow across the modflow sim times
 
@@ -338,6 +417,7 @@ class Mf6Adj(object):
         if self._gwf is None:
             raise Exception("gwf is None")
             self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
+        fhd = self._open_hdf(self._gwf_name)
         sim_start = datetime.now()
         if verbose:
             print("...starting flow solution at {0}".format(sim_start.strftime(DT_FMT)))
@@ -358,6 +438,9 @@ class Mf6Adj(object):
         self._sat_old = {}
         sat_old = None
         visited = list()
+        ctimes = []
+        dts = []
+        kpers,kstps = [],[]
 
         #nodekchange = self._gwf.get_value_ptr(self._gwf.get_var_address("NODEKCHANGE", self._gwf_name, "NPF"))
         #k11 = self._gwf.get_value_ptr(self._gwf.get_var_address("K11", self._gwf_name, "NPF"))
@@ -433,24 +516,41 @@ class Mf6Adj(object):
             # update current sim time
             ctime = self._gwf.get_current_time()
             dt1 = self._gwf.get_time_step()
-            amat = self._gwf.get_value(self._gwf.get_var_address("AMAT", "SLN_1")).copy()
 
+            ctimes.append(ctime)
+            dts.append(dt1)
+            kpers.append(kper)
+            kstps.append(kstp)
 
             if kperkstp in visited:
                 raise Exception("{0} already visited".format(kperkstp))
             visited.append(kperkstp)
+
+            amat = self._gwf.get_value(self._gwf.get_var_address("AMAT", "SLN_1")).copy()
+            data_dict = {"amat":amat}
+
             self._amat[kperkstp] = amat
             head = self._gwf.get_value(self._gwf.get_var_address("X", self._gwf_name.upper()))
             self._head[kperkstp] = head
+            data_dict["head"] = head
+
             head_old = self._gwf.get_value(self._gwf.get_var_address("XOLD", self._gwf_name.upper()))
             self._head_old[kperkstp] = head_old
+            data_dict["head_old"] = head_old
+
             self._kperkstp.append(kperkstp)
             self._deltat[kperkstp ] = dt1
+            
             iss = self._gwf.get_value(self._gwf.get_var_address("ISS", self._gwf_name.upper()))
             self._iss[kperkstp] = iss
+            data_dict["iss"] = iss
+            
             sat = self._gwf.get_value(self._gwf.get_var_address("SAT",self._gwf_name,"NPF"))
             self._sat[kperkstp] = sat
             self._sat_old[kperkstp] = sat_old
+            data_dict["sat"] = sat
+            data_dict["sat_old"] = sat_old
+
             sat_old = sat.copy()
             for package_type in self._gwf_package_types:
                 if package_type in self._gwf_package_dict:
@@ -474,7 +574,10 @@ class Mf6Adj(object):
                                 # note bound is an array!
                                 self._sp_package_data[package_type][kperkstp].append({"node":nodelist[i],"bound":bound[i],
                                                                                      "hcof":hcof[i],"rhs":rhs[i],"packagename":tag})
-
+                            data_dict[tag] = {"ptype":package_type,"nodelist":nodelist,"bound":bound}
+            attr_dict = {"ctime":ctime,"dt":dt1,"kper":kper,"kstp":kstp}
+            self._write_group_to_hdf(fhd,group_name="kper:{0}_kstp:{1}".format(kper,kstp),data_dict=data_dict,attr_dict=attr_dict)
+        
         sim_end = datetime.now()
         td = (sim_end - sim_start).total_seconds() / 60.0
         if verbose:
@@ -482,7 +585,12 @@ class Mf6Adj(object):
             if num_fails > 0:
                 print("...failed to converge {0} times".format(num_fails))
             print("\n")
-
+        
+        self._write_group_to_hdf(fhd,"aux",{"totime":ctimes,"dt":dts,"kper":kpers,"kstp":kstps})
+        self._add_gwf_info_to_hdf(fhd)
+        fhd.close()
+    
+    
     def solve_adjoint(self):
         if len(self._kperkstp) == 0:
             raise Exception("need to call solve_gwf() first")

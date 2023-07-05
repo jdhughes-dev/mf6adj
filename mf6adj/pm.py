@@ -248,7 +248,7 @@ class PerfMeas(object):
 
 	def rch_sens(self,lamb, sp_dict):
 		result = np.zeros_like(lamb)
-		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AERA", gwf)
+		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
 
 		for id in sp_dict:
 			n = id["node"] - 1
