@@ -494,6 +494,49 @@ class Mf6Adj(object):
         #assert np.all(k11 == k22)
         k33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
 
+        # vector form of the calcs:
+        k11conn1 = np.array([k11[node] for node,(offset,ncon) in enumerate(zip(ia,iac)) for ii in
+                    range(offset,offset+ncon)])
+        k11conn2 = np.array([k11[ja[ii]] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                    range(offset, offset + ncon)])
+        k33conn1 = np.array([k33[node] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                             range(offset, offset + ncon)])
+        k33conn2 = np.array([k33[ja[ii]] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                             range(offset, offset + ncon)])
+        heightconn1 = np.array([height[node] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                    range(offset, offset + ncon)])
+        heightconn2 = np.array([height[ja[ii]] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                    range(offset, offset + ncon)])
+        satconn1 = np.array([sat[node] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                       range(offset, offset + ncon)])
+        satconn2 = np.array([sat[ja[ii]] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                       range(offset, offset + ncon)])
+        hwvaconn1 = np.array([hwva[jas[ii]] if ii != 0 else 0 for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                             range(offset, offset + ncon)])
+        hwvaconn2 = np.array([hwva[jas[ii]] if ii != 0 else 0 for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                             range(offset, offset + ncon)])
+        cl1conn1 = np.array([cl1[jas[ii]] if ii != 0 else 0 for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                              range(offset, offset + ncon)])
+        cl2conn2 = np.array([cl2[jas[ii]] if ii != 0 else 0 for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                             range(offset, offset + ncon)])
+        ihcconn1 = np.array([ihc[jas[ii]] if ii != 0 else 0 for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
+                              range(offset, offset + ncon)])
+        d_mat_k11_temp = Mf6Adj._dconddhk(k11conn1, k11conn2, cl1conn1, cl2conn2, hwvaconn1, heightconn1 * satconn1,
+                                          heightconn2 * satconn2)
+        d_mat_k11_temp[ihcconn1 == 0] = 0
+        d_mat_k11_temp[ia[:-1]] = 0
+        sums = np.array([d_mat_k11_temp[offset:offset+ncon].sum() for node, (offset, ncon) in enumerate(zip(ia, iac))])
+        d_mat_k11_temp[ia[:-1]] -= sums
+
+        d_mat_k33_temp = Mf6Adj.derivative_conductance_k1(k33conn1, k33conn2, heightconn1, heightconn2,
+                                                                cl1conn1 + cl2conn2, hwvaconn1)
+        d_mat_k33_temp[ihcconn1 != 0] = 0
+        d_mat_k33_temp[ia[:-1]] = 0
+        sums = np.array(
+            [d_mat_k33_temp[offset:offset + ncon].sum() for node, (offset, ncon) in enumerate(zip(ia, iac))])
+        d_mat_k33_temp[ia[:-1]] -= sums
+
+        # original form
         for node, (offset, ncon) in enumerate(zip(ia, iac)):
 
             # ncon -= 1 # for self
