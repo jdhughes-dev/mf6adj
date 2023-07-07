@@ -403,6 +403,39 @@ class Mf6Adj(object):
         data_dict["nnodes"] = nnodes
         self._write_group_to_hdf(fhd,"gwf_info",data_dict)
 
+    @staticmethod
+    def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
+        # todo: upstream weighting - could use height1 and height2 to check...
+        # todo: vertically staggered
+        d = (width * cl1 * height1 * (height2 ** 2) * (k2 ** 2)) / (
+                    ((cl2 * height1 * k1) + ((cl1 * height2 * k2))) ** 2)
+        return d
+
+    @staticmethod
+    def _dconddvk(k1, height1, sat1, k2, height2, sat2, area, vcond_12):
+        """need to think about how k1 and k2 are combined to
+        form the average k between the two cells
+        from MH:
+        dcond_n,m / dk_n,m = cond_n,m**2 / ((area * k_n,m**2)/(0.5*(top_n - bot_n)))
+
+        todo: VARIABLE CV and DEWATER options
+
+        """
+
+        # condsq = (1./((1./((area*k1)/(0.5*(top1-bot1)))) + (1./((area*k2)/(0.5*(top2-bot2))))))**2
+        # return condsq / ((area * k1**2)/(0.5*(top1-bot1)))
+        d = (sat1 * vcond_12 ** 2) / (((area * k1) ** 2) / (0.5 * (height1)))
+        return d
+
+    @staticmethod
+    def derivative_conductance_k33(k1, k2, w1, w2, area):
+        d = - 2.0 * w1 * area / ((w1 + w2 * k1 / k2) ** 2)
+        return d
+
+    @staticmethod
+    def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
+        d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
+        return d
 
     @staticmethod
     def dadk(gwf_name, gwf, sat, amat):
@@ -490,15 +523,15 @@ class Mf6Adj(object):
                     iihc = ihc[jj]
 
                     if iihc == 0:  # vertical con
-                        # v1 = PerfMeas._dconddvk(k33[node],height1,sat[node],k33[mnode],
+                        # v1 = Mf6Adj._dconddvk(k33[node],height1,sat[node],k33[mnode],
                         #							height2,sat[mnode],hwva[jj],amat[jj])
                         # def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
                         #	d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
                         #	return d
-                        v2 = PerfMeas.derivative_conductance_k1(k33[node], k33[mnode], height1, height2,
+                        v2 = Mf6Adj.derivative_conductance_k1(k33[node], k33[mnode], height1, height2,
                                                                 cl1[jj] + cl2[jj], hwva[jj])
                         # derivative_conductance_k33(k1, k2, w1, w2, area)
-                        # v3 = PerfMeas.derivative_conductance_k33(k33[node],k33[mnode],height1, height2, hwva[jj])
+                        # v3 = Mf6Adj.derivative_conductance_k33(k33[node],k33[mnode],height1, height2, hwva[jj])
 
                         d_mat_k33[ia[node] + pp] += v2
                         # d_mat_k123[ia[node]+pp] += v3
@@ -506,12 +539,12 @@ class Mf6Adj(object):
                         pp += 1
 
                     else:
-                        v1 = PerfMeas._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
+                        v1 = Mf6Adj._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
                                                 height1 * sat_mod[node], height2 * sat_mod[mnode])
-                        # v1 = PerfMeas._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
+                        # v1 = Mf6Adj._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
                         #							height1, height2)
-                        # v2 = -PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height2*sat_mod[mnode])
-                        # v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj],cl2[jj], hwva[jj],height1)
+                        # v2 = -Mf6Adj.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height2*sat_mod[mnode])
+                        # v2 = Mf6Adj.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj],cl2[jj], hwva[jj],height1)
 
                         d_mat_k11[ia[node] + pp] += v1
                         # d_mat_k123[ia[node]+pp] += v1
