@@ -390,12 +390,7 @@ class Mf6Adj(object):
         data_dict["iac"] = iac
         icelltype = PerfMeas.get_ptr_from_gwf(gwf_name,"NPF","ICELLTYPE",gwf)
         data_dict["icelltype"] = icelltype
-        k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
-        data_dict["k11"] = k11
-        k33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
-        data_dict["k33"] = k33
-        condsat = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "CONDSAT", gwf)
-        data_dict["condsat"] = condsat
+
         area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
         data_dict["area"] = area
         iconvert = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "ICONVERT", gwf)
@@ -407,6 +402,129 @@ class Mf6Adj(object):
         nnodes = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NODES", gwf)
         data_dict["nnodes"] = nnodes
         self._write_group_to_hdf(fhd,"gwf_info",data_dict)
+
+
+    @staticmethod
+    def dadk(gwf_name, gwf, sat, amat):
+        """partial of A matrix WRT K
+        """
+        is_chd = False
+        chd_list = []
+        # names = list(gwf.get_input_var_names())
+        # chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
+        # for name in chds:
+        # 	chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
+        # 	chd_list.extend(list(chd))
+        # 	is_chd = True
+        # chd_list = set(chd_list)
+
+        # nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
+        # ib = np.array(PerfMeas.get_value_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf)).reshape(-1)
+        # nlay = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NLAY", gwf)[0]
+
+        ihc = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IHC", gwf)
+        # IHC tells us whether connection is vertical (and if so, whether connection is above or below) or horizontal (and if so, whether it is a vertically staggered grid).
+        # It is of size NJA (or number of connections)
+        ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
+        # IA is the number of connections, plus 1 (for self), for each node in grid. it is of size NNODES + 1
+        ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
+        # JA is an array containing all cells for which there is a connection (including self) for each node. it is of size NJA
+        jas = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JAS", gwf) - 1
+        cl1 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL1", gwf)
+        # distance from node to cell m boundary (size NJA)
+        cl2 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL2", gwf)
+        # distance from cell m to node boundary (size NJA)
+        hwva = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "HWVA", gwf)
+        # Width perpendicular to flow for a horizontal connection, or the face area for a vertical connection. size NJA
+        top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
+        # top elevation for all nodes
+        bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
+        # bottom elevation for all nodes
+        iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
+        # array of number of connections per node (size ndoes)
+
+        icelltype = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "ICELLTYPE", gwf)
+
+        sat_mod = sat.copy()
+        sat_mod[icelltype == 0] = 1.0
+
+        # height = sat_mod * (top - bot)
+        height = top - bot
+
+        # TODO: check here for converible cells
+
+        d_mat_k11 = np.zeros(ja.shape[0])
+        d_mat_k33 = np.zeros(ja.shape[0])
+
+        k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
+        #k22 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K22", gwf)
+        #assert np.all(k11 == k22)
+        k33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
+
+        for node, (offset, ncon) in enumerate(zip(ia, iac)):
+
+            # ncon -= 1 # for self
+
+            # if ib[node]==0:
+            #	pass
+            # if is_chd and node in chd_list:
+            #		continue
+            if False:
+                pass
+            else:
+                sum1 = 0.
+                sum2 = 0.
+                height1 = height[node]
+                pp = 1
+                for ii in range(offset + 1, offset + ncon):
+                    mnode = ja[ii]
+                    # if is_chd and mnode in chd_list:
+                    #		continue
+                    height2 = height[mnode]
+                    # if icelltype[mnode] != 0:
+                    # height2 *= sat[mnode]
+
+                    jj = jas[ii]
+                    if jj < 0:
+                        raise Exception()
+                    iihc = ihc[jj]
+
+                    if iihc == 0:  # vertical con
+                        # v1 = PerfMeas._dconddvk(k33[node],height1,sat[node],k33[mnode],
+                        #							height2,sat[mnode],hwva[jj],amat[jj])
+                        # def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
+                        #	d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
+                        #	return d
+                        v2 = PerfMeas.derivative_conductance_k1(k33[node], k33[mnode], height1, height2,
+                                                                cl1[jj] + cl2[jj], hwva[jj])
+                        # derivative_conductance_k33(k1, k2, w1, w2, area)
+                        # v3 = PerfMeas.derivative_conductance_k33(k33[node],k33[mnode],height1, height2, hwva[jj])
+
+                        d_mat_k33[ia[node] + pp] += v2
+                        # d_mat_k123[ia[node]+pp] += v3
+                        sum1 += v2
+                        pp += 1
+
+                    else:
+                        v1 = PerfMeas._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
+                                                height1 * sat_mod[node], height2 * sat_mod[mnode])
+                        # v1 = PerfMeas._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
+                        #							height1, height2)
+                        # v2 = -PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height2*sat_mod[mnode])
+                        # v2 = PerfMeas.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj],cl2[jj], hwva[jj],height1)
+
+                        d_mat_k11[ia[node] + pp] += v1
+                        # d_mat_k123[ia[node]+pp] += v1
+                        sum2 += v1
+                        pp += 1
+
+                d_mat_k11[ia[node]] = -sum2
+                d_mat_k33[ia[node]] = -sum1
+            # d_mat_k22[ia[node]] = -sum3
+            # d_mat_k123[ia[node]] = d_mat_k11[ia[node]] + d_mat_k22[ia[node]] + d_mat_k33[ia[node]]
+
+        return d_mat_k11, -d_mat_k33
+
 
     def solve_gwf(self,verbose=True,_force_k_update=False,_sp_pert_dict=None):
         """solve the flow across the modflow sim times
@@ -537,6 +655,20 @@ class Mf6Adj(object):
             head_old = self._gwf.get_value(self._gwf.get_var_address("XOLD", self._gwf_name.upper()))
             self._head_old[kperkstp] = head_old
             data_dict["head_old"] = head_old
+
+            #k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
+            k11 = self._gwf.get_value(self._gwf.get_var_address("K11", self._gwf_name.upper(),"NPF"))
+            data_dict["k11"] = k11
+            #k33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
+            k33 = self._gwf.get_value(self._gwf.get_var_address("K33", self._gwf_name.upper(), "NPF"))
+            data_dict["k33"] = k33
+            #condsat = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "CONDSAT", gwf)
+            condsat = self._gwf.get_value(self._gwf.get_var_address("CONDSAT", self._gwf_name.upper(), "NPF"))
+            data_dict["condsat"] = condsat
+
+            dadk11,dadk33 = Mf6Adj.dadk(self._gwf_name,self._gwf,sat,amat)
+            data_dict["dadk11"] = dadk11
+            data_dict["dadk33"] = dadk33
 
             self._kperkstp.append(kperkstp)
             self._deltat[kperkstp ] = dt1
