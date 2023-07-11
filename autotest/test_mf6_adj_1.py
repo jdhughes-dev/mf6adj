@@ -31,7 +31,7 @@ elif "darwin" in platform.platform().lower() or "macos" in platform.platform().l
 elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower() and "arm" in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "mac", "libmf6_arm.dylib")
     mf6_bin = os.path.join("..", "bin", "mac", "mf6")
-    local_lib_name = "./libmf6.dylib"
+    local_lib_name = "./libmf6_arm.dylib"
     local_mf6_bin = "./mf6"
     gg_bin = "gridgen"
 else:
