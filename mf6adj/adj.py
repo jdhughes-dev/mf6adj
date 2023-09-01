@@ -71,6 +71,8 @@ class Mf6Adj(object):
         self._iss = {}
         self._sat = {}
         self._sat_old = {}
+        self._head_p1 = {}
+        self._sat_p1 = {}
         self._gwf_package_types = ["wel6","ghb6","rch6","rcha6"]
 
 
@@ -356,6 +358,8 @@ class Mf6Adj(object):
         self._iss = {}
         self._sat = {}
         self._sat_old = {}
+        self._head_p1 = {}
+        self._sat_p1 = {}
         sat_old = None
         visited = list()
 
@@ -406,8 +410,10 @@ class Mf6Adj(object):
             if sat_old is None:
                 sat_old = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
 
-
+            sat_p1 = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
+            head_p1 = self._gwf.get_value(self._gwf.get_var_address("X", self._gwf_name.upper()))
             # solve until converged
+
             while kiter < max_iter:
                 convg = self._gwf.solve(1)
                 if convg:
@@ -416,6 +422,8 @@ class Mf6Adj(object):
                         print("flow stress period,time step {0},{1} converged with {2} iters, took {3:10.5G} mins".format(
                             stress_period, time_step, kiter, td))
                     break
+                head_p1 = self._gwf.get_value(self._gwf.get_var_address("X", self._gwf_name.upper()))
+                sat_p1 = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
                 kiter += 1
 
             if not convg:
@@ -451,6 +459,8 @@ class Mf6Adj(object):
             sat = self._gwf.get_value(self._gwf.get_var_address("SAT",self._gwf_name,"NPF"))
             self._sat[kperkstp] = sat
             self._sat_old[kperkstp] = sat_old
+            self._head_p1[kperkstp] = head_p1
+            self._sat_p1[kperkstp] = sat_p1
             sat_old = sat.copy()
             for package_type in self._gwf_package_types:
                 if package_type in self._gwf_package_dict:
@@ -490,7 +500,8 @@ class Mf6Adj(object):
         for pm in self._performance_measures:
             df = pm.solve_adjoint(self._kperkstp,self._iss, self._deltat,self._amat,
                                   self._head,self._head_old, self._sat, self._sat_old,self._gwf,
-                                  self._gwf_name, self._structured_mg,self._sp_package_data)
+                                  self._gwf_name, self._structured_mg,self._sp_package_data,
+                                  self._head_p1,self._sat_p1)
             dfs[pm.name] = df
         return dfs
 

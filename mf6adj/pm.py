@@ -73,7 +73,8 @@ class PerfMeas(object):
 
 
 	def solve_adjoint(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict, 
-		   			  sat_dict, sat_old_dict,gwf, gwf_name,mg_structured, gwf_package_dict):
+		   			  sat_dict, sat_old_dict,gwf, gwf_name,mg_structured, gwf_package_dict,
+		   			  head_p1_dict,sat_p1_dict):
 		"""
 
 
@@ -112,6 +113,12 @@ class PerfMeas(object):
 		for itime,kk in enumerate(kperkstp[::-1]):
 			itime = kk[0]
 			print('solving',self._name,"(kper,kstp)",kk)
+
+			# the head at the next to last iteration
+			head_p1 = head_p1_dict[kk]
+			# the sat at the next to last iteration
+			sat_p1 = sat_p1_dict[kk]
+
 			dfdh = self._dfdh(kk, gwf_name, gwf, head_dict)
 			# jwhite: I think it should be sat old since the head (and therefore sat) from the last
 			# timestep/stress period is used to scale T...
@@ -286,7 +293,7 @@ class PerfMeas(object):
 		filetag = "pm-"+self._name + "_" + filetag
 		# if not a reduced node scheme
 		if len(nodeuser) == 1:
-			nodeuser = np.arange(nnodes)
+			nodeuser = np.arange(nnodes[0])
 		if structured_mg is not None:
 			kijs = structured_mg.get_lrc(list(nodeuser))
 
