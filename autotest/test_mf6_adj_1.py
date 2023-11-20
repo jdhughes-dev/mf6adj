@@ -1,6 +1,7 @@
 import os
 import sys
 import platform
+from datetime import datetime
 import shutil
 import string
 import time
@@ -87,13 +88,13 @@ def basic_freyberg():
     shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
     import mf6adj
     
-    org_d = os.path.join("models","freyberg")
+    org_d = "freyberg_mf6_pestppv5_test"#os.path.join("models","freyberg")
     new_d = "freyberg"
     if os.path.exists(new_d):
         shutil.rmtree(new_d)
     shutil.copytree(org_d,new_d)
-    shutil.copy2(local_lib_name,os.path.join(new_d,os.path.split(local_lib_name)[1]))
-    shutil.copy2(local_mf6_bin,os.path.join(new_d,os.path.split(local_mf6_bin)[1]))
+    shutil.copy2(lib_name,os.path.join(new_d,os.path.split(lib_name)[1]))
+    shutil.copy2(mf6_bin,os.path.join(new_d,os.path.split(mf6_bin)[1]))
 
     os.chdir(new_d)
     os.system("mf6")
@@ -125,7 +126,7 @@ def basic_freyberg():
         f.write("end performance_measure\n\n")
 
     os.chdir(new_d)
-    adj = mf6adj.Mf6Adj("test.adj",os.path.split(local_lib_name)[1])
+    adj = mf6adj.Mf6Adj("test.adj",os.path.split(local_lib_name)[1],is_structured=True)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -3372,11 +3373,91 @@ def test_xd_box_unstruct_1():
 
 
 
+def freyberg_demo():
+    
+    #import mf6adj source
+    if os.path.exists('mf6adj'):
+        shutil.rmtree('mf6adj')
+    shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
+    import mf6adj
+    
+    org_d = "freyberg_mf6_pestppv5_test"#os.path.join("models","freyberg")
+    new_d = "freyberg"
+    if os.path.exists(new_d):
+        shutil.rmtree(new_d)
+    shutil.copytree(org_d,new_d)
+    shutil.copy2(lib_name,os.path.join(new_d,os.path.split(lib_name)[1]))
+    shutil.copy2(mf6_bin,os.path.join(new_d,os.path.split(mf6_bin)[1]))
+
+    os.chdir(new_d)
+    os.system("mf6")
+    os.chdir("..")
+
+    kijs = []
+    k_dict = {}
+    with open(os.path.join(new_d,"head.obs"),'r') as f:
+        f.readline()
+        for line in f:
+            if line.strip().lower().startswith("end"):
+                break
+            raw = line.strip().split()
+            kijs.append(" ".join(raw[2:]))
+            k = int(raw[2]) - 1
+            i = int(raw[3]) - 1
+            j = int(raw[4]) - 1
+            if k not in k_dict:
+                k_dict[k] = []
+            k_dict[k].append([i,j])
+
+    np.random.seed(11111)
+    rvals = np.random.random(len(kijs)) + 36
+    with open(os.path.join(new_d,"test.adj"),'w') as f:
+
+        f.write("begin performance_measure pm1 type residual\n")
+        for rval,kij in zip(rvals,kijs):
+            for kper in range(25):
+                f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,kij,rval))
+        f.write("end performance_measure\n\n")
+
+    start = datetime.now()
+    os.chdir(new_d)
+    adj = mf6adj.Mf6Adj("test.adj",os.path.split(local_lib_name)[1],is_structured=True)
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
+    os.chdir("..")
+    duration = (datetime.now() - start).total_seconds()
+    print("took:",duration)
+
+    files = [f for f in os.listdir(new_d) if "_comp_" in f and f.endswith(".dat") and "ss" not in f]
+    files.sort()
+    assert len(files) > 0
+    ijarr = np.zeros((40,20))
+    for i,j in k_dict[0]:
+        ijarr[i,j] = 1
+    ijarr[ijarr==0] = np.nan
+
+    from matplotlib.backends.backend_pdf import PdfPages
+    with PdfPages(os.path.join(new_d,"results.pdf")) as pdf:
+        for f in files:
+            k = f.split(".")[0].split("_")[-1][1:]
+
+            arr = np.loadtxt(os.path.join(new_d,f))
+            arr[arr==0.0] = np.nan
+            fig,ax = plt.subplots(1,1,figsize=(6,5))
+            cb = ax.imshow(arr)
+            plt.colorbar(cb,ax=ax,label="sensitivity")
+            ax.imshow(ijarr,cmap="jet_r",alpha=0.75)
+            ax.set_title(f,loc="left")
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close(fig)
+
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    test_xd_box_1()
-
+    #test_xd_box_1()
+    freyberg_demo()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()

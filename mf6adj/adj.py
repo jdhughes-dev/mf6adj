@@ -193,7 +193,8 @@ class Mf6Adj(object):
                                     if self.is_structured:
                                         print(kij)
                                     raise Exception("node num {0} not in reduced node num".format(n))
-                                pm_entries.append(PerfMeasRecord(kper,kstp,nn,k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
+                                
+                                pm_entries.append(PerfMeasRecord(kper,kstp,nn[0],k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
                             else:
                                 pm_entries.append(
                                     PerfMeasRecord(kper,kstp,n,k=kij[0],i=kij[1],j=kij[2],weight=weight,obsval=obsval))
