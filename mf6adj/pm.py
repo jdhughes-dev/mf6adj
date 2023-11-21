@@ -168,9 +168,9 @@ class PerfMeas(object):
 
 				comp_ghb_head_sens += sens_ghb_head
 				comp_ghb_cond_sens += sens_ghb_cond
-			
-			if "rch" in gwf_package_dict and kk in gwf_package_dict["rch6"]:
-				sens_rch = self.rch_sens(lamb,gwf_package_dict["rch6"][kk])
+			#print("rch" in gwf_package_dict,kk,list(gwf_package_dict["rch6"].keys()))
+			if "rch6" in gwf_package_dict and kk in gwf_package_dict["rch6"]:
+				sens_rch = self.rch_sens(gwf_name,gwf,lamb,gwf_package_dict["rch6"][kk])
 				if self.verbose_level > 1:
 					self.save_array("sens_rch_kper{0:05d}".format(itime),sens_rch,gwf_name,gwf,mg_structured)
 					if "rch_kper{0:05d}".format(itime) in data:
@@ -181,8 +181,8 @@ class PerfMeas(object):
 				comp_rch_sens += sens_rch
 
 			# todo: think about what it would do to have both rch and recha active..for now just accumulating them
-			if "rcha" in gwf_package_dict and kk in gwf_package_dict["rcha6"]:
-				sens_rch = self.rch_sens(lamb, gwf_package_dict["rcha6"][kk])
+			if "rcha6" in gwf_package_dict and kk in gwf_package_dict["rcha6"]:
+				sens_rch = self.rch_sens(gwf_name,gwf,lamb, gwf_package_dict["rcha6"][kk])
 				if self.verbose_level > 1:
 					self.save_array("sens_rch_kper{0:05d}".format(itime),sens_rch,gwf_name,gwf,mg_structured)
 					if "rch_kper{0:05d}".format(itime) in data:
@@ -246,7 +246,7 @@ class PerfMeas(object):
 		df.to_csv("{0}_adj_results.csv".format(self._name))
 		return df
 
-	def rch_sens(self,lamb, sp_dict):
+	def rch_sens(self,gwf_name,gwf,lamb, sp_dict):
 		result = np.zeros_like(lamb)
 		area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
 

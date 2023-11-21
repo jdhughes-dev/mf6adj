@@ -3427,7 +3427,7 @@ def freyberg_demo():
 
     start = datetime.now()
     os.chdir(new_d)
-    adj = mf6adj.Mf6Adj("test.adj",os.path.split(local_lib_name)[1],is_structured=True)
+    adj = mf6adj.Mf6Adj("test.adj",os.path.split(local_lib_name)[1],is_structured=True,verbose_level=2)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
