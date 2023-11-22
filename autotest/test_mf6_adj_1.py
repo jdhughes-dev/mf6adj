@@ -3435,9 +3435,15 @@ def freyberg_demo():
     duration = (datetime.now() - start).total_seconds()
     print("took:",duration)
 
-    files = [f for f in os.listdir(new_d) if "_comp_" in f and f.endswith(".dat") and "ss" not in f]
-    files.sort()
+    files = [f for f in os.listdir(new_d) if "_comp_" in f and f.endswith(".dat") and "ss" not in f and "rch" not in f and "wel" not in f]
+   
     assert len(files) > 0
+    forcing_files = [f for f in os.listdir(new_d) if "_sens_" in f and "comp" not in f and "kper" in f and \
+    (("wel" in f and "k002." in f) or ("rch" in f and "k000." in f))]
+
+    assert len(forcing_files) > 0
+    files.extend(forcing_files)
+    files.sort()
     ijarr = np.zeros((40,20))
     for i,j in k_dict[0]:
         ijarr[i,j] = 1
@@ -3446,6 +3452,7 @@ def freyberg_demo():
     from matplotlib.backends.backend_pdf import PdfPages
     with PdfPages(os.path.join(new_d,"results.pdf")) as pdf:
         for f in files:
+            print("...plottinhg",f)
             k = f.split(".")[0].split("_")[-1][1:]
 
             arr = np.loadtxt(os.path.join(new_d,f))

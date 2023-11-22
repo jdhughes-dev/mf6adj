@@ -240,7 +240,7 @@ class PerfMeas(object):
 			df.loc[:,"ghbhead"] = comp_ghb_head_sens
 			df.loc[:,"ghbcond"] = comp_ghb_cond_sens
 
-		if "rch" in gwf_package_dict or "rcha" in gwf_package_dict:
+		if "rch6" in gwf_package_dict or "rcha6" in gwf_package_dict:
 			self.save_array("comp_sens_rch",comp_rch_sens,gwf_name,gwf,mg_structured)
 			df.loc[:,"rch"] = comp_rch_sens
 		df.to_csv("{0}_adj_results.csv".format(self._name))
