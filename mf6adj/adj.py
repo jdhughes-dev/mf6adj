@@ -796,6 +796,8 @@ class Mf6Adj(object):
         dts = []
         kpers, kstps = [], []
 
+        is_newton = self._gwf.get_value(self._gwf.get_var_address("INEWTON", self._gwf_name))[0]
+
         # nodekchange = self._gwf.get_value_ptr(self._gwf.get_var_address("NODEKCHANGE", self._gwf_name, "NPF"))
         # k11 = self._gwf.get_value_ptr(self._gwf.get_var_address("K11", self._gwf_name, "NPF"))
         # k11input = self._gwf.get_value_ptr(self._gwf.get_var_address("K11INPUT", self._gwf_name, "NPF"))
@@ -919,7 +921,7 @@ class Mf6Adj(object):
             data_dict["sat"] = sat
             data_dict["sat_old"] = sat_old
 
-            dresdk_h, dresdk33_h = Mf6Adj.dresdk_h(self._gwf_name,self._gwf,sat,head)
+            dresdk_h, dresdk33_h = Mf6Adj.dresdk_h(self._gwf_name,self._gwf,sat,head,is_newton=is_newton)
             data_dict["dresdk_h"] = dresdk_h
             data_dict["dresdk33_h"] = dresdk33_h
 
