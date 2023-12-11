@@ -3174,7 +3174,7 @@ def test_xd_box_1():
 
         print('calculating mf6adj sensitivity')
         with open("test.adj",'w') as f:
-            f.write("\nbegin options\n\nend options\n\n")
+            f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
             for kper in range(sim.tdis.nper.data):
                 for p_kij in pm_locs:
                     k,i,j = p_kij
@@ -3469,8 +3469,8 @@ def freyberg_demo():
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    #test_xd_box_1()
-    freyberg_demo()
+    test_xd_box_1()
+    #freyberg_demo()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()

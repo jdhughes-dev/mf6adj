@@ -48,6 +48,7 @@ class Mf6Adj(object):
         self._lib_name = lib_name
         self._flow_dir = "."
         self._gwf = self._initialize_gwf(lib_name, self._flow_dir)
+        self._hdf5_name = None
 
         self._structured_mg = None
         self.is_structured = is_structured  # hard coded for now...
@@ -121,6 +122,10 @@ class Mf6Adj(object):
                             raise Exception("a new begin block found while parsing options")
                         elif line2.lower().strip().startswith("end options"):
                             break
+                        elif line2.lower().strip().split()[0] == "hdf5_name":
+                            self._hdf5_name = line2.strip().split()[1]
+                        else:
+                            raise Exception("unrecognized option line:"+line2.strip())
 
                 # parse a new performance measure block
                 elif line.lower().strip().startswith("begin performance_measure"):
@@ -355,8 +360,13 @@ class Mf6Adj(object):
         for name, val in attr_dict.items():
             grp[name] = val
 
+
     def _open_hdf(self, tag):
-        fname = tag + "_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".hd5"
+        if tag is None:
+            fname = self._gwf_name + "_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".hd5"
+        else:
+            fname = tag
+        self._hdf5_name = fname
         if os.path.exists(fname):
             # raise Exception("hdf5 file '{0}' exists somehow...".format(fname))
             os.remove(fname)
@@ -471,9 +481,9 @@ class Mf6Adj(object):
     @staticmethod
     def _smooth_sat(sat1, sat2, h1, h2):
         if h1 >= h2:
-            value = self.smooth_sat(sat1)
+            value = Mf6Adj.smooth_sat(sat1)
         else:
-            value = self.smooth_sat(sat2)
+            value = Mf6Adj.smooth_sat(sat2)
         return value
 
     @staticmethod
@@ -518,8 +528,8 @@ class Mf6Adj(object):
         # height = sat_mod * (top - bot)
         height = top - bot
 
-        result33 = np.zeros_like(lamb)
-        result = np.zeros_like(lamb)
+        result33 = np.zeros_like(head)
+        result = np.zeros_like(head)
 
         k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
         k22 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K22", gwf)
@@ -581,7 +591,7 @@ class Mf6Adj(object):
         sat_old_mod = sat_old.copy()
         sat_old_mod[iconvert == 0] = 1.0
 
-        result = np.zeros_like(lamb)
+        result = np.zeros_like(head)
 
         for node in range(len(ia) - 1):
             dSC1 = area[node] * (top[node] - bot[node])
@@ -592,23 +602,20 @@ class Mf6Adj(object):
             result[node] = term
         return result
 
+
     @staticmethod
-    def dadk(gwf_name, gwf, sat, amat):
+    def drhsdh(gwf_name, gwf, dt):
+        top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
+        bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
+        area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
+        storage = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "SS", gwf)
+        drhsdh = -1. * storage * area * (top - bot) / dt
+        return drhsdh
+
+    @staticmethod
+    def dadk(gwf_name, gwf, sat):
         """partial of A matrix WRT K
         """
-        is_chd = False
-        chd_list = []
-        # names = list(gwf.get_input_var_names())
-        # chds = [name for name in names if 'CHD' in name and 'NODELIST' in name]
-        # for name in chds:
-        # 	chd = np.array(PerfMeas.get_ptr_from_gwf(gwf_name,name.split('/')[1],"NODELIST",gwf)-1)
-        # 	chd_list.extend(list(chd))
-        # 	is_chd = True
-        # chd_list = set(chd_list)
-
-        # nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
-        # ib = np.array(PerfMeas.get_value_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf)).reshape(-1)
-        # nlay = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NLAY", gwf)[0]
 
         ihc = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IHC", gwf)
         # IHC tells us whether connection is vertical (and if so, whether connection is above or below) or horizontal (and if so, whether it is a vertically staggered grid).
@@ -771,7 +778,7 @@ class Mf6Adj(object):
         if self._gwf is None:
             raise Exception("gwf is None")
             self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
-        fhd = self._open_hdf(self._gwf_name)
+        fhd = self._open_hdf(self._hdf5_name)
         sim_start = datetime.now()
         if verbose:
             print("...starting flow solution at {0}".format(sim_start.strftime(DT_FMT)))
@@ -797,6 +804,10 @@ class Mf6Adj(object):
         kpers, kstps = [], []
 
         is_newton = self._gwf.get_value(self._gwf.get_var_address("INEWTON", self._gwf_name))[0]
+
+        has_sto = False
+        if PerfMeas.has_sto_iconvert(self._gwf):
+            has_sto = True
 
         # nodekchange = self._gwf.get_value_ptr(self._gwf.get_var_address("NODEKCHANGE", self._gwf_name, "NPF"))
         # k11 = self._gwf.get_value_ptr(self._gwf.get_var_address("K11", self._gwf_name, "NPF"))
@@ -904,7 +915,7 @@ class Mf6Adj(object):
             condsat = self._gwf.get_value(self._gwf.get_var_address("CONDSAT", self._gwf_name.upper(), "NPF"))
             data_dict["condsat"] = condsat
 
-            dadk11, dadk33 = Mf6Adj.dadk(self._gwf_name, self._gwf, sat, amat)
+            dadk11, dadk33 = Mf6Adj.dadk(self._gwf_name, self._gwf, sat)
             data_dict["dadk11"] = dadk11
             data_dict["dadk33"] = dadk33
 
@@ -925,10 +936,16 @@ class Mf6Adj(object):
             data_dict["dresdk_h"] = dresdk_h
             data_dict["dresdk33_h"] = dresdk33_h
 
-            dresdss_h = Mf6Adj.dresdss_h(self._gwf_name,self._gwf,head,head_old,sat,sat_old)
-            data_dict["dresdss_h"] = dresdss_h
-
             sat_old = sat.copy()
+            if has_sto: #has storage
+                dresdss_h = Mf6Adj.dresdss_h(self._gwf_name,self._gwf,head,head_old,dt,sat,sat_old)
+                data_dict["dresdss_h"] = dresdss_h
+
+                if iss == 0 : #has storage and this kper is transient
+                    drhsdh = Mf6Adj.drhsdh(self._gwf_name,self._gwf,dt)
+                    data_dict["drhsdh"] = drhsdh
+
+
             for package_type in self._gwf_package_types:
                 if package_type in self._gwf_package_dict:
                     if package_type not in self._sp_package_data:
@@ -957,7 +974,7 @@ class Mf6Adj(object):
                                     {"node": nodelist[i], "bound": bound[i],
                                      "hcof": hcof[i], "rhs": rhs[i], "packagename": tag})
                             data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound}
-            attr_dict = {"ctime": ctime, "dt": dt1, "kper": kper, "kstp": kstp}
+            attr_dict = {"ctime": ctime, "dt": dt1, "kper": kper, "kstp": kstp,"is_newton":is_newton,"has_sto":has_sto}
             self._write_group_to_hdf(fhd, group_name="kper:{0}_kstp:{1}".format(kper, kstp), data_dict=data_dict,
                                      attr_dict=attr_dict)
 
@@ -973,14 +990,25 @@ class Mf6Adj(object):
         self._add_gwf_info_to_hdf(fhd)
         fhd.close()
 
-    def solve_adjoint(self):
+    def solve_adjoint_old(self):
         if len(self._kperkstp) == 0:
             raise Exception("need to call solve_gwf() first")
         dfs = {}
         for pm in self._performance_measures:
-            df = pm.solve_adjoint(self._kperkstp, self._iss, self._deltat, self._amat,
+            df = pm.solve_adjoint_old(self._kperkstp, self._iss, self._deltat, self._amat,
                                   self._head, self._head_old, self._sat, self._sat_old, self._gwf,
                                   self._gwf_name, self._structured_mg, self._sp_package_data)
+            dfs[pm.name] = df
+        return dfs
+
+    def solve_adjoint(self):
+        #if len(self._kperkstp) == 0:
+        if self._hdf5_name is None or not os.path.exists(self._hdf5_name):
+            raise Exception("need to call solve_gwf() first")
+
+        dfs = {}
+        for pm in self._performance_measures:
+            df = pm.solve_adjoint(self._hdf5_name)
             dfs[pm.name] = df
         return dfs
 
