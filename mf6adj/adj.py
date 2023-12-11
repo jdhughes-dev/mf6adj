@@ -341,6 +341,8 @@ class Mf6Adj(object):
         if group_name in hdf:
             raise Exception("group_name {0} already in hdf file".format(group_name))
         grp = hdf.create_group(group_name)
+        for name, val in attr_dict.items():
+            grp.attrs[name] = val
         for tag, item in data_dict.items():
             if isinstance(item, list):
                 item = np.array(item)
@@ -357,8 +359,7 @@ class Mf6Adj(object):
                     print("Mf6Adj._write_group_to_hdf(): unused data_dict item {0}".format(tag))
             else:
                 raise Exception("unrecognized data_dict entry: {0},type:{1}".format(tag, type(item)))
-        for name, val in attr_dict.items():
-            grp[name] = val
+
 
 
     def _open_hdf(self, tag):
@@ -413,7 +414,8 @@ class Mf6Adj(object):
         data_dict["nodeuser"] = nodeuser
         nnodes = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NODES", gwf)
         data_dict["nnodes"] = nnodes
-        self._write_group_to_hdf(fhd, "gwf_info", data_dict)
+
+        self._write_group_to_hdf(fhd, "gwf_info", data_dict,attr_dict=self._gwf_package_dict)
 
     @staticmethod
     def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
@@ -975,7 +977,7 @@ class Mf6Adj(object):
                                      "hcof": hcof[i], "rhs": rhs[i], "packagename": tag})
                             data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound}
             attr_dict = {"ctime": ctime, "dt": dt1, "kper": kper, "kstp": kstp,"is_newton":is_newton,"has_sto":has_sto}
-            self._write_group_to_hdf(fhd, group_name="kper:{0}_kstp:{1}".format(kper, kstp), data_dict=data_dict,
+            self._write_group_to_hdf(fhd, group_name="solution_kper:{0}_kstp:{1}".format(kper, kstp), data_dict=data_dict,
                                      attr_dict=attr_dict)
 
         sim_end = datetime.now()

@@ -100,7 +100,6 @@ class PerfMeas(object):
 		comp_ghb_cond_sens = None
 		comp_rch_sens = None
 
-
 		if "wel6" in gwf_package_dict:
 			comp_welq_sens = np.zeros(nnodes)
 		if "ghb6" in gwf_package_dict:
@@ -113,7 +112,7 @@ class PerfMeas(object):
 		for itime,kk in enumerate(kperkstp[::-1]):
 			itime = kk[0]
 			print('solving',self._name,"(kper,kstp)",kk)
-			dfdh = self._dfdh(kk, gwf_name, gwf, head_dict)
+			dfdh = self._dfdh_old(kk, gwf_name, gwf, head_dict)
 			# jwhite: I think it should be sat old since the head (and therefore sat) from the last
 			# timestep/stress period is used to scale T...
 			dadk11,dadk33 = self._dadk(gwf_name, gwf, sat_dict[kk],amat_dict[kk])
@@ -250,7 +249,6 @@ class PerfMeas(object):
 	def solve_adjoint(self, hdf5_fname):
 		"""
 
-
 		"""
 		try:
 			hdf = h5py.File(hdf5_fname, 'r')
@@ -260,20 +258,50 @@ class PerfMeas(object):
 
 		keys = list(hdf.keys())
 		print(keys)
+		print(hdf["aux"].keys())
+		print(hdf["gwf_info"].keys())
+		print(hdf["aux"]["kper"][:])
 
-		nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
+		gwf_package_dict = {k: v for k, v in hdf["gwf_info"].attrs.items()}
 
+		sol_keys = [k for k in keys if k.startswith("solution")]
+		sol_keys.sort()
+		if len(sol_keys) == 0:
+			raise Exception("no 'solution' keys found")
+		kperkstp = [(kper, kstp) for kper, kstp in zip(hdf["aux"]["kper"], hdf["aux"]["kstp"])]
+		if len(kperkstp) != len(sol_keys):
+			raise Exception("number of solution datasets ({0}) != number of kper,kstp entries ({1})".format(len(sol_keys),len(kperkstp)))
+		kk_sol_map = {}
+		for kk in kperkstp:
+			sol = None
+			for s in sol_keys:
+				skper,skstp = hdf[s].attrs["kper"],hdf[s].attrs["kstp"]
+				print(skper,skstp)
+				if skper == kk[0] and skstp == kk[1]:
+					sol = s
+					break
+			if sol is None:
+				raise Exception("no solution dataset found for kper,kstp:{0}".format(str(kk)))
+			kk_sol_map[kk] = sol
+
+
+		#nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
+		nnodes = hdf["gwf_info"]["nnodes"]
 		lamb = np.zeros(nnodes)
 
-		ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
-		ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
+		#ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
+		ia = hdf["gwf_info"]["ia"][:]
+		#ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
+		ja = hdf["gwf_info"]["ja"][:]
 
 		comp_k33_sens = np.zeros(nnodes)
 		comp_k_sens = np.zeros(nnodes)
 
 		comp_ss_sens = None
 
-		has_sto = PerfMeas.has_sto_iconvert(gwf)
+		#has_sto = PerfMeas.has_sto_iconvert(gwf)
+		print(hdf[sol_keys[0]].attrs.keys())
+		has_sto = hdf[sol_keys[0]].attrs["has_sto"]
 		if has_sto:
 			comp_ss_sens = np.zeros(nnodes)
 
@@ -290,19 +318,23 @@ class PerfMeas(object):
 		if "rch6" in gwf_package_dict or "rcha6" in gwf_package_dict:
 			comp_rch_sens = np.zeros((nnodes))
 
+
 		data = {}
 		for itime, kk in enumerate(kperkstp[::-1]):
 			itime = kk[0]
 			print('solving', self._name, "(kper,kstp)", kk)
-			dfdh = self._dfdh(kk, gwf_name, gwf, head_dict)
+			sol_key = kk_sol_map[kk]
+			print(hdf[sol_key].keys())
+			dfdh = self._dfdh(kk, hdf[sol_key]["head"])
+
 			# jwhite: I think it should be sat old since the head (and therefore sat) from the last
 			# timestep/stress period is used to scale T...
-			dadk11, dadk33 = self._dadk(gwf_name, gwf, sat_dict[kk], amat_dict[kk])
-
-			if iss[kk] == 0:  # transient
+			#dadk11, dadk33 = self._dadk(gwf_name, gwf, sat_dict[kk], amat_dict[kk])
+			iss = hdf[sol_key]["iss"][0]
+			if iss == 0:  # transient
 				# if False:
 				# get the derv of RHS WRT head
-				drhsdh = self._drhsdh(gwf_name, gwf, deltat_dict[kk], sat_dict[kk])
+				drhsdh = hdf[sol_key]["drhsdh"]
 				rhs = (drhsdh * lamb) - dfdh
 			else:
 				rhs = - dfdh
@@ -312,12 +344,11 @@ class PerfMeas(object):
 						self._name, kk))
 				continue
 
-			amat = amat_dict[kk]
+			amat = hdf[sol_key]["amat"][:]
 			# for ii in range(ia.shape[0]-1):
 			#	print(ii,ii+1,ia[ii],ia[ii+1],ja[ia[ii]:ia[ii+1]],amat[ja[ia[ii]:ia[ii+1]]])
 			#	print()
 			amat_sp = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
-			# amat_sp.eliminate_zeros()
 			amat_sp_t = amat_sp.transpose()
 			lamb = spsolve(amat_sp_t, rhs)
 			if np.any(np.isnan(lamb)):
@@ -724,7 +755,7 @@ class PerfMeas(object):
 		drhsdh = -1. * storage * area * (top - bot) / dt
 		return drhsdh
 
-	def _dfdh(self, kk, gwf_name, gwf,head_dict):
+	def _dfdh_old(self, kk, gwf_name, gwf,head_dict):
 		nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
 		dfdh = np.zeros(nnodes)
 		for pfr in self._entries:
@@ -734,6 +765,17 @@ class PerfMeas(object):
 					dfdh[pfr.nnode] = pfr.weight
 				elif self._type == "residual":
 					dfdh[pfr.nnode] = 2.0 * pfr.weight * (head_dict[kk][pfr.nnode] - pfr.obsval)
+		return dfdh
+
+	def _dfdh(self, kk, head):
+		dfdh = np.zeros_like(head)
+		for pfr in self._entries:
+			if pfr.kperkstp == kk:
+				if self._type == "direct":
+					#dfdh[pfr.nnode] = -1. * pfr.weight / deltat_dict[kk]
+					dfdh[pfr.nnode] = pfr.weight
+				elif self._type == "residual":
+					dfdh[pfr.nnode] = 2.0 * pfr.weight * (head[pfr.nnode] - pfr.obsval)
 		return dfdh
 
 	@staticmethod
