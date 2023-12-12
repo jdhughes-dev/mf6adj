@@ -345,7 +345,8 @@ class Mf6Adj(object):
                     break
         return package_dict
 
-    def _write_group_to_hdf(self, hdf, group_name, data_dict, attr_dict={}):
+    @staticmethod
+    def write_group_to_hdf(hdf, group_name, data_dict, attr_dict={}):
         if group_name in hdf:
             raise Exception("group_name {0} already in hdf file".format(group_name))
         grp = hdf.create_group(group_name)
@@ -367,8 +368,6 @@ class Mf6Adj(object):
                     print("Mf6Adj._write_group_to_hdf(): unused data_dict item {0}".format(tag))
             else:
                 raise Exception("unrecognized data_dict entry: {0},type:{1}".format(tag, type(item)))
-
-
 
     def _open_hdf(self, tag):
         if tag is None:
@@ -428,7 +427,7 @@ class Mf6Adj(object):
         data_dict["ndim"] = ndim
         nnodes = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NODES", gwf)
         data_dict["nnodes"] = nnodes
-        ndim = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NDIM", gwf)
+        ndim = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "NDIM", gwf)
         data_dict["ndim"] = ndim
 
         if self.is_structured:
@@ -439,7 +438,7 @@ class Mf6Adj(object):
             ncol = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NCOL", gwf)
             data_dict["ncol"] = ncol
 
-        self._write_group_to_hdf(fhd, "gwf_info", data_dict,attr_dict=self._gwf_package_dict)
+        PerfMeas.write_group_to_hdf(fhd, "gwf_info", data_dict,attr_dict=self._gwf_package_dict)
 
     @staticmethod
     def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
@@ -856,7 +855,7 @@ class Mf6Adj(object):
                                      "hcof": hcof[i], "rhs": rhs[i], "packagename": tag})
                             data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound}
             attr_dict = {"ctime": ctime, "dt": dt1, "kper": kper, "kstp": kstp,"is_newton":is_newton,"has_sto":has_sto}
-            self._write_group_to_hdf(fhd, group_name="solution_kper:{0}_kstp:{1}".format(kper, kstp), data_dict=data_dict,
+            PerfMeas.write_group_to_hdf(fhd, group_name="solution_kper:{0}_kstp:{1}".format(kper, kstp), data_dict=data_dict,
                                      attr_dict=attr_dict)
 
         sim_end = datetime.now()
@@ -867,7 +866,7 @@ class Mf6Adj(object):
                 print("...failed to converge {0} times".format(num_fails))
             print("\n")
 
-        self._write_group_to_hdf(fhd, "aux", {"totime": ctimes, "dt": dts, "kper": kpers, "kstp": kstps})
+        PerfMeas.write_group_to_hdf(fhd, "aux", {"totime": ctimes, "dt": dts, "kper": kpers, "kstp": kstps})
         self._add_gwf_info_to_hdf(fhd)
         fhd.close()
 

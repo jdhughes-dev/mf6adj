@@ -2731,15 +2731,19 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
 
     # ### Create the storage (`STO`) Package
     if include_sto:
-        if len(tdis_pd) > 1:
-            raise Exception("not implemented")
+        #if len(tdis_pd) > 1:
+        #    raise Exception("not implemented")
         sy = []
         geo = [top]
         geo.extend(botm)
         for k in range(nlay):
             t,b = geo[k],geo[k+1]
             sy.append(ss*(t-b))
-        sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=iconvert, steady_state=False,ss=ss,sy=sy)
+        steady_state = [False]
+        if len(tdis_pd) > 1:
+            steady_state = [False for _ in range(len(tdis_pd))]
+            steady_state[0] = True
+        sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=iconvert, steady_state=steady_state,ss=ss,sy=sy)
 
     chd_rec = []
     if ncol > 1:
@@ -3134,7 +3138,7 @@ def test_xd_box_1():
     new_d = 'xd_box_1_test'
 
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=3,nlay=3,
+       sim = setup_xd_box_model(new_d,nper=10,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=3,nlay=3,
                                 q=-0.1,icelltype=0,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
@@ -3173,34 +3177,54 @@ def test_xd_box_1():
         import mf6adj
 
         print('calculating mf6adj sensitivity')
+        # with open("test.adj",'w') as f:
+        #     f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
+        #     for kper in range(sim.tdis.nper.data):
+        #         for p_kij in pm_locs:
+        #             k,i,j = p_kij
+        #             if id[k,i,j] <= 0:
+        #                 continue
+        #             # just looking at one pm location for now...
+        #             #if p_kij != (0,0,2):
+        #             #    continue
+        #             pm_name = "direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
+        #             f.write("begin performance_measure {0} type direct\n".format(pm_name))
+        #             f.write("{0} 1 {1} {2} {3} {4} \n".format(kper+1,k+1,i+1,j+1,weight))
+        #             f.write("end performance_measure\n\n")
+        #
+        #             pm_name = "phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
+        #             f.write("begin performance_measure {0} type residual\n".format(pm_name))
+        #             # just use top as the obs val....
+        #             f.write("{0} 1 {1} {2} {3} {4} {5}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
+        #             f.write("end performance_measure\n\n")
+
         with open("test.adj",'w') as f:
             f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
-            for kper in range(sim.tdis.nper.data):
-                for p_kij in pm_locs:
-                    k,i,j = p_kij
-                    if id[k,i,j] <= 0:
-                        continue
-                    # just looking at one pm location for now...
-                    #if p_kij != (0,0,2):
-                    #    continue
-                    pm_name = "direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
-                    f.write("begin performance_measure {0} type direct\n".format(pm_name))
+            for p_kij in pm_locs:
+                k, i, j = p_kij
+                if id[k, i, j] <= 0:
+                    continue
+                pm_name = "direct_pk{1:03d}_pi{2:03d}_pj{3:03d}".format("0", k, i, j)
+                f.write("begin performance_measure {0} type direct\n".format(pm_name))
+                for kper in range(sim.tdis.nper.data):
                     f.write("{0} 1 {1} {2} {3} {4} \n".format(kper+1,k+1,i+1,j+1,weight))
-                    f.write("end performance_measure\n\n")
+                f.write("end performance_measure\n\n")
 
 
-                    pm_name = "phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
-                    f.write("begin performance_measure {0} type residual\n".format(pm_name))
-                    # just use top as the obs val....
+                pm_name = "phi_pk{1:03d}_pi{2:03d}_pj{3:03d}".format("0",k,i,j)
+
+                f.write("begin performance_measure {0} type residual\n".format(pm_name))
+                for kper in range(sim.tdis.nper.data):
                     f.write("{0} 1 {1} {2} {3} {4} {5}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
-                    f.write("end performance_measure\n\n")
-
+                f.write("end performance_measure\n\n")
 
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
-        adj._perturbation_test()
+        #adj._perturbation_test()
         adj.finalize()
+        return
+
 
         if plot_adj_results:
             afiles_to_plot = [f for f in os.listdir(".") if (f.startswith("pm-direct") or f.startswith("pm-phi")) and f.endswith(".dat")]

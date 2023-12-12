@@ -72,200 +72,204 @@ class PerfMeas(object):
                 result += (pfr.weight * (head_dict[pfr.kperkstp][pfr.nnode] - pfr.obsval)) ** 2
         return result
 
-    def solve_adjoint_old(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict,
-                          sat_dict, sat_old_dict, gwf, gwf_name, mg_structured, gwf_package_dict):
-        """
+    # def solve_adjoint_old(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict,
+    #                       sat_dict, sat_old_dict, gwf, gwf_name, mg_structured, gwf_package_dict):
+    #     """
+    #
+    #
+	# 	"""
+    #     nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
+    #
+    #     lamb = np.zeros(nnodes)
+    #
+    #     ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
+    #     ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
+    #
+    #     comp_k33_sens = np.zeros(nnodes)
+    #     comp_k_sens = np.zeros(nnodes)
+    #
+    #     comp_ss_sens = None
+    #
+    #     has_sto = PerfMeas.has_sto_iconvert(gwf)
+    #     if has_sto:
+    #         comp_ss_sens = np.zeros(nnodes)
+    #
+    #     comp_welq_sens = None
+    #     comp_ghb_head_sens = None
+    #     comp_ghb_cond_sens = None
+    #     comp_rch_sens = None
+    #
+    #     if "wel6" in gwf_package_dict:
+    #         comp_welq_sens = np.zeros(nnodes)
+    #     if "ghb6" in gwf_package_dict:
+    #         comp_ghb_head_sens = np.zeros(nnodes)
+    #         comp_ghb_cond_sens = np.zeros(nnodes)
+    #     if "rch6" in gwf_package_dict or "rcha6" in gwf_package_dict:
+    #         comp_rch_sens = np.zeros((nnodes))
+    #
+    #     data = {}
+    #     for itime, kk in enumerate(kperkstp[::-1]):
+    #         itime = kk[0]
+    #         print('solving', self._name, "(kper,kstp)", kk)
+    #         dfdh = self._dfdh_old(kk, gwf_name, gwf, head_dict)
+    #         # jwhite: I think it should be sat old since the head (and therefore sat) from the last
+    #         # timestep/stress period is used to scale T...
+    #         dadk11, dadk33 = self._dadk(gwf_name, gwf, sat_dict[kk], amat_dict[kk])
+    #
+    #         if iss[kk] == 0:  # transient
+    #             # if False:
+    #             # get the derv of RHS WRT head
+    #             drhsdh = self._drhsdh(gwf_name, gwf, deltat_dict[kk], sat_dict[kk])
+    #             rhs = (drhsdh * lamb) - dfdh
+    #         else:
+    #             rhs = - dfdh
+    #         if np.all(rhs == 0.0):
+    #             print(
+    #                 "WARNING: adjoint solve rhs is all zeros, adjoint states cannot be calculated for {0} at kperkstp {1}".format(
+    #                     self._name, kk))
+    #             continue
+    #
+    #         amat = amat_dict[kk]
+    #         # for ii in range(ia.shape[0]-1):
+    #         #	print(ii,ii+1,ia[ii],ia[ii+1],ja[ia[ii]:ia[ii+1]],amat[ja[ia[ii]:ia[ii+1]]])
+    #         #	print()
+    #         amat_sp = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
+    #         # amat_sp.eliminate_zeros()
+    #         amat_sp_t = amat_sp.transpose()
+    #         lamb = spsolve(amat_sp_t, rhs)
+    #         if np.any(np.isnan(lamb)):
+    #             print("WARNING: nans in adjoint states for pm {0} at kperkstp {1}".format(self._name, kk))
+    #             continue
+    #
+    #         k_sens = self.lam_dAdk_h(gwf_name, gwf, lamb, dadk11, head_dict[kk])
+    #         k33_sens = self.lam_dAdk_h(gwf_name, gwf, lamb, dadk33, head_dict[kk])
+    #
+    #         comp_k_sens += k_sens
+    #         comp_k33_sens += k33_sens
+    #
+    #         if has_sto:
+    #             ss_sens = self.sens_ss_indirect(gwf_name, gwf, lamb, head_dict[kk], head_old_dict[kk], deltat_dict[kk],
+    #                                             sat_dict[kk], sat_old_dict[kk])
+    #             comp_ss_sens += ss_sens
+    #
+    #         if "wel6" in gwf_package_dict and kk in gwf_package_dict["wel6"]:
+    #             sens_welq = self.lam_drhs_dqwel(lamb, gwf_package_dict["wel6"][kk])
+    #             if self.verbose_level > 1:
+    #                 self.save_array_old("sens_welq_kper{0:05d}".format(itime), sens_welq, gwf_name, gwf, mg_structured)
+    #                 data["welq_kper{0:05d}".format(itime)] = sens_welq
+    #             comp_welq_sens += sens_welq
+    #
+    #         if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
+    #             sens_ghb_head, sens_ghb_cond = self.lam_drhs_dghb(lamb, head_dict[kk], gwf_package_dict["ghb6"][kk])
+    #             if self.verbose_level > 1:
+    #                 self.save_array_old("sens_ghbhead_kper{0:05d}".format(itime), sens_ghb_head, gwf_name, gwf,
+    #                                 mg_structured)
+    #                 self.save_array_old("sens_ghbcond_kper{0:05d}".format(itime), sens_ghb_cond, gwf_name, gwf,
+    #                                 mg_structured)
+    #                 data["ghbhead_kper{0:05d}".format(itime)] = sens_ghb_head
+    #                 data["ghbcond_kper{0:05d}".format(itime)] = sens_ghb_cond
+    #
+    #             comp_ghb_head_sens += sens_ghb_head
+    #             comp_ghb_cond_sens += sens_ghb_cond
+    #         # print("rch" in gwf_package_dict,kk,list(gwf_package_dict["rch6"].keys()))
+    #         if "rch6" in gwf_package_dict and kk in gwf_package_dict["rch6"]:
+    #             sens_rch = self.rch_sens(gwf_name, gwf, lamb, gwf_package_dict["rch6"][kk])
+    #             if self.verbose_level > 1:
+    #                 self.save_array_old("sens_rch_kper{0:05d}".format(itime), sens_rch, gwf_name, gwf, mg_structured)
+    #                 if "rch_kper{0:05d}".format(itime) in data:
+    #                     data["rch_kper{0:05d}".format(itime)] += sens_rch
+    #                 else:
+    #                     data["rch_kper{0:05d}".format(itime)] = sens_rch
+    #
+    #             comp_rch_sens += sens_rch
+    #
+    #         # todo: think about what it would do to have both rch and recha active..for now just accumulating them
+    #         if "rcha6" in gwf_package_dict and kk in gwf_package_dict["rcha6"]:
+    #             sens_rch = self.rch_sens(gwf_name, gwf, lamb, gwf_package_dict["rcha6"][kk])
+    #             if self.verbose_level > 1:
+    #                 self.save_array_old("sens_rch_kper{0:05d}".format(itime), sens_rch, gwf_name, gwf, mg_structured)
+    #                 if "rch_kper{0:05d}".format(itime) in data:
+    #                     data["rch_kper{0:05d}".format(itime)] += sens_rch
+    #                 else:
+    #                     data["rch_kper{0:05d}".format(itime)] = sens_rch
+    #             comp_rch_sens += sens_rch
+    #
+    #         # this is just temp stuff - will be replaced with a more scalable solution...
+    #         if self.verbose_level > 1:
+    #             self.save_array_old("adjstates_kper{0:05d}".format(itime), lamb, gwf_name, gwf, mg_structured)
+    #             data["adjstates_kper{0:05d}".format(itime)] = lamb
+    #             self.save_array_old("sens_k33_kper{0:05d}".format(itime), k33_sens, gwf_name, gwf, mg_structured)
+    #             data["sens_k33_kper{0:05d}".format(itime)] = k33_sens
+    #             self.save_array_old("sens_k11_kper{0:05d}".format(itime), k_sens, gwf_name, gwf, mg_structured)
+    #             data["sens_k11_kper{0:05d}".format(itime)] = k_sens
+    #             if has_sto:
+    #                 self.save_array_old("sens_ss_kper{0:05d}".format(itime), ss_sens, gwf_name, gwf, mg_structured)
+    #                 data["sens_ss_kper{0:05d}".format(itime)] = ss_sens
+    #             self.save_array_old("head_kper{0:05d}".format(itime), head_dict[kk], gwf_name, gwf, mg_structured)
+    #             data["head_kper{0:05d}".format(itime)] = head_dict[kk]
+    #             if self.verbose_level > 2:
+    #                 self.save_array_old("dadk11_kper{0:05d}".format(itime), dadk11, gwf_name, gwf, mg_structured)
+    #                 self.save_array_old("dadk33_kper{0:05d}".format(itime), dadk33, gwf_name, gwf, mg_structured)
+    #                 np.savetxt("pm-{0}_amattodense_kper{1:04d}.dat".format(self._name, itime), amat_sp_t.todense(),
+    #                            fmt="%15.6E")
+    #                 np.savetxt("pm-{0}_amat_kper{1:04d}.dat".format(self._name, itime), amat, fmt="%15.6E")
+    #                 np.savetxt("pm-{0}_rhs_kper{1:04d}.dat".format(self._name, itime), rhs, fmt="%15.6E")
+    #                 np.savetxt("pm-{0}_ia_kper{1:04d}.dat".format(self._name, itime), ia)
+    #                 np.savetxt("pm-{0}_ja_kper{1:04d}.dat".format(self._name, itime), ja)
+    #                 # for arr,tag in zip([dadk11,dadk22,dadk33,dadk123],["dadk11","dadk22","dadk33","dadk123"]):
+    #                 for arr, tag in zip([dadk11, dadk33],
+    #                                     ["dadk11", "dadk33"]):
+    #                     np.savetxt("pm-{0}_{1}_kper{2:05d}.dat".format(self._name, tag, itime), arr, fmt="%15.6E")
+    #
+    #     data["k11"] = comp_k_sens
+    #     data["k33"] = comp_k33_sens
+    #     self.save_array_old("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
+    #     self.save_array_old("comp_sens_k11", comp_k_sens, gwf_name, gwf, mg_structured)
+    #     addr = ["NODEUSER", gwf_name, "DIS"]
+    #     wbaddr = gwf.get_var_address(*addr)
+    #     nuser = gwf.get_value(wbaddr) - 1
+    #     if len(nuser) == 1:
+    #         nuser = np.arange(nnodes, dtype=int)
+    #     df = pd.DataFrame(data, index=nuser)
+    #
+    #     if has_sto:
+    #         self.save_array_old("comp_sens_ss", comp_ss_sens, gwf_name, gwf, mg_structured)
+    #         df.loc[:, "ss"] = comp_ss_sens
+    #     if "wel6" in gwf_package_dict:
+    #         self.save_array_old("comp_sens_welq", comp_welq_sens, gwf_name, gwf, mg_structured)
+    #         df.loc[:, "welq"] = comp_welq_sens
+    #     if "ghb6" in gwf_package_dict:
+    #         self.save_array_old("comp_sens_ghbhead", comp_ghb_head_sens, gwf_name, gwf, mg_structured)
+    #         self.save_array_old("comp_sens_ghbcond", comp_ghb_cond_sens, gwf_name, gwf, mg_structured)
+    #         df.loc[:, "ghbhead"] = comp_ghb_head_sens
+    #         df.loc[:, "ghbcond"] = comp_ghb_cond_sens
+    #
+    #     if "rch6" in gwf_package_dict or "rcha6" in gwf_package_dict:
+    #         self.save_array_old("comp_sens_rch", comp_rch_sens, gwf_name, gwf, mg_structured)
+    #         df.loc[:, "rch"] = comp_rch_sens
+    #     df.to_csv("{0}_adj_results.csv".format(self._name))
+    #     return df
 
-
-		"""
-        nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
-
-        lamb = np.zeros(nnodes)
-
-        ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
-        ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
-
-        comp_k33_sens = np.zeros(nnodes)
-        comp_k_sens = np.zeros(nnodes)
-
-        comp_ss_sens = None
-
-        has_sto = PerfMeas.has_sto_iconvert(gwf)
-        if has_sto:
-            comp_ss_sens = np.zeros(nnodes)
-
-        comp_welq_sens = None
-        comp_ghb_head_sens = None
-        comp_ghb_cond_sens = None
-        comp_rch_sens = None
-
-        if "wel6" in gwf_package_dict:
-            comp_welq_sens = np.zeros(nnodes)
-        if "ghb6" in gwf_package_dict:
-            comp_ghb_head_sens = np.zeros(nnodes)
-            comp_ghb_cond_sens = np.zeros(nnodes)
-        if "rch6" in gwf_package_dict or "rcha6" in gwf_package_dict:
-            comp_rch_sens = np.zeros((nnodes))
-
-        data = {}
-        for itime, kk in enumerate(kperkstp[::-1]):
-            itime = kk[0]
-            print('solving', self._name, "(kper,kstp)", kk)
-            dfdh = self._dfdh_old(kk, gwf_name, gwf, head_dict)
-            # jwhite: I think it should be sat old since the head (and therefore sat) from the last
-            # timestep/stress period is used to scale T...
-            dadk11, dadk33 = self._dadk(gwf_name, gwf, sat_dict[kk], amat_dict[kk])
-
-            if iss[kk] == 0:  # transient
-                # if False:
-                # get the derv of RHS WRT head
-                drhsdh = self._drhsdh(gwf_name, gwf, deltat_dict[kk], sat_dict[kk])
-                rhs = (drhsdh * lamb) - dfdh
-            else:
-                rhs = - dfdh
-            if np.all(rhs == 0.0):
-                print(
-                    "WARNING: adjoint solve rhs is all zeros, adjoint states cannot be calculated for {0} at kperkstp {1}".format(
-                        self._name, kk))
-                continue
-
-            amat = amat_dict[kk]
-            # for ii in range(ia.shape[0]-1):
-            #	print(ii,ii+1,ia[ii],ia[ii+1],ja[ia[ii]:ia[ii+1]],amat[ja[ia[ii]:ia[ii+1]]])
-            #	print()
-            amat_sp = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
-            # amat_sp.eliminate_zeros()
-            amat_sp_t = amat_sp.transpose()
-            lamb = spsolve(amat_sp_t, rhs)
-            if np.any(np.isnan(lamb)):
-                print("WARNING: nans in adjoint states for pm {0} at kperkstp {1}".format(self._name, kk))
-                continue
-
-            k_sens = self.lam_dAdk_h(gwf_name, gwf, lamb, dadk11, head_dict[kk])
-            k33_sens = self.lam_dAdk_h(gwf_name, gwf, lamb, dadk33, head_dict[kk])
-
-            comp_k_sens += k_sens
-            comp_k33_sens += k33_sens
-
-            if has_sto:
-                ss_sens = self.sens_ss_indirect(gwf_name, gwf, lamb, head_dict[kk], head_old_dict[kk], deltat_dict[kk],
-                                                sat_dict[kk], sat_old_dict[kk])
-                comp_ss_sens += ss_sens
-
-            if "wel6" in gwf_package_dict and kk in gwf_package_dict["wel6"]:
-                sens_welq = self.lam_drhs_dqwel(lamb, gwf_package_dict["wel6"][kk])
-                if self.verbose_level > 1:
-                    self.save_array_old("sens_welq_kper{0:05d}".format(itime), sens_welq, gwf_name, gwf, mg_structured)
-                    data["welq_kper{0:05d}".format(itime)] = sens_welq
-                comp_welq_sens += sens_welq
-
-            if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
-                sens_ghb_head, sens_ghb_cond = self.lam_drhs_dghb(lamb, head_dict[kk], gwf_package_dict["ghb6"][kk])
-                if self.verbose_level > 1:
-                    self.save_array_old("sens_ghbhead_kper{0:05d}".format(itime), sens_ghb_head, gwf_name, gwf,
-                                    mg_structured)
-                    self.save_array_old("sens_ghbcond_kper{0:05d}".format(itime), sens_ghb_cond, gwf_name, gwf,
-                                    mg_structured)
-                    data["ghbhead_kper{0:05d}".format(itime)] = sens_ghb_head
-                    data["ghbcond_kper{0:05d}".format(itime)] = sens_ghb_cond
-
-                comp_ghb_head_sens += sens_ghb_head
-                comp_ghb_cond_sens += sens_ghb_cond
-            # print("rch" in gwf_package_dict,kk,list(gwf_package_dict["rch6"].keys()))
-            if "rch6" in gwf_package_dict and kk in gwf_package_dict["rch6"]:
-                sens_rch = self.rch_sens(gwf_name, gwf, lamb, gwf_package_dict["rch6"][kk])
-                if self.verbose_level > 1:
-                    self.save_array_old("sens_rch_kper{0:05d}".format(itime), sens_rch, gwf_name, gwf, mg_structured)
-                    if "rch_kper{0:05d}".format(itime) in data:
-                        data["rch_kper{0:05d}".format(itime)] += sens_rch
-                    else:
-                        data["rch_kper{0:05d}".format(itime)] = sens_rch
-
-                comp_rch_sens += sens_rch
-
-            # todo: think about what it would do to have both rch and recha active..for now just accumulating them
-            if "rcha6" in gwf_package_dict and kk in gwf_package_dict["rcha6"]:
-                sens_rch = self.rch_sens(gwf_name, gwf, lamb, gwf_package_dict["rcha6"][kk])
-                if self.verbose_level > 1:
-                    self.save_array_old("sens_rch_kper{0:05d}".format(itime), sens_rch, gwf_name, gwf, mg_structured)
-                    if "rch_kper{0:05d}".format(itime) in data:
-                        data["rch_kper{0:05d}".format(itime)] += sens_rch
-                    else:
-                        data["rch_kper{0:05d}".format(itime)] = sens_rch
-                comp_rch_sens += sens_rch
-
-            # this is just temp stuff - will be replaced with a more scalable solution...
-            if self.verbose_level > 1:
-                self.save_array_old("adjstates_kper{0:05d}".format(itime), lamb, gwf_name, gwf, mg_structured)
-                data["adjstates_kper{0:05d}".format(itime)] = lamb
-                self.save_array_old("sens_k33_kper{0:05d}".format(itime), k33_sens, gwf_name, gwf, mg_structured)
-                data["sens_k33_kper{0:05d}".format(itime)] = k33_sens
-                self.save_array_old("sens_k11_kper{0:05d}".format(itime), k_sens, gwf_name, gwf, mg_structured)
-                data["sens_k11_kper{0:05d}".format(itime)] = k_sens
-                if has_sto:
-                    self.save_array_old("sens_ss_kper{0:05d}".format(itime), ss_sens, gwf_name, gwf, mg_structured)
-                    data["sens_ss_kper{0:05d}".format(itime)] = ss_sens
-                self.save_array_old("head_kper{0:05d}".format(itime), head_dict[kk], gwf_name, gwf, mg_structured)
-                data["head_kper{0:05d}".format(itime)] = head_dict[kk]
-                if self.verbose_level > 2:
-                    self.save_array_old("dadk11_kper{0:05d}".format(itime), dadk11, gwf_name, gwf, mg_structured)
-                    self.save_array_old("dadk33_kper{0:05d}".format(itime), dadk33, gwf_name, gwf, mg_structured)
-                    np.savetxt("pm-{0}_amattodense_kper{1:04d}.dat".format(self._name, itime), amat_sp_t.todense(),
-                               fmt="%15.6E")
-                    np.savetxt("pm-{0}_amat_kper{1:04d}.dat".format(self._name, itime), amat, fmt="%15.6E")
-                    np.savetxt("pm-{0}_rhs_kper{1:04d}.dat".format(self._name, itime), rhs, fmt="%15.6E")
-                    np.savetxt("pm-{0}_ia_kper{1:04d}.dat".format(self._name, itime), ia)
-                    np.savetxt("pm-{0}_ja_kper{1:04d}.dat".format(self._name, itime), ja)
-                    # for arr,tag in zip([dadk11,dadk22,dadk33,dadk123],["dadk11","dadk22","dadk33","dadk123"]):
-                    for arr, tag in zip([dadk11, dadk33],
-                                        ["dadk11", "dadk33"]):
-                        np.savetxt("pm-{0}_{1}_kper{2:05d}.dat".format(self._name, tag, itime), arr, fmt="%15.6E")
-
-        data["k11"] = comp_k_sens
-        data["k33"] = comp_k33_sens
-        self.save_array_old("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
-        self.save_array_old("comp_sens_k11", comp_k_sens, gwf_name, gwf, mg_structured)
-        addr = ["NODEUSER", gwf_name, "DIS"]
-        wbaddr = gwf.get_var_address(*addr)
-        nuser = gwf.get_value(wbaddr) - 1
-        if len(nuser) == 1:
-            nuser = np.arange(nnodes, dtype=int)
-        df = pd.DataFrame(data, index=nuser)
-
-        if has_sto:
-            self.save_array_old("comp_sens_ss", comp_ss_sens, gwf_name, gwf, mg_structured)
-            df.loc[:, "ss"] = comp_ss_sens
-        if "wel6" in gwf_package_dict:
-            self.save_array_old("comp_sens_welq", comp_welq_sens, gwf_name, gwf, mg_structured)
-            df.loc[:, "welq"] = comp_welq_sens
-        if "ghb6" in gwf_package_dict:
-            self.save_array_old("comp_sens_ghbhead", comp_ghb_head_sens, gwf_name, gwf, mg_structured)
-            self.save_array_old("comp_sens_ghbcond", comp_ghb_cond_sens, gwf_name, gwf, mg_structured)
-            df.loc[:, "ghbhead"] = comp_ghb_head_sens
-            df.loc[:, "ghbcond"] = comp_ghb_cond_sens
-
-        if "rch6" in gwf_package_dict or "rcha6" in gwf_package_dict:
-            self.save_array_old("comp_sens_rch", comp_rch_sens, gwf_name, gwf, mg_structured)
-            df.loc[:, "rch"] = comp_rch_sens
-        df.to_csv("{0}_adj_results.csv".format(self._name))
-        return df
-
-    def solve_adjoint(self, hdf5_fname):
+    def solve_adjoint(self, hdf5_forward_solution_fname, hdf5_adjoint_solution_fname=None ):
         """
 
 		"""
         try:
-            hdf = h5py.File(hdf5_fname, 'r')
+            hdf = h5py.File(hdf5_forward_solution_fname, 'r')
         except Exception as e:
             raise Exception("error opening hdf5 file '{0}' for PerfMeas {1}: {2}". \
-                            format(hdf5_fname, self._name, str(e)))
+                            format(hdf5_forward_solution_fname, self._name, str(e)))
+        if hdf5_adjoint_solution_fname is None:
+            pth = os.path.split(hdf5_forward_solution_fname)[0]
+            hdf5_adjoint_solution_fname = os.path.join(pth,"adj_{0}_".format(self._name) + hdf5_forward_solution_fname)
+
+        if os.path.exists(hdf5_adjoint_solution_fname):
+            print ("WARNING: removing existing adjoint solution file '{0}'".format(hdf5_adjoint_solution_fname))
+            os.remove(hdf5_adjoint_solution_fname)
+
+        adf = h5py.File(hdf5_adjoint_solution_fname,"w")
 
         keys = list(hdf.keys())
-        print(keys)
-        print(hdf["aux"].keys())
-        print(hdf["gwf_info"].keys())
-        print(hdf["aux"]["kper"][:])
-
         gwf_package_dict = {k: v for k, v in hdf["gwf_info"].attrs.items()}
 
         sol_keys = [k for k in keys if k.startswith("solution")]
@@ -282,7 +286,7 @@ class PerfMeas(object):
             sol = None
             for s in sol_keys:
                 skper, skstp = hdf[s].attrs["kper"], hdf[s].attrs["kstp"]
-                print(skper, skstp)
+                #print(skper, skstp)
                 if skper == kk[0] and skstp == kk[1]:
                     sol = s
                     break
@@ -296,10 +300,11 @@ class PerfMeas(object):
 
         grid_shape = None
         if "nrow" in hdf["gwf_info"].keys():
-            print("...structured grid found")
-            grid_shape = (hdf["gwf_info"]["nlay"],
-                          hdf["gwf_info"]["nrow"],
-                          hdf["gwf_info"]["ncol"])
+
+            grid_shape = (hdf["gwf_info"]["nlay"][0],
+                          hdf["gwf_info"]["nrow"][0],
+                          hdf["gwf_info"]["ncol"][0])
+            print("...structured grid found, shape:",grid_shape)
 
         ia = hdf["gwf_info"]["ia"][:]
         ja = hdf["gwf_info"]["ja"][:]
@@ -310,7 +315,6 @@ class PerfMeas(object):
         comp_ss_sens = None
 
         # has_sto = PerfMeas.has_sto_iconvert(gwf)
-        print(hdf[sol_keys[0]].attrs.keys())
         has_sto = hdf[sol_keys[0]].attrs["has_sto"]
         if has_sto:
             comp_ss_sens = np.zeros(nnodes)
@@ -328,27 +332,32 @@ class PerfMeas(object):
         if "rch6" in gwf_package_dict or "rcha6" in gwf_package_dict:
             comp_rch_sens = np.zeros((nnodes))
 
-        data = {}
         for itime, kk in enumerate(kperkstp[::-1]):
-            itime = kk[0]
-            print('solving', self._name, "(kper,kstp)", kk)
-            sol_key = kk_sol_map[kk]
-            print(hdf[sol_key].keys())
-            dfdh = self._dfdh(kk, hdf[sol_key]["head"])
+            data = {}
 
+            print('solving adjoint solution for PerfMeas:', self._name, " (kper,kstp)", kk)
+            sol_key = kk_sol_map[kk]
+            #print(hdf[sol_key].keys())
+            if sol_key in adf:
+                raise Exception("solution key '{0}' already in adjoint hdf5 file".format(sol_key))
+
+            dfdh = self._dfdh(kk, hdf[sol_key]["head"])
+            data["dfdh"] = dfdh
             iss = hdf[sol_key]["iss"][0]
+
             if iss == 0:  # transient
                 # if False:
                 # get the derv of RHS WRT head
                 drhsdh = hdf[sol_key]["drhsdh"][:]
+                data["drhsdh"] = drhsdh
                 rhs = (drhsdh * lamb) - dfdh
             else:
                 rhs = - dfdh
-            if np.all(rhs == 0.0):
-                print(
-                    "WARNING: adjoint solve rhs is all zeros, adjoint states cannot be calculated for {0} at kperkstp {1}".format(
-                        self._name, kk))
-                continue
+            #if np.all(rhs == 0.0):
+            #    print(
+            #        "WARNING: adjoint solve rhs is all zeros, adjoint states cannot be calculated for {0} at kperkstp {1}".format(
+            #            self._name, kk))
+                #continue
 
             amat = hdf[sol_key]["amat"][:]
             amat_sp = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
@@ -357,143 +366,107 @@ class PerfMeas(object):
             if np.any(np.isnan(lamb)):
                 print("WARNING: nans in adjoint states for pm {0} at kperkstp {1}".format(self._name, kk))
                 continue
+            is_newton = hdf[sol_key].attrs["is_newton"]
+            k_sens, k33_sens = PerfMeas.lam_dresdk_h(is_newton, lamb, hdf[sol_key]["sat"][:],
+                                                 hdf[sol_key]["head"][:],
+                                                 hdf["gwf_info"]["ihc"][:],
+                                                 ia,
+                                                 ja,
+                                                 hdf["gwf_info"]["jas"][:],
+                                                 hdf["gwf_info"]["cl1"][:],
+                                                 hdf["gwf_info"]["cl2"][:],
+                                                 hdf["gwf_info"]["hwva"][:],
+                                                 hdf["gwf_info"]["top"][:],
+                                                 hdf["gwf_info"]["bot"][:],
+                                                 hdf["gwf_info"]["icelltype"][:],
+                                                 hdf[sol_key]["k11"][:],
+                                                 hdf[sol_key]["k33"][:]
+                                                 )
 
-             k_sens, k33_sens = PerfMeas.lam_dresdk_h(hdf[sol_key].attrs["is_newton"], lamb, hdf[sol_key]["sat"][:],
-                                                     hdf[sol_key]["head"][:],
-                                                     hdf["gwf_info"]["ihc"][:],
-                                                     ia,
-                                                     ja,
-                                                     hdf["gwf_info"]["jas"][:],
-                                                     hdf["gwf_info"]["cl1"][:],
-                                                     hdf["gwf_info"]["cl2"][:],
-                                                     hdf["gwf_info"]["hwva"][:],
-                                                     hdf["gwf_info"]["top"][:],
-                                                     hdf["gwf_info"]["bot"][:],
-                                                     hdf["gwf_info"]["icelltype"][:],
-                                                     hdf[sol_key]["k11"][:],
-                                                     hdf[sol_key]["k33"][:]
-                                                     )
-
+            data["k11"] = k_sens
+            data["k33"] = k33_sens
             comp_k_sens += k_sens
             comp_k33_sens += k33_sens
 
             if has_sto:
                 ss_sens = lamb * hdf[sol_key]["dresdss_h"][:]
+                data["ss"] = ss_sens
                 comp_ss_sens += ss_sens
 
-            if "wel6" in gwf_package_dict and kk in gwf_package_dict["wel6"]:
-                sens_welq = self.lam_drhs_dqwel(lamb, gwf_package_dict["wel6"][kk])
-                if self.verbose_level > 1:
-                    self.save_array("sens_welq_kper{0:05d}".format(itime), sens_welq, gwf_name, gwf, mg_structured)
-                    data["welq_kper{0:05d}".format(itime)] = sens_welq
-                comp_welq_sens += sens_welq
+            # if "wel6" in gwf_package_dict and kk in gwf_package_dict["wel6"]:
+            #     sens_welq = self.lam_drhs_dqwel(lamb, gwf_package_dict["wel6"][kk])
+            #     if self.verbose_level > 1:
+            #         #self.save_array("sens_welq_kper{0:05d}".format(itime), sens_welq, grid_shape)
+            #         data["welq_"+sol_key] = sens_welq
+            #     comp_welq_sens += sens_welq
+            data["welq"] = lamb
+            comp_welq_sens += lamb
 
             if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
                 sens_ghb_head, sens_ghb_cond = self.lam_drhs_dghb(lamb, head_dict[kk], gwf_package_dict["ghb6"][kk])
-                if self.verbose_level > 1:
-                    self.save_array("sens_ghbhead_kper{0:05d}".format(itime), sens_ghb_head, gwf_name, gwf,
-                                    mg_structured)
-                    self.save_array("sens_ghbcond_kper{0:05d}".format(itime), sens_ghb_cond, gwf_name, gwf,
-                                    mg_structured)
-                    data["ghbhead_kper{0:05d}".format(itime)] = sens_ghb_head
-                    data["ghbcond_kper{0:05d}".format(itime)] = sens_ghb_cond
-
+                data["ghbhead_"+sol_key] = sens_ghb_head
+                data["ghbcond_"+sol_key] = sens_ghb_cond
                 comp_ghb_head_sens += sens_ghb_head
                 comp_ghb_cond_sens += sens_ghb_cond
             # print("rch" in gwf_package_dict,kk,list(gwf_package_dict["rch6"].keys()))
-            if "rch6" in gwf_package_dict and kk in gwf_package_dict["rch6"]:
-                sens_rch = self.rch_sens(gwf_name, gwf, lamb, gwf_package_dict["rch6"][kk])
-                if self.verbose_level > 1:
-                    self.save_array("sens_rch_kper{0:05d}".format(itime), sens_rch, gwf_name, gwf, mg_structured)
-                    if "rch_kper{0:05d}".format(itime) in data:
-                        data["rch_kper{0:05d}".format(itime)] += sens_rch
-                    else:
-                        data["rch_kper{0:05d}".format(itime)] = sens_rch
+            sens_rch = lamb * hdf["gwf_info"]["area"][:]
+            comp_rch_sens += sens_rch
+            data["rech"] = sens_rch
+            data["lambda"] = lamb
+            data["head"] = hdf[sol_key]["head"][:]
+            if self.verbose_level > 2:
+                data["amat"] = amat
+                data["rhs"] = rhs
+            PerfMeas.write_group_to_hdf(adf,sol_key,data)
 
-                comp_rch_sens += sens_rch
-
-            # todo: think about what it would do to have both rch and recha active..for now just accumulating them
-            if "rcha6" in gwf_package_dict and kk in gwf_package_dict["rcha6"]:
-                sens_rch = self.rch_sens(gwf_name, gwf, lamb, gwf_package_dict["rcha6"][kk])
-                if self.verbose_level > 1:
-                    self.save_array("sens_rch_kper{0:05d}".format(itime), sens_rch, gwf_name, gwf, mg_structured)
-                    if "rch_kper{0:05d}".format(itime) in data:
-                        data["rch_kper{0:05d}".format(itime)] += sens_rch
-                    else:
-                        data["rch_kper{0:05d}".format(itime)] = sens_rch
-                comp_rch_sens += sens_rch
-
-            # this is just temp stuff - will be replaced with a more scalable solution...
-            if self.verbose_level > 1:
-                self.save_array("adjstates_kper{0:05d}".format(itime), lamb, gwf_name, gwf, mg_structured)
-                data["adjstates_kper{0:05d}".format(itime)] = lamb
-                self.save_array("sens_k33_kper{0:05d}".format(itime), k33_sens, gwf_name, gwf, mg_structured)
-                data["sens_k33_kper{0:05d}".format(itime)] = k33_sens
-                self.save_array("sens_k11_kper{0:05d}".format(itime), k_sens, gwf_name, gwf, mg_structured)
-                data["sens_k11_kper{0:05d}".format(itime)] = k_sens
-                if has_sto:
-                    self.save_array("sens_ss_kper{0:05d}".format(itime), ss_sens, gwf_name, gwf, mg_structured)
-                    data["sens_ss_kper{0:05d}".format(itime)] = ss_sens
-                self.save_array("head_kper{0:05d}".format(itime), head_dict[kk], gwf_name, gwf, mg_structured)
-                data["head_kper{0:05d}".format(itime)] = head_dict[kk]
-                if self.verbose_level > 2:
-                    # self.save_array("dadk11_kper{0:05d}".format(itime),dadk11,gwf_name,gwf,mg_structured)
-                    # self.save_array("dadk33_kper{0:05d}".format(itime),dadk33,gwf_name,gwf,mg_structured)
-                    np.savetxt("pm-{0}_amattodense_kper{1:04d}.dat".format(self._name, itime), amat_sp_t.todense(),
-                               fmt="%15.6E")
-                    np.savetxt("pm-{0}_amat_kper{1:04d}.dat".format(self._name, itime), amat, fmt="%15.6E")
-                    np.savetxt("pm-{0}_rhs_kper{1:04d}.dat".format(self._name, itime), rhs, fmt="%15.6E")
-        # np.savetxt("pm-{0}_ia_kper{1:04d}.dat".format(self._name,itime),ia)
-        # np.savetxt("pm-{0}_ja_kper{1:04d}.dat".format(self._name,itime),ja)
-        # for arr,tag in zip([dadk11,dadk22,dadk33,dadk123],["dadk11","dadk22","dadk33","dadk123"]):
-        # for arr, tag in zip([dadk11, dadk33],
-        #				["dadk11", "dadk33"]):
-        #	np.savetxt("pm-{0}_{1}_kper{2:05d}.dat".format(self._name,tag,itime),arr,fmt="%15.6E")
-
+        data = {}
         data["k11"] = comp_k_sens
         data["k33"] = comp_k33_sens
-        self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
-        self.save_array("comp_sens_k11", comp_k_sens, gwf_name, gwf, mg_structured)
-        addr = ["NODEUSER", gwf_name, "DIS"]
-        wbaddr = gwf.get_var_address(*addr)
-        nuser = gwf.get_value(wbaddr) - 1
-        if len(nuser) == 1:
-            nuser = np.arange(nnodes, dtype=int)
-        df = pd.DataFrame(data, index=nuser)
+        #self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
+        #self.save_array("comp_sens_k11", comp_k_sens, gwf_name, gwf, mg_structured)
+        #addr = ["NODEUSER", gwf_name, "DIS"]
+        #wbaddr = gwf.get_var_address(*addr)
+        #nuser = gwf.get_value(wbaddr) - 1
+        #if len(nuser) == 1:
+        #    nuser = np.arange(nnodes, dtype=int)
+        #df = pd.DataFrame(data, index=nuser)
 
         if has_sto:
-            self.save_array("comp_sens_ss", comp_ss_sens, gwf_name, gwf, mg_structured)
-            df.loc[:, "ss"] = comp_ss_sens
-        if "wel6" in gwf_package_dict:
-            self.save_array("comp_sens_welq", comp_welq_sens, gwf_name, gwf, mg_structured)
-            df.loc[:, "welq"] = comp_welq_sens
+            data["ss"] = comp_ss_sens
+        data["welq"] = comp_welq_sens
         if "ghb6" in gwf_package_dict:
-            self.save_array("comp_sens_ghbhead", comp_ghb_head_sens, gwf_name, gwf, mg_structured)
-            self.save_array("comp_sens_ghbcond", comp_ghb_cond_sens, gwf_name, gwf, mg_structured)
-            df.loc[:, "ghbhead"] = comp_ghb_head_sens
-            df.loc[:, "ghbcond"] = comp_ghb_cond_sens
+            data["ghbhead"] = comp_ghb_head_sens
+            data["ghbcond"] = comp_ghb_cond_sens
+        data["rch"] = comp_rch_sens
+        PerfMeas.write_group_to_hdf(adf, "composite", data)
+        adf.close()
+        hdf.close()
+        #df.to_csv("{0}_adj_results.csv".format(self._name))
+        #return df
 
-        if "rch6" in gwf_package_dict or "rcha6" in gwf_package_dict:
-            self.save_array("comp_sens_rch", comp_rch_sens, gwf_name, gwf, mg_structured)
-            df.loc[:, "rch"] = comp_rch_sens
-        df.to_csv("{0}_adj_results.csv".format(self._name))
-        return df
-
-    # @staticmethod
-    # def _dconddvk(k1, height1, sat1, k2, height2, sat2, area, vcond_12):
-    # 	"""need to think about how k1 and k2 are combined to
-    #     form the average k between the two cells
-    #     from MH:
-    #     dcond_n,m / dk_n,m = cond_n,m**2 / ((area * k_n,m**2)/(0.5*(top_n - bot_n)))
-    #
-    #     todo: VARIABLE CV and DEWATER options
-    #
-    #     """
-    #
-    # 	# condsq = (1./((1./((area*k1)/(0.5*(top1-bot1)))) + (1./((area*k2)/(0.5*(top2-bot2))))))**2
-    # 	# return condsq / ((area * k1**2)/(0.5*(top1-bot1)))
-    # 	d = (sat1 * vcond_12 ** 2) / (((area * k1) ** 2) / (0.5 * (height1)))
-    # 	return d
+    @staticmethod
+    def write_group_to_hdf(hdf, group_name, data_dict, attr_dict={}):
+        if group_name in hdf:
+            raise Exception("group_name {0} already in hdf file".format(group_name))
+        grp = hdf.create_group(group_name)
+        for name, val in attr_dict.items():
+            grp.attrs[name] = val
+        for tag, item in data_dict.items():
+            if isinstance(item, list):
+                item = np.array(item)
+            if isinstance(item, np.ndarray):
+                dset = grp.create_dataset(tag, item.shape, dtype=item.dtype, data=item)
+            elif isinstance(item, dict):
+                if "nodelist" in item:
+                    iitem = item["nodelist"]
+                    dset = grp.create_dataset(tag, iitem.shape, dtype=iitem.dtype, data=iitem)
+                elif "bound" in item:
+                    iitem = item["bound"]
+                    dset = grp.create_dataset(tag, iitem.shape, dtype=iitem.dtype, data=iitem)
+                else:
+                    print("Mf6Adj._write_group_to_hdf(): unused data_dict item {0}".format(tag))
+            else:
+                raise Exception("unrecognized data_dict entry: {0},type:{1}".format(tag, type(item)))
 
     @staticmethod
     def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
@@ -626,7 +599,7 @@ class PerfMeas(object):
             result[node] = sum2
         return result, result33
 
-    def rch_sens(self, gwf_name, gwf, lamb, sp_dict):
+    def rch_sens_old(self, gwf_name, gwf, lamb, sp_dict):
         result = np.zeros_like(lamb)
         area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
 
@@ -634,6 +607,7 @@ class PerfMeas(object):
             n = id["node"] - 1
             result[n] = lamb[n] * area[n]
         return result
+
 
     def lam_drhs_dghb(self, lamb, head, sp_dict):
         result_head = np.zeros_like(lamb)
@@ -656,6 +630,33 @@ class PerfMeas(object):
             n = id["node"] - 1
             result[n] = lamb[n]
         return result
+
+    def save_array_old(self, filetag, avec, gwf_name, gwf, structured_mg):
+        nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "NODEUSER", gwf) - 1
+        nnodes = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NODES", gwf)
+        jas = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JAS", gwf)
+        filetag = "pm-" + self._name + "_" + filetag
+        # if not a reduced node scheme
+        if len(nodeuser) == 1:
+            nodeuser = np.arange(nnodes)
+        if structured_mg is not None:
+            kijs = structured_mg.get_lrc(list(nodeuser))
+            arr = np.zeros((structured_mg.nlay, structured_mg.nrow, structured_mg.ncol))
+            for kij, v in zip(kijs, avec):
+                arr[kij] = v
+            for k, karr in enumerate(arr):
+                filename = filetag + "_k{0:03d}.dat".format(k)
+                np.savetxt(filename, karr, fmt="%15.6E")
+        else:
+            filename = filetag + ".dat"
+            if avec.shape[0] == nodeuser.shape[0]:
+                rarr = np.array((nodeuser, avec)).transpose()
+            elif avec.shape[0] == jas.shape[0]:
+                rarr = np.array((jas, avec)).transpose()
+            else:
+                raise Exception(
+                    "unrecognized unstructed vector length: {0} for filename {1}".format(avec.shape[0], filename))
+            np.savetxt(filename, rarr, fmt=["%10d", "%15.6E"])
 
     def save_array_old(self, filetag, avec, gwf_name, gwf, structured_mg):
         nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "NODEUSER", gwf) - 1
