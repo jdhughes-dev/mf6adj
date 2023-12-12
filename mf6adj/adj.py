@@ -72,25 +72,23 @@ class Mf6Adj(object):
 
         self._read_adj_file()
 
-        self._amat = {}
-        self._head = {}
-        self._head_old = {}
-
-        self._kperkstp = []
-        self._deltat = {}
-        self._iss = {}
-        self._sat = {}
-        self._sat_old = {}
+        # self._amat = {}
+        # self._head = {}
+        # self._head_old = {}
+        #
+        # self._kperkstp = []
+        # self._deltat = {}
+        # self._iss = {}
+        # self._sat = {}
+        # self._sat_old = {}
         self._gwf_package_types = ["wel6", "ghb6", "rch6", "rcha6"]
 
     def _read_adj_file(self):
-
-        # clear any existing PMs
-        self._performance_measures = []
-
         """read the adj input file
 
-                """
+        """
+        # clear any existing PMs
+        self._performance_measures = []
         # used to detect location-pak duplicates
         current_period = -1
         current_entries = []
@@ -440,23 +438,6 @@ class Mf6Adj(object):
 
         PerfMeas.write_group_to_hdf(fhd, "gwf_info", data_dict,attr_dict=self._gwf_package_dict)
 
-    @staticmethod
-    def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
-        # todo: upstream weighting - could use height1 and height2 to check...
-        # todo: vertically staggered
-        d = (width * cl1 * height1 * (height2 ** 2) * (k2 ** 2)) / (
-                ((cl2 * height1 * k1) + ((cl1 * height2 * k2))) ** 2)
-        return d
-
-    @staticmethod
-    def derivative_conductance_k33(k1, k2, w1, w2, area):
-        d = - 2.0 * w1 * area / ((w1 + w2 * k1 / k2) ** 2)
-        return d
-
-    @staticmethod
-    def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
-        d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
-        return d
 
     @staticmethod
     def dresdss_h(gwf_name, gwf, head, head_old, dt, sat, sat_old):
@@ -496,168 +477,9 @@ class Mf6Adj(object):
         drhsdh = -1. * storage * area * (top - bot) / dt
         return drhsdh
 
-    @staticmethod
-    def dadk(gwf_name, gwf, sat):
-        """partial of A matrix WRT K
-        """
 
-        ihc = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IHC", gwf)
-        # IHC tells us whether connection is vertical (and if so, whether connection is above or below) or horizontal (and if so, whether it is a vertically staggered grid).
-        # It is of size NJA (or number of connections)
-        ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
-        # IA is the number of connections, plus 1 (for self), for each node in grid. it is of size NNODES + 1
-        ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
-        # JA is an array containing all cells for which there is a connection (including self) for each node. it is of size NJA
-        jas = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JAS", gwf) - 1
-        cl1 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL1", gwf)
-        # distance from node to cell m boundary (size NJA)
-        cl2 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL2", gwf)
-        # distance from cell m to node boundary (size NJA)
-        hwva = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "HWVA", gwf)
-        # Width perpendicular to flow for a horizontal connection, or the face area for a vertical connection. size NJA
-        top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
-        # top elevation for all nodes
-        bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
-        # bottom elevation for all nodes
-        iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
-        # array of number of connections per node (size ndoes)
-
-        icelltype = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "ICELLTYPE", gwf)
-
-        sat_mod = sat.copy()
-        sat_mod[icelltype == 0] = 1.0
-
-        # height = sat_mod * (top - bot)
-        height = top - bot
-
-        # TODO: check here for converible cells
-
-        d_mat_k11 = np.zeros(ja.shape[0])
-        d_mat_k33 = np.zeros(ja.shape[0])
-
-        k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
-        # k22 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K22", gwf)
-        # assert np.all(k11 == k22)
-        k33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
-
-        # vector form of the calcs:
-        k11conn1 = np.array([k11[node] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-                             range(offset, offset + ncon)])
-        k11conn2 = np.array([k11[ja[ii]] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-                             range(offset, offset + ncon)])
-        k33conn1 = np.array([k33[node] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-                             range(offset, offset + ncon)])
-        k33conn2 = np.array([k33[ja[ii]] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-                             range(offset, offset + ncon)])
-        heightconn1 = np.array([height[node] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-                                range(offset, offset + ncon)])
-        heightconn2 = np.array([height[ja[ii]] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-                                range(offset, offset + ncon)])
-        satconn1 = np.array([sat[node] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-                             range(offset, offset + ncon)])
-        satconn2 = np.array([sat[ja[ii]] for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-                             range(offset, offset + ncon)])
-        hwvaconn1 = np.array(
-            [hwva[jas[ii]] if ii != 0 else 0 for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-             range(offset, offset + ncon)])
-        hwvaconn2 = np.array(
-            [hwva[jas[ii]] if ii != 0 else 0 for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-             range(offset, offset + ncon)])
-        cl1conn1 = np.array(
-            [cl1[jas[ii]] if ii != 0 else 0 for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-             range(offset, offset + ncon)])
-        cl2conn2 = np.array(
-            [cl2[jas[ii]] if ii != 0 else 0 for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-             range(offset, offset + ncon)])
-        ihcconn1 = np.array(
-            [ihc[jas[ii]] if ii != 0 else 0 for node, (offset, ncon) in enumerate(zip(ia, iac)) for ii in
-             range(offset, offset + ncon)])
-        d_mat_k11_temp = Mf6Adj._dconddhk(k11conn1, k11conn2, cl1conn1, cl2conn2, hwvaconn1, heightconn1 * satconn1,
-                                          heightconn2 * satconn2)
-        d_mat_k11_temp[ihcconn1 == 0] = 0
-        d_mat_k11_temp[ia[:-1]] = 0
-        sums = np.array(
-            [d_mat_k11_temp[offset:offset + ncon].sum() for node, (offset, ncon) in enumerate(zip(ia, iac))])
-        d_mat_k11_temp[ia[:-1]] -= sums
-
-        d_mat_k33_temp = Mf6Adj.derivative_conductance_k1(k33conn1, k33conn2, heightconn1, heightconn2,
-                                                          cl1conn1 + cl2conn2, hwvaconn1)
-        d_mat_k33_temp[ihcconn1 != 0] = 0
-        d_mat_k33_temp[ia[:-1]] = 0
-        sums = np.array(
-            [d_mat_k33_temp[offset:offset + ncon].sum() for node, (offset, ncon) in enumerate(zip(ia, iac))])
-        d_mat_k33_temp[ia[:-1]] -= sums
-
-        # original form
-        for node, (offset, ncon) in enumerate(zip(ia, iac)):
-
-            # ncon -= 1 # for self
-
-            # if ib[node]==0:
-            #	pass
-            # if is_chd and node in chd_list:
-            #		continue
-            if False:
-                pass
-            else:
-                sum1 = 0.
-                sum2 = 0.
-                height1 = height[node]
-                pp = 1
-                for ii in range(offset + 1, offset + ncon):
-                    mnode = ja[ii]
-                    # if is_chd and mnode in chd_list:
-                    #		continue
-                    height2 = height[mnode]
-                    # if icelltype[mnode] != 0:
-                    # height2 *= sat[mnode]
-
-                    jj = jas[ii]
-                    if jj < 0:
-                        raise Exception()
-                    iihc = ihc[jj]
-
-                    if iihc == 0:  # vertical con
-                        # v1 = Mf6Adj._dconddvk(k33[node],height1,sat[node],k33[mnode],
-                        #							height2,sat[mnode],hwva[jj],amat[jj])
-                        # def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
-                        #	d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
-                        #	return d
-                        v2 = Mf6Adj.derivative_conductance_k1(k33[node], k33[mnode], height1, height2,
-                                                              cl1[jj] + cl2[jj], hwva[jj])
-                        # derivative_conductance_k33(k1, k2, w1, w2, area)
-                        # v3 = Mf6Adj.derivative_conductance_k33(k33[node],k33[mnode],height1, height2, hwva[jj])
-
-                        d_mat_k33[ia[node] + pp] += v2
-                        # d_mat_k123[ia[node]+pp] += v3
-                        sum1 += v2
-                        pp += 1
-
-                    else:
-                        v1 = Mf6Adj._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
-                                              height1 * sat_mod[node], height2 * sat_mod[mnode])
-                        # v1 = Mf6Adj._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
-                        #							height1, height2)
-                        # v2 = -Mf6Adj.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj]+cl2[jj], cl1[jj]+cl2[jj], hwva[jj],height2*sat_mod[mnode])
-                        # v2 = Mf6Adj.derivative_conductance_k1(k11[node],k11[mnode],cl1[jj],cl2[jj], hwva[jj],height1)
-
-                        d_mat_k11[ia[node] + pp] += v1
-                        # d_mat_k123[ia[node]+pp] += v1
-                        sum2 += v1
-                        pp += 1
-
-                d_mat_k11[ia[node]] = -sum2
-                d_mat_k33[ia[node]] = -sum1
-            # d_mat_k22[ia[node]] = -sum3
-            # d_mat_k123[ia[node]] = d_mat_k11[ia[node]] + d_mat_k22[ia[node]] + d_mat_k33[ia[node]]
-
-        return d_mat_k11, -d_mat_k33
-
-    def solve_gwf(self, verbose=True, _force_k_update=False, _sp_pert_dict=None):
+    def solve_gwf(self, verbose=True, _force_k_update=False, _sp_pert_dict=None,pert_save=False):
         """solve the flow across the modflow sim times
-
-        todo: move to hdf5
-
         """
         if self._gwf is None:
             raise Exception("gwf is None")
@@ -674,13 +496,7 @@ class Mf6Adj(object):
         max_iter = self._gwf.get_value(self._gwf.get_var_address("MXITER", "SLN_1"))
         # let's do it!
         num_fails = 0
-        self._amat = {}
-        self._head = {}
-        self._kperkstp = []
-        self._deltat = {}
-        self._iss = {}
-        self._sat = {}
-        self._sat_old = {}
+
         sat_old = None
         visited = list()
         ctimes = []
@@ -688,7 +504,6 @@ class Mf6Adj(object):
         kpers, kstps = [], []
 
         is_newton = self._gwf.get_value(self._gwf.get_var_address("INEWTON", self._gwf_name))[0]
-
         has_sto = False
         if PerfMeas.has_sto_iconvert(self._gwf):
             has_sto = True
@@ -698,7 +513,12 @@ class Mf6Adj(object):
         # k11input = self._gwf.get_value_ptr(self._gwf.get_var_address("K11INPUT", self._gwf_name, "NPF"))
         # condsat = self._gwf.get_value_ptr(self._gwf.get_var_address("CONDSAT", self._gwf_name, "NPF"))
 
-        self._sp_package_data = {}
+        sp_package_data = None
+        head_dict = None
+        if pert_save:
+            sp_package_data = {}
+            head_dict = {}
+
         while ctime < etime:
             sol_start = datetime.now()
             # the length of this sim time
@@ -711,6 +531,7 @@ class Mf6Adj(object):
             time_step = self._gwf.get_value(self._gwf.get_var_address("KSTP", "TDIS"))[0]
             kper, kstp = stress_period - 1, time_step - 1
             kperkstp = (kper, kstp)
+            #print("...preping for ",stress_period,time_step)
 
             # this is to force mf6 to update cond sat using the k11 and k33 arrays
             # which is needed for the perturbation testing
@@ -724,15 +545,14 @@ class Mf6Adj(object):
 
             # apply any boundary condition perturbation info
             if _sp_pert_dict is not None:
-                if _sp_pert_dict["kperkstp"] != kperkstp:
-                    continue
-                addr = ["BOUND", self._gwf_name, _sp_pert_dict["packagename"].upper()]
-                wbaddr = self._gwf.get_var_address(*addr)
-                bnd_ptr = self._gwf.get_value_ptr(wbaddr)
-                wbaddr = self._gwf.get_var_address("NODELIST", self._gwf_name, _sp_pert_dict["packagename"].upper())
-                nodelist = self._gwf.get_value_ptr(wbaddr)
-                idx = np.where(nodelist == _sp_pert_dict["node"])
-                bnd_ptr[idx] = _sp_pert_dict["bound"]
+                if _sp_pert_dict["kperkstp"] == kperkstp:
+                    addr = ["BOUND", self._gwf_name, _sp_pert_dict["packagename"].upper()]
+                    wbaddr = self._gwf.get_var_address(*addr)
+                    bnd_ptr = self._gwf.get_value_ptr(wbaddr)
+                    wbaddr = self._gwf.get_var_address("NODELIST", self._gwf_name, _sp_pert_dict["packagename"].upper())
+                    nodelist = self._gwf.get_value_ptr(wbaddr)
+                    idx = np.where(nodelist == _sp_pert_dict["node"])
+                    bnd_ptr[idx] = _sp_pert_dict["bound"]
 
             self._gwf.prepare_solve(1)
             sat = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
@@ -780,39 +600,26 @@ class Mf6Adj(object):
             amat = self._gwf.get_value(self._gwf.get_var_address("AMAT", "SLN_1")).copy()
             data_dict = {"amat": amat}
 
-            self._amat[kperkstp] = amat
             head = self._gwf.get_value(self._gwf.get_var_address("X", self._gwf_name.upper()))
-            self._head[kperkstp] = head
             data_dict["head"] = head
+            if pert_save:
+                head_dict[kperkstp] = head
 
             head_old = self._gwf.get_value(self._gwf.get_var_address("XOLD", self._gwf_name.upper()))
-            self._head_old[kperkstp] = head_old
             data_dict["head_old"] = head_old
 
-            # k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
             k11 = self._gwf.get_value(self._gwf.get_var_address("K11", self._gwf_name.upper(), "NPF"))
             data_dict["k11"] = k11
-            # k33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
             k33 = self._gwf.get_value(self._gwf.get_var_address("K33", self._gwf_name.upper(), "NPF"))
             data_dict["k33"] = k33
-            # condsat = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "CONDSAT", gwf)
             condsat = self._gwf.get_value(self._gwf.get_var_address("CONDSAT", self._gwf_name.upper(), "NPF"))
             data_dict["condsat"] = condsat
 
-            dadk11, dadk33 = Mf6Adj.dadk(self._gwf_name, self._gwf, sat)
-            data_dict["dadk11"] = dadk11
-            data_dict["dadk33"] = dadk33
-
-            self._kperkstp.append(kperkstp)
-            self._deltat[kperkstp] = dt1
 
             iss = self._gwf.get_value(self._gwf.get_var_address("ISS", self._gwf_name.upper()))
-            self._iss[kperkstp] = iss
             data_dict["iss"] = iss
 
             sat = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
-            self._sat[kperkstp] = sat
-            self._sat_old[kperkstp] = sat_old
             data_dict["sat"] = sat
             data_dict["sat_old"] = sat_old
 
@@ -828,19 +635,19 @@ class Mf6Adj(object):
 
             for package_type in self._gwf_package_types:
                 if package_type in self._gwf_package_dict:
-                    if package_type not in self._sp_package_data:
-                        self._sp_package_data[package_type] = {}
+                    if pert_save and package_type not in sp_package_data:
+                        sp_package_data[package_type] = {}
                     for tag in self._gwf_package_dict[package_type]:
                         nbound = self._gwf.get_value(self._gwf.get_var_address("NBOUND", self._gwf_name, tag.upper()))[
                             0]
                         if nbound > 0:
-                            if kperkstp in self._sp_package_data[package_type]:
+                            if pert_save and kperkstp in sp_package_data[package_type]:
                                 if len(self._gwf_package_dict[package_type]) == 1:
                                     raise Exception("kperkstp '{0}' already in sp_package_data".format(str(kperkstp)))
                                 else:
                                     pass
-                            else:
-                                self._sp_package_data[package_type][kperkstp] = []
+                            elif pert_save:
+                                sp_package_data[package_type][kperkstp] = []
                             nodelist = self._gwf.get_value_ptr(
                                 self._gwf.get_var_address("NODELIST", self._gwf_name, tag.upper()))
                             bound = self._gwf.get_value_ptr(
@@ -848,15 +655,17 @@ class Mf6Adj(object):
                             hcof = self._gwf.get_value_ptr(
                                 self._gwf.get_var_address("HCOF", self._gwf_name, tag.upper()))
                             rhs = self._gwf.get_value_ptr(self._gwf.get_var_address("RHS", self._gwf_name, tag.upper()))
-                            for i in range(nbound):
-                                # note bound is an array!
-                                self._sp_package_data[package_type][kperkstp].append(
-                                    {"node": nodelist[i], "bound": bound[i],
-                                     "hcof": hcof[i], "rhs": rhs[i], "packagename": tag})
+                            if pert_save:
+                                for i in range(nbound):
+                                    # note bound is an array!
+                                    sp_package_data[package_type][kperkstp].append(
+                                        {"node": nodelist[i], "bound": bound[i],
+                                         "hcof": hcof[i], "rhs": rhs[i], "packagename": tag})
                             data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound}
             attr_dict = {"ctime": ctime, "dt": dt1, "kper": kper, "kstp": kstp,"is_newton":is_newton,"has_sto":has_sto}
             PerfMeas.write_group_to_hdf(fhd, group_name="solution_kper:{0}_kstp:{1}".format(kper, kstp), data_dict=data_dict,
                                      attr_dict=attr_dict)
+
 
         sim_end = datetime.now()
         td = (sim_end - sim_start).total_seconds() / 60.0
@@ -869,17 +678,8 @@ class Mf6Adj(object):
         PerfMeas.write_group_to_hdf(fhd, "aux", {"totime": ctimes, "dt": dts, "kper": kpers, "kstp": kstps})
         self._add_gwf_info_to_hdf(fhd)
         fhd.close()
-
-    def solve_adjoint_old(self):
-        if len(self._kperkstp) == 0:
-            raise Exception("need to call solve_gwf() first")
-        dfs = {}
-        for pm in self._performance_measures:
-            df = pm.solve_adjoint_old(self._kperkstp, self._iss, self._deltat, self._amat,
-                                  self._head, self._head_old, self._sat, self._sat_old, self._gwf,
-                                  self._gwf_name, self._structured_mg, self._sp_package_data)
-            dfs[pm.name] = df
-        return dfs
+        if pert_save:
+            return head_dict, sp_package_data
 
     def solve_adjoint(self):
         #if len(self._kperkstp) == 0:
@@ -917,15 +717,15 @@ class Mf6Adj(object):
         self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
         gwf_name = self._gwf_name.upper()
 
-        self.solve_gwf()
-        base_results = {pm.name: pm.solve_forward(self._head) for pm in self._performance_measures}
+        org_head, org_sp_package_data = self.solve_gwf(pert_save=True)
+        base_results = {pm.name: pm.solve_forward(org_head) for pm in self._performance_measures}
         assert len(base_results) == len(self._performance_measures)
 
         addr = ["NODEUSER", gwf_name, "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
         nuser = self._gwf.get_value(wbaddr) - 1
         if len(nuser) == 1:
-            nuser = np.arange(self._head[self._kperkstp[0]].shape[0], dtype=int)
+            nuser = np.arange(head_dict[head_dict.keys()[0]].shape[0], dtype=int)
 
         kijs = None
         if self.is_structured:
@@ -938,7 +738,7 @@ class Mf6Adj(object):
         dfs = []
 
         # boundary condition perturbations
-        org_sp_package_data = self._sp_package_data.copy()
+
         for paktype, pdict in org_sp_package_data.items():
             epsilons = []
             bound_idx = []
@@ -958,8 +758,8 @@ class Mf6Adj(object):
                                      "bound": new_bound}
                         # print(pert_dict)
                         self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
-                        self.solve_gwf(verbose=False, _sp_pert_dict=pert_dict)
-                        pert_results = {pm.name: (pm.solve_forward(self._head) - base_results[pm.name]) / epsilons[-1]
+                        pert_head, _ = self.solve_gwf(verbose=False, _sp_pert_dict=pert_dict,pert_save=True)
+                        pert_results = {pm.name: (pm.solve_forward(pert_head) - base_results[pm.name]) / epsilons[-1]
                                         for pm in self._performance_measures}
                         for pm, result in pert_results.items():
                             pert_results_dict[pm].append(result)
@@ -1005,8 +805,8 @@ class Mf6Adj(object):
                 # k22 = self._gwf.get_value_ptr(wbaddr1)
                 # print("ik22 flag",k22)
 
-                self.solve_gwf(verbose=False, _force_k_update=True)
-                pert_results = {pm.name: (pm.solve_forward(self._head) - base_results[pm.name]) / epsilons[-1] for pm in
+                pert_head, _ = self.solve_gwf(verbose=False, _force_k_update=True,pert_save=True)
+                pert_results = {pm.name: (pm.solve_forward(pert_head) - base_results[pm.name]) / epsilons[-1] for pm in
                                 self._performance_measures}
                 for pm, result in pert_results.items():
                     pert_results_dict[pm].append(result)

@@ -77,7 +77,7 @@ class PerfMeas(object):
     #     """
     #
     #
-	# 	"""
+    # 	"""
     #     nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
     #
     #     lamb = np.zeros(nnodes)
@@ -250,7 +250,7 @@ class PerfMeas(object):
     #     df.to_csv("{0}_adj_results.csv".format(self._name))
     #     return df
 
-    def solve_adjoint(self, hdf5_forward_solution_fname, hdf5_adjoint_solution_fname=None ):
+    def solve_adjoint(self, hdf5_forward_solution_fname, hdf5_adjoint_solution_fname=None):
         """
 
 		"""
@@ -261,13 +261,13 @@ class PerfMeas(object):
                             format(hdf5_forward_solution_fname, self._name, str(e)))
         if hdf5_adjoint_solution_fname is None:
             pth = os.path.split(hdf5_forward_solution_fname)[0]
-            hdf5_adjoint_solution_fname = os.path.join(pth,"adj_{0}_".format(self._name) + hdf5_forward_solution_fname)
+            hdf5_adjoint_solution_fname = os.path.join(pth, "adj_{0}_".format(self._name) + hdf5_forward_solution_fname)
 
         if os.path.exists(hdf5_adjoint_solution_fname):
-            print ("WARNING: removing existing adjoint solution file '{0}'".format(hdf5_adjoint_solution_fname))
+            print("WARNING: removing existing adjoint solution file '{0}'".format(hdf5_adjoint_solution_fname))
             os.remove(hdf5_adjoint_solution_fname)
 
-        adf = h5py.File(hdf5_adjoint_solution_fname,"w")
+        adf = h5py.File(hdf5_adjoint_solution_fname, "w")
 
         keys = list(hdf.keys())
         gwf_package_dict = {k: v for k, v in hdf["gwf_info"].attrs.items()}
@@ -286,7 +286,7 @@ class PerfMeas(object):
             sol = None
             for s in sol_keys:
                 skper, skstp = hdf[s].attrs["kper"], hdf[s].attrs["kstp"]
-                #print(skper, skstp)
+                # print(skper, skstp)
                 if skper == kk[0] and skstp == kk[1]:
                     sol = s
                     break
@@ -300,11 +300,10 @@ class PerfMeas(object):
 
         grid_shape = None
         if "nrow" in hdf["gwf_info"].keys():
-
             grid_shape = (hdf["gwf_info"]["nlay"][0],
                           hdf["gwf_info"]["nrow"][0],
                           hdf["gwf_info"]["ncol"][0])
-            print("...structured grid found, shape:",grid_shape)
+            print("...structured grid found, shape:", grid_shape)
 
         ia = hdf["gwf_info"]["ia"][:]
         ja = hdf["gwf_info"]["ja"][:]
@@ -337,7 +336,7 @@ class PerfMeas(object):
 
             print('solving adjoint solution for PerfMeas:', self._name, " (kper,kstp)", kk)
             sol_key = kk_sol_map[kk]
-            #print(hdf[sol_key].keys())
+            # print(hdf[sol_key].keys())
             if sol_key in adf:
                 raise Exception("solution key '{0}' already in adjoint hdf5 file".format(sol_key))
 
@@ -353,11 +352,11 @@ class PerfMeas(object):
                 rhs = (drhsdh * lamb) - dfdh
             else:
                 rhs = - dfdh
-            #if np.all(rhs == 0.0):
+            # if np.all(rhs == 0.0):
             #    print(
             #        "WARNING: adjoint solve rhs is all zeros, adjoint states cannot be calculated for {0} at kperkstp {1}".format(
             #            self._name, kk))
-                #continue
+            # continue
 
             amat = hdf[sol_key]["amat"][:]
             amat_sp = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
@@ -368,20 +367,20 @@ class PerfMeas(object):
                 continue
             is_newton = hdf[sol_key].attrs["is_newton"]
             k_sens, k33_sens = PerfMeas.lam_dresdk_h(is_newton, lamb, hdf[sol_key]["sat"][:],
-                                                 hdf[sol_key]["head"][:],
-                                                 hdf["gwf_info"]["ihc"][:],
-                                                 ia,
-                                                 ja,
-                                                 hdf["gwf_info"]["jas"][:],
-                                                 hdf["gwf_info"]["cl1"][:],
-                                                 hdf["gwf_info"]["cl2"][:],
-                                                 hdf["gwf_info"]["hwva"][:],
-                                                 hdf["gwf_info"]["top"][:],
-                                                 hdf["gwf_info"]["bot"][:],
-                                                 hdf["gwf_info"]["icelltype"][:],
-                                                 hdf[sol_key]["k11"][:],
-                                                 hdf[sol_key]["k33"][:]
-                                                 )
+                                                     hdf[sol_key]["head"][:],
+                                                     hdf["gwf_info"]["ihc"][:],
+                                                     ia,
+                                                     ja,
+                                                     hdf["gwf_info"]["jas"][:],
+                                                     hdf["gwf_info"]["cl1"][:],
+                                                     hdf["gwf_info"]["cl2"][:],
+                                                     hdf["gwf_info"]["hwva"][:],
+                                                     hdf["gwf_info"]["top"][:],
+                                                     hdf["gwf_info"]["bot"][:],
+                                                     hdf["gwf_info"]["icelltype"][:],
+                                                     hdf[sol_key]["k11"][:],
+                                                     hdf[sol_key]["k33"][:]
+                                                     )
 
             data["k11"] = k_sens
             data["k33"] = k33_sens
@@ -404,8 +403,8 @@ class PerfMeas(object):
 
             if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
                 sens_ghb_head, sens_ghb_cond = self.lam_drhs_dghb(lamb, head_dict[kk], gwf_package_dict["ghb6"][kk])
-                data["ghbhead_"+sol_key] = sens_ghb_head
-                data["ghbcond_"+sol_key] = sens_ghb_cond
+                data["ghbhead_" + sol_key] = sens_ghb_head
+                data["ghbcond_" + sol_key] = sens_ghb_cond
                 comp_ghb_head_sens += sens_ghb_head
                 comp_ghb_cond_sens += sens_ghb_cond
             # print("rch" in gwf_package_dict,kk,list(gwf_package_dict["rch6"].keys()))
@@ -417,19 +416,19 @@ class PerfMeas(object):
             if self.verbose_level > 2:
                 data["amat"] = amat
                 data["rhs"] = rhs
-            PerfMeas.write_group_to_hdf(adf,sol_key,data)
+            PerfMeas.write_group_to_hdf(adf, sol_key, data)
 
         data = {}
         data["k11"] = comp_k_sens
         data["k33"] = comp_k33_sens
-        #self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
-        #self.save_array("comp_sens_k11", comp_k_sens, gwf_name, gwf, mg_structured)
-        #addr = ["NODEUSER", gwf_name, "DIS"]
-        #wbaddr = gwf.get_var_address(*addr)
-        #nuser = gwf.get_value(wbaddr) - 1
-        #if len(nuser) == 1:
+        # self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
+        # self.save_array("comp_sens_k11", comp_k_sens, gwf_name, gwf, mg_structured)
+        # addr = ["NODEUSER", gwf_name, "DIS"]
+        # wbaddr = gwf.get_var_address(*addr)
+        # nuser = gwf.get_value(wbaddr) - 1
+        # if len(nuser) == 1:
         #    nuser = np.arange(nnodes, dtype=int)
-        #df = pd.DataFrame(data, index=nuser)
+        # df = pd.DataFrame(data, index=nuser)
 
         if has_sto:
             data["ss"] = comp_ss_sens
@@ -441,8 +440,8 @@ class PerfMeas(object):
         PerfMeas.write_group_to_hdf(adf, "composite", data)
         adf.close()
         hdf.close()
-        #df.to_csv("{0}_adj_results.csv".format(self._name))
-        #return df
+        # df.to_csv("{0}_adj_results.csv".format(self._name))
+        # return df
 
     @staticmethod
     def write_group_to_hdf(hdf, group_name, data_dict, attr_dict={}):
@@ -607,7 +606,6 @@ class PerfMeas(object):
             n = id["node"] - 1
             result[n] = lamb[n] * area[n]
         return result
-
 
     def lam_drhs_dghb(self, lamb, head, sp_dict):
         result_head = np.zeros_like(lamb)

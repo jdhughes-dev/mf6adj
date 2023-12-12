@@ -2777,8 +2777,8 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     head_filerecord = [headfile]
     budgetfile = f"{name}.cbb"
     budget_filerecord = [budgetfile]
-    saverecord = [("HEAD", "ALL"), ("BUDGET", "ALL")]
-    printrecord = [("HEAD", "ALL")]
+    saverecord = {kper:[("HEAD", "ALL"), ("BUDGET", "ALL")] for kper in range(nper)}
+    printrecord = {kper:[("HEAD", "ALL")] for kper in range(nper)}
     oc = flopy.mf6.ModflowGwfoc(gwf, saverecord=saverecord, head_filerecord=head_filerecord,
                                 budget_filerecord=budget_filerecord, printrecord=printrecord)
 
@@ -3138,7 +3138,7 @@ def test_xd_box_1():
     new_d = 'xd_box_1_test'
 
     if clean:
-       sim = setup_xd_box_model(new_d,nper=10,include_sto=include_sto,include_id0=include_id0,nrow=3,ncol=3,nlay=3,
+       sim = setup_xd_box_model(new_d,nper=10,include_sto=include_sto,include_id0=include_id0,nrow=7,ncol=7,nlay=1,
                                 q=-0.1,icelltype=0,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
@@ -3221,10 +3221,9 @@ def test_xd_box_1():
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
-        #adj._perturbation_test()
+        adj._perturbation_test()
         adj.finalize()
         return
-
 
         if plot_adj_results:
             afiles_to_plot = [f for f in os.listdir(".") if (f.startswith("pm-direct") or f.startswith("pm-phi")) and f.endswith(".dat")]
