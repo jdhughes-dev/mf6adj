@@ -13,7 +13,7 @@ DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 
 class Mf6Adj(object):
-    def __init__(self, adj_filename, lib_name, is_structured, verbose_level=1):
+    def __init__(self, adj_filename, lib_name, verbose_level=1):
 
         """todo:
 
@@ -44,6 +44,12 @@ class Mf6Adj(object):
         if self._gwf_model_dict[self._gwf_name] != "gwf6":
             raise Exception("model is not a gwf6 type: {0}". \
                             format(self._gwf_model_dict[self._gwf_name]))
+        if "dis6" in self._gwf_package_dict:
+            print("...structured grid found")
+            is_structured = True
+        else:
+            print("...unstructured grid found")
+            is_structured = False
         self._gwf = None
         self._lib_name = lib_name
         self._flow_dir = "."
@@ -51,7 +57,8 @@ class Mf6Adj(object):
         self._hdf5_name = None
 
         self._structured_mg = None
-        self.is_structured = is_structured  # hard coded for now...
+        self.is_structured = is_structured
+        self._shape = None
         if self.is_structured:
             nlay = self._gwf.get_value(self._gwf.get_var_address("NLAY", self._gwf_name.upper(), "DIS"))[0]
             nrow = self._gwf.get_value(self._gwf.get_var_address("NROW", self._gwf_name.upper(), "DIS"))[0]
@@ -59,6 +66,7 @@ class Mf6Adj(object):
             self._structured_mg = flopy.discretization.StructuredGrid(nrow=nrow,
                                                                       ncol=ncol,
                                                                       nlay=nlay)
+            self._shape = (nlay,nrow,ncol)
 
         self._performance_measures = []
 
@@ -188,7 +196,7 @@ class Mf6Adj(object):
                                     raise Exception("error casting k-i-j info on line {0}: '{1}'".format(count, line2))
 
                             # convert to node number
-                            n = self._structured_mg.get_node([kij])[0]
+                            n = PerfMeas.get_node(self._shape,[kij])[0]
                             # if there is a reduced node scheme
                             if len(nuser) > 1:
                                 nn = np.where(nuser == n)[0]
@@ -381,6 +389,10 @@ class Mf6Adj(object):
         gwf_name = self._gwf_name
         gwf = self._gwf
         data_dict = {}
+
+        #todo: work out what dis type we have
+        dis_pak = "DIS"
+
         ihc = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IHC", gwf)
         data_dict["ihc"] = ihc
         ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
@@ -395,25 +407,37 @@ class Mf6Adj(object):
         data_dict["cl2"] = cl2
         hwva = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "HWVA", gwf)
         data_dict["hwva"] = hwva
-        top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
+        top = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "TOP", gwf)
         data_dict["top"] = top
-        bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
+        bot = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "BOT", gwf)
         data_dict["bot"] = bot
         iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
         data_dict["iac"] = iac
         icelltype = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "ICELLTYPE", gwf)
         data_dict["icelltype"] = icelltype
 
-        area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
+        area = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "AREA", gwf)
         data_dict["area"] = area
         iconvert = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "ICONVERT", gwf)
         data_dict["iconvert"] = iconvert
         storage = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "SS", gwf)
         data_dict["storage"] = storage
-        nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "NODEUSER", gwf) - 1
+        nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NODEUSER", gwf) - 1
         data_dict["nodeuser"] = nodeuser
+        ndim = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NDIM", gwf)
+        data_dict["ndim"] = ndim
         nnodes = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NODES", gwf)
         data_dict["nnodes"] = nnodes
+        ndim = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NDIM", gwf)
+        data_dict["ndim"] = ndim
+
+        if self.is_structured:
+            nlay = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NLAY", gwf)
+            data_dict["nlay"] = nlay
+            nrow = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NROW", gwf)
+            data_dict["nrow"] = nrow
+            ncol = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NCOL", gwf)
+            data_dict["ncol"] = ncol
 
         self._write_group_to_hdf(fhd, "gwf_info", data_dict,attr_dict=self._gwf_package_dict)
 
@@ -426,22 +450,6 @@ class Mf6Adj(object):
         return d
 
     @staticmethod
-    def _dconddvk(k1, height1, sat1, k2, height2, sat2, area, vcond_12):
-        """need to think about how k1 and k2 are combined to
-        form the average k between the two cells
-        from MH:
-        dcond_n,m / dk_n,m = cond_n,m**2 / ((area * k_n,m**2)/(0.5*(top_n - bot_n)))
-
-        todo: VARIABLE CV and DEWATER options
-
-        """
-
-        # condsq = (1./((1./((area*k1)/(0.5*(top1-bot1)))) + (1./((area*k2)/(0.5*(top2-bot2))))))**2
-        # return condsq / ((area * k1**2)/(0.5*(top1-bot1)))
-        d = (sat1 * vcond_12 ** 2) / (((area * k1) ** 2) / (0.5 * (height1)))
-        return d
-
-    @staticmethod
     def derivative_conductance_k33(k1, k2, w1, w2, area):
         d = - 2.0 * w1 * area / ((w1 + w2 * k1 / k2) ** 2)
         return d
@@ -450,131 +458,6 @@ class Mf6Adj(object):
     def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
         d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
         return d
-
-    @staticmethod
-    def smooth_sat(sat):
-        # satomega = self._gwf.get_value(self._gwf.get_var_address("SATOMEGA", self._gwf_name, "NPF"))
-        satomega = 1.0e-6
-        A_omega = 1 / (1 - satomega)
-        s_sat = 1.0
-        if sat < 0:
-            s_sat = 0
-        elif sat >= 0 and sat < satomega:
-            s_sat = (A_omega / (2 * satomega)) * sat ** 2
-        elif sat >= satomega and sat < 1 - satomega:
-            s_sat = A_omega * sat + 0.5 * (1 - A_omega)
-        elif sat >= 1 - satomega and sat < 1:
-            s_sat = 1 - (A_omega / (2 * satomega)) * ((1 - sat) ** 2)
-        return s_sat
-
-    @staticmethod
-    def d_smooth_sat_dh(sat, top, bot):
-        satomega = 1.0e-6
-        A_omega = 1 / (1 - satomega)
-        d_s_sat_dh = 0.0
-        if sat >= 0 and sat < satomega:
-            d_s_sat_dh = (A_omega / satomega) * sat / (top - bot)
-        elif sat >= satomega and sat < 1 - satomega:
-            d_s_sat_dh = A_omega / (top - bot)
-        elif sat >= 1 - satomega and sat < 1:
-            d_s_sat_dh = (A_omega / satomega) * (1 - sat) / (top - bot)
-        return d_s_sat_dh
-
-    @staticmethod
-    def _smooth_sat(sat1, sat2, h1, h2):
-        if h1 >= h2:
-            value = Mf6Adj.smooth_sat(sat1)
-        else:
-            value = Mf6Adj.smooth_sat(sat2)
-        return value
-
-    @staticmethod
-    def _d_smooth_sat_dh(sat, h1, h2, top, bot):
-        value = 0.0
-        if h1 >= h2:
-            value = self.d_smooth_sat_dh(sat, top, bot)
-        return value
-
-    @staticmethod
-    def dresdk_h(gwf_name, gwf, sat, head, is_newton=False):
-        """partial of residual  WRT K times h.  just need to
-        mult times lambda in PerfMeas.solve_adjoint()
-        """
-
-        ihc = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IHC", gwf)
-        # IHC tells us whether connection is vertical (and if so, whether connection is above or below) or horizontal (and if so, whether it is a vertically staggered grid).
-        # It is of size NJA (or number of connections)
-        ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
-        # IA is the number of connections, plus 1 (for self), for each node in grid. it is of size NNODES + 1
-        ja = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JA", gwf) - 1
-        # JA is an array containing all cells for which there is a connection (including self) for each node. it is of size NJA
-        jas = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "JAS", gwf) - 1
-        cl1 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL1", gwf)
-        # distance from node to cell m boundary (size NJA)
-        cl2 = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "CL2", gwf)
-        # distance from cell m to node boundary (size NJA)
-        hwva = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "HWVA", gwf)
-        # Width perpendicular to flow for a horizontal connection, or the face area for a vertical connection. size NJA
-        top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
-        # top elevation for all nodes
-        bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
-        # bottom elevation for all nodes
-        iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
-        # array of number of connections per node (size ndoes)
-
-        icelltype = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "ICELLTYPE", gwf)
-
-        sat_mod = sat.copy()
-        sat_mod[icelltype == 0] = 1.0
-
-        # height = sat_mod * (top - bot)
-        height = top - bot
-
-        result33 = np.zeros_like(head)
-        result = np.zeros_like(head)
-
-        k11 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K11", gwf)
-        k22 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K22", gwf)
-        assert np.all(k11 == k22)
-        k33 = PerfMeas.get_ptr_from_gwf(gwf_name, "NPF", "K33", gwf)
-
-        for node, (offset, ncon) in enumerate(zip(ia, iac)):
-            sum1 = 0.
-            sum2 = 0.
-            height1 = height[node]
-            pp = 1
-            for ii in range(offset + 1, offset + ncon):
-                mnode = ja[ii]
-                height2 = height[mnode]
-
-                jj = jas[ii]
-                if jj < 0:
-                    raise Exception()
-                iihc = ihc[jj]
-
-                if iihc == 0:  # vertical con
-                    dconddk33 = Mf6Adj._dconddhk(k33[node], k33[mnode], 0.5 * height1, 0.5 * height2, hwva[jj],
-                                                 1.0, 1.0)
-                    t2 = dconddk33 * (head[mnode] - head[node])
-                    sum1 += t2
-
-                else:
-                    if is_newton:
-                        dconddk = Mf6Adj._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj], height1,
-                                                   height2)
-                        SF = Mf6Adj._smooth_sat(sat_mod[node], sat_mod[mnode], head[node], head[mnode])
-
-                    else:
-                        dconddk = Mf6Adj._dconddhk(k11[node], k11[mnode], cl1[jj], cl2[jj], hwva[jj],
-                                                   height1 * sat_mod[node], height2 * sat_mod[mnode])
-                        SF = 1.0
-
-                    t1 = SF * dconddk * (head[mnode] - head[node])
-                    sum2 += t1
-
-            result33[node] = sum1
-            result[node] = sum2
-        return result, result33
 
     @staticmethod
     def dresdss_h(gwf_name, gwf, head, head_old, dt, sat, sat_old):
@@ -934,17 +817,13 @@ class Mf6Adj(object):
             data_dict["sat"] = sat
             data_dict["sat_old"] = sat_old
 
-            dresdk_h, dresdk33_h = Mf6Adj.dresdk_h(self._gwf_name,self._gwf,sat,head,is_newton=is_newton)
-            data_dict["dresdk_h"] = dresdk_h
-            data_dict["dresdk33_h"] = dresdk33_h
-
             sat_old = sat.copy()
             if has_sto: #has storage
-                dresdss_h = Mf6Adj.dresdss_h(self._gwf_name,self._gwf,head,head_old,dt,sat,sat_old)
+                dresdss_h = Mf6Adj.dresdss_h(self._gwf_name,self._gwf,head,head_old,dt1,sat,sat_old)
                 data_dict["dresdss_h"] = dresdss_h
 
                 if iss == 0 : #has storage and this kper is transient
-                    drhsdh = Mf6Adj.drhsdh(self._gwf_name,self._gwf,dt)
+                    drhsdh = Mf6Adj.drhsdh(self._gwf_name,self._gwf,dt1)
                     data_dict["drhsdh"] = drhsdh
 
 
@@ -1051,8 +930,8 @@ class Mf6Adj(object):
 
         kijs = None
         if self.is_structured:
-            kijs = self._structured_mg.get_lrc(list(nuser))
-
+            #kijs = self._structured_mg.get_lrc(list(nuser))
+            kijs = PerfMeas.get_lrc(self._shape,list(nuser))
         addr = ["NLAY", gwf_name, "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
         nlay = self._gwf.get_value(wbaddr)[0]

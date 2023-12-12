@@ -132,7 +132,7 @@ def basic_freyberg():
         f.write("end performance_measure\n\n")
 
     os.chdir(new_d)
-    adj = mf6adj.Mf6Adj("test.adj",os.path.split(local_lib_name)[1],is_structured=True)
+    adj = mf6adj.Mf6Adj("test.adj",os.path.split(local_lib_name)[1])
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -2548,7 +2548,7 @@ def test_3d_freyberg():
     import mf6adj
     print(mf6adj.__file__)
     os.chdir(test_d)
-    adj = mf6adj.Mf6Adj("test.adj",local_lib_name,is_structured=True,verbose_level=2)
+    adj = mf6adj.Mf6Adj("test.adj",local_lib_name,verbose_level=2)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -2589,7 +2589,7 @@ def test_freyberg_unstruct():
     import mf6adj
     print(mf6adj.__file__)
     os.chdir(test_d)
-    adj = mf6adj.Mf6Adj("test.adj",local_lib_name,is_structured=False,verbose_level=2)
+    adj = mf6adj.Mf6Adj("test.adj",local_lib_name,verbose_level=2)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -2645,7 +2645,7 @@ def test_zaidel():
     import mf6adj
     print(mf6adj.__file__)
     os.chdir(test_d)
-    adj = mf6adj.Mf6Adj("test.adj",local_lib_name,is_structured=False,verbose_level=2)
+    adj = mf6adj.Mf6Adj("test.adj",local_lib_name,verbose_level=2)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -3196,7 +3196,7 @@ def test_xd_box_1():
                     f.write("end performance_measure\n\n")
 
 
-        adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=1)
+        adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
         adj._perturbation_test()
@@ -3427,7 +3427,7 @@ def freyberg_demo():
 
     start = datetime.now()
     os.chdir(new_d)
-    adj = mf6adj.Mf6Adj("test.adj",os.path.split(local_lib_name)[1],is_structured=True,verbose_level=2)
+    adj = mf6adj.Mf6Adj("test.adj",os.path.split(local_lib_name)[1],verbose_level=2)
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
