@@ -3138,7 +3138,7 @@ def test_xd_box_1():
     new_d = 'xd_box_1_test'
 
     if clean:
-       sim = setup_xd_box_model(new_d,nper=10,include_sto=include_sto,include_id0=include_id0,nrow=7,ncol=7,nlay=1,
+       sim = setup_xd_box_model(new_d,nper=3,include_sto=include_sto,include_id0=include_id0,nrow=7,ncol=7,nlay=1,
                                 q=-0.1,icelltype=0,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)

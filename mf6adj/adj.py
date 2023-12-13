@@ -648,13 +648,13 @@ class Mf6Adj(object):
                                     pass
                             elif pert_save:
                                 sp_package_data[package_type][kperkstp] = []
-                            nodelist = self._gwf.get_value_ptr(
+                            nodelist = self._gwf.get_value(
                                 self._gwf.get_var_address("NODELIST", self._gwf_name, tag.upper()))
-                            bound = self._gwf.get_value_ptr(
+                            bound = self._gwf.get_value(
                                 self._gwf.get_var_address("BOUND", self._gwf_name, tag.upper()))
-                            hcof = self._gwf.get_value_ptr(
+                            hcof = self._gwf.get_value(
                                 self._gwf.get_var_address("HCOF", self._gwf_name, tag.upper()))
-                            rhs = self._gwf.get_value_ptr(self._gwf.get_var_address("RHS", self._gwf_name, tag.upper()))
+                            rhs = self._gwf.get_value(self._gwf.get_var_address("RHS", self._gwf_name, tag.upper()))
                             if pert_save:
                                 for i in range(nbound):
                                     # note bound is an array!
@@ -743,6 +743,7 @@ class Mf6Adj(object):
             epsilons = []
             bound_idx = []
             nodes = []
+            names = []
             pert_results_dict = {pm.name: [] for pm in self._performance_measures}
             print("running perturbations for ", paktype)
             for kk, infolist in pdict.items():
@@ -756,7 +757,8 @@ class Mf6Adj(object):
                         pakname = infodict["packagename"]
                         pert_dict = {"kperkstp": kk, "packagename": pakname, "node": infodict["node"],
                                      "bound": new_bound}
-                        # print(pert_dict)
+                        print("...",pert_dict)
+
                         self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
                         pert_head, _ = self.solve_gwf(verbose=False, _sp_pert_dict=pert_dict,pert_save=True)
                         pert_results = {pm.name: (pm.solve_forward(pert_head) - base_results[pm.name]) / epsilons[-1]
@@ -765,9 +767,11 @@ class Mf6Adj(object):
                             pert_results_dict[pm].append(result)
                         bound_idx.append(ibnd)
                         nodes.append(infodict["node"])
+                        names.append(pakname+"_item{0}".format(ibnd))
             df = pd.DataFrame(pert_results_dict)
             df.loc[:, "node"] = nodes
-            df.loc[:, "epsiloon"] = epsilons
+            df.loc[:, "epsilon"] = epsilons
+            df.loc[:,"addr"] = names
             df.index = df.pop("node")
             if kijs is not None:
                 for idx, lab in zip([0, 1, 2], ["k", "i", "j"]):
@@ -791,8 +795,8 @@ class Mf6Adj(object):
             for inode in range(inodes):
                 self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
                 pert_arr = self._gwf.get_value_ptr(wbaddr)
-
-                delt = pert_arr[inode] * pert_mult
+                org = pert_arr[inode]
+                delt = org * pert_mult
                 epsilons.append(delt - pert_arr[inode])
                 pert_arr[inode] = delt
                 # if "K11" in wbaddr.upper():
@@ -804,7 +808,7 @@ class Mf6Adj(object):
                 # wbaddr1 = self._gwf.get_var_address(*addr1)
                 # k22 = self._gwf.get_value_ptr(wbaddr1)
                 # print("ik22 flag",k22)
-
+                print("...",addr,inode,org,delt)
                 pert_head, _ = self.solve_gwf(verbose=False, _force_k_update=True,pert_save=True)
                 pert_results = {pm.name: (pm.solve_forward(pert_head) - base_results[pm.name]) / epsilons[-1] for pm in
                                 self._performance_measures}
