@@ -435,7 +435,7 @@ class PerfMeas(object):
             data["ghbhead"] = comp_ghb_head_sens
             data["ghbcond"] = comp_ghb_cond_sens
         data["rch"] = comp_rch_sens
-        PerfMeas.write_group_to_hdf(adf, "composite", data)
+        PerfMeas.write_group_to_hdf(adf, "composite", data,nodeuser=nodeuser,grid_shape=grid_shape)
         adf.close()
         hdf.close()
 

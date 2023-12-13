@@ -3472,9 +3472,28 @@ def freyberg_demo():
     hdf = h5py.File(os.path.join(new_d,result_hdf),'r')
     keys = list(hdf.keys())
     keys.sort()
-    for key in keys:
-        grp = hdf[key]
-        print(key,[(i,grp[i].shape) for i in grp.keys()])
+    print(keys)
+    from matplotlib.backends.backend_pdf import PdfPages
+    with PdfPages(os.path.join(new_d,"results.pdf")) as pdf:
+        for key in keys:
+            grp = hdf[key]
+            plot_keys = [i for i in grp.keys() if len(grp[i].shape) == 3]
+
+            for pkey in plot_keys:
+
+                arr = grp[pkey][:]
+                for k,karr in enumerate(arr):
+                    fig, ax = plt.subplots(1, 1, figsize=(6, 5))
+                    cb = ax.imshow(karr)
+                    plt.colorbar(cb,ax=ax)
+                    ax.set_title(key+", "+pkey+", layer:{0}".format(k+1),loc="left")
+                    plt.tight_layout()
+                    pdf.savefig()
+                    plt.close(fig)
+                    print("...",key, pkey,k+1)
+
+
+
 
 
     # files = [f for f in os.listdir(new_d) if "_comp_" in f and f.endswith(".dat") and "ss" not in f and "rch" not in f and "wel" not in f]

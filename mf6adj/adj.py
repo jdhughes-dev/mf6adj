@@ -663,7 +663,7 @@ class Mf6Adj(object):
                                          "hcof": hcof[i], "rhs": rhs[i], "packagename": tag})
                             data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound}
             attr_dict = {"ctime": ctime, "dt": dt1, "kper": kper, "kstp": kstp,"is_newton":is_newton,"has_sto":has_sto}
-            PerfMeas.write_group_to_hdf(fhd, group_name="solution_kper:{0}_kstp:{1}".format(kper, kstp), data_dict=data_dict,
+            PerfMeas.write_group_to_hdf(fhd, group_name="solution_kper:{0:05d}_kstp:{1:05d}".format(kper, kstp), data_dict=data_dict,
                                      attr_dict=attr_dict)
 
 
