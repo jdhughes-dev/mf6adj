@@ -296,6 +296,8 @@ class PerfMeas(object):
 
         # nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
         nnodes = hdf["gwf_info"]["nnodes"]
+        print(hdf["gwf_info"].keys())
+        nodeuser = hdf["gwf_info"]["nodeuser"][:]
         lamb = np.zeros(nnodes)
 
         grid_shape = None
@@ -440,8 +442,10 @@ class PerfMeas(object):
         PerfMeas.write_group_to_hdf(adf, "composite", data)
         adf.close()
         hdf.close()
-        # df.to_csv("{0}_adj_results.csv".format(self._name))
-        # return df
+
+        df = pd.DataFrame({"k11":comp_k_sens,"k33":comp_k33_sens,"welq":comp_welq_sens,"rch":comp_rch_sens},index=nodeuser)
+        df.to_csv("{0}_adj_summary.csv".format(self._name))
+        return df
 
     @staticmethod
     def write_group_to_hdf(hdf, group_name, data_dict, attr_dict={}):

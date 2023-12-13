@@ -751,13 +751,14 @@ class Mf6Adj(object):
                     bnd_items = infodict["bound"].shape[0]
                     for ibnd in range(bnd_items):
                         new_bound = infodict["bound"].copy()
-                        delt = new_bound[ibnd] * pert_mult
+                        org = new_bound[ibnd]
+                        delt = org * pert_mult
                         epsilons.append(delt - new_bound[ibnd])
                         new_bound[ibnd] = delt
                         pakname = infodict["packagename"]
                         pert_dict = {"kperkstp": kk, "packagename": pakname, "node": infodict["node"],
                                      "bound": new_bound}
-                        print("...",pert_dict)
+                        print("...",pakname,ibnd,kk,org,delt)
 
                         self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
                         pert_head, _ = self.solve_gwf(verbose=False, _sp_pert_dict=pert_dict,pert_save=True)
