@@ -3223,7 +3223,7 @@ def test_xd_box_1():
         adj.solve_adjoint()
         adj._perturbation_test()
         adj.finalize()
-        return
+
 
         if plot_adj_results:
             afiles_to_plot = [f for f in os.listdir(".") if (f.startswith("pm-direct") or f.startswith("pm-phi")) and f.endswith(".dat")]
@@ -3409,6 +3409,7 @@ def freyberg_demo():
         shutil.rmtree('mf6adj')
     shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
     import mf6adj
+
     
     org_d = "freyberg_mf6_pestppv5_test"#os.path.join("models","freyberg")
     new_d = "freyberg"
@@ -3417,6 +3418,11 @@ def freyberg_demo():
     shutil.copytree(org_d,new_d)
     shutil.copy2(lib_name,os.path.join(new_d,os.path.split(lib_name)[1]))
     shutil.copy2(mf6_bin,os.path.join(new_d,os.path.split(mf6_bin)[1]))
+    shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+    shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+    shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+    shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
+    shutil.copytree(os.path.join('mf6adj'), os.path.join(new_d, 'mf6adj'))
 
     os.chdir(new_d)
     os.system("mf6")
@@ -3458,42 +3464,55 @@ def freyberg_demo():
     duration = (datetime.now() - start).total_seconds()
     print("took:",duration)
 
-    files = [f for f in os.listdir(new_d) if "_comp_" in f and f.endswith(".dat") and "ss" not in f and "rch" not in f and "wel" not in f]
-   
-    assert len(files) > 0
-    forcing_files = [f for f in os.listdir(new_d) if "_sens_" in f and "comp" not in f and "kper" in f and \
-    (("wel" in f and "k002." in f) or ("rch" in f and "k000." in f))]
+    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adj_pm")]
+    print(result_hdf)
+    assert len(result_hdf) == 1
+    result_hdf = result_hdf[0]
+    import h5py
+    hdf = h5py.File(os.path.join(new_d,result_hdf),'r')
+    keys = list(hdf.keys())
+    keys.sort()
+    for key in keys:
+        grp = hdf[key]
+        print(key,[(i,grp[i].shape) for i in grp.keys()])
 
-    assert len(forcing_files) > 0
-    files.extend(forcing_files)
-    files.sort()
-    ijarr = np.zeros((40,20))
-    for i,j in k_dict[0]:
-        ijarr[i,j] = 1
-    ijarr[ijarr==0] = np.nan
 
-    from matplotlib.backends.backend_pdf import PdfPages
-    with PdfPages(os.path.join(new_d,"results.pdf")) as pdf:
-        for f in files:
-            print("...plottinhg",f)
-            k = f.split(".")[0].split("_")[-1][1:]
-
-            arr = np.loadtxt(os.path.join(new_d,f))
-            arr[arr==0.0] = np.nan
-            fig,ax = plt.subplots(1,1,figsize=(6,5))
-            cb = ax.imshow(arr)
-            plt.colorbar(cb,ax=ax,label="sensitivity")
-            ax.imshow(ijarr,cmap="jet_r",alpha=0.75)
-            ax.set_title(f,loc="left")
-            plt.tight_layout()
-            pdf.savefig()
-            plt.close(fig)
+    # files = [f for f in os.listdir(new_d) if "_comp_" in f and f.endswith(".dat") and "ss" not in f and "rch" not in f and "wel" not in f]
+    #
+    # assert len(files) > 0
+    # forcing_files = [f for f in os.listdir(new_d) if "_sens_" in f and "comp" not in f and "kper" in f and \
+    # (("wel" in f and "k002." in f) or ("rch" in f and "k000." in f))]
+    #
+    # assert len(forcing_files) > 0
+    # files.extend(forcing_files)
+    # files.sort()
+    # ijarr = np.zeros((40,20))
+    # for i,j in k_dict[0]:
+    #     ijarr[i,j] = 1
+    # ijarr[ijarr==0] = np.nan
+    #
+    # from matplotlib.backends.backend_pdf import PdfPages
+    # with PdfPages(os.path.join(new_d,"results.pdf")) as pdf:
+    #     for f in files:
+    #         print("...plotting",f)
+    #         k = f.split(".")[0].split("_")[-1][1:]
+    #
+    #         arr = np.loadtxt(os.path.join(new_d,f))
+    #         arr[arr==0.0] = np.nan
+    #         fig,ax = plt.subplots(1,1,figsize=(6,5))
+    #         cb = ax.imshow(arr)
+    #         plt.colorbar(cb,ax=ax,label="sensitivity")
+    #         ax.imshow(ijarr,cmap="jet_r",alpha=0.75)
+    #         ax.set_title(f,loc="left")
+    #         plt.tight_layout()
+    #         pdf.savefig()
+    #         plt.close(fig)
 
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    test_xd_box_1()
-    #freyberg_demo()
+    #test_xd_box_1()
+    freyberg_demo()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()

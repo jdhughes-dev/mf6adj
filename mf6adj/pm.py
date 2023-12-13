@@ -366,7 +366,7 @@ class PerfMeas(object):
             lamb = spsolve(amat_sp_t, rhs)
             if np.any(np.isnan(lamb)):
                 print("WARNING: nans in adjoint states for pm {0} at kperkstp {1}".format(self._name, kk))
-                continue
+
             is_newton = hdf[sol_key].attrs["is_newton"]
             k_sens, k33_sens = PerfMeas.lam_dresdk_h(is_newton, lamb, hdf[sol_key]["sat"][:],
                                                      hdf[sol_key]["head"][:],
@@ -394,12 +394,6 @@ class PerfMeas(object):
                 data["ss"] = ss_sens
                 comp_ss_sens += ss_sens
 
-            # if "wel6" in gwf_package_dict and kk in gwf_package_dict["wel6"]:
-            #     sens_welq = self.lam_drhs_dqwel(lamb, gwf_package_dict["wel6"][kk])
-            #     if self.verbose_level > 1:
-            #         #self.save_array("sens_welq_kper{0:05d}".format(itime), sens_welq, grid_shape)
-            #         data["welq_"+sol_key] = sens_welq
-            #     comp_welq_sens += sens_welq
             data["welq"] = lamb
             comp_welq_sens += lamb
 
@@ -409,16 +403,18 @@ class PerfMeas(object):
                 data["ghbcond_" + sol_key] = sens_ghb_cond
                 comp_ghb_head_sens += sens_ghb_head
                 comp_ghb_cond_sens += sens_ghb_cond
-            # print("rch" in gwf_package_dict,kk,list(gwf_package_dict["rch6"].keys()))
+
             sens_rch = lamb * hdf["gwf_info"]["area"][:]
             comp_rch_sens += sens_rch
             data["rech"] = sens_rch
+
             data["lambda"] = lamb
             data["head"] = hdf[sol_key]["head"][:]
+
             if self.verbose_level > 2:
                 data["amat"] = amat
                 data["rhs"] = rhs
-            PerfMeas.write_group_to_hdf(adf, sol_key, data)
+            PerfMeas.write_group_to_hdf(adf, sol_key, data, nodeuser=nodeuser,grid_shape=grid_shape)
 
         data = {}
         data["k11"] = comp_k_sens
@@ -448,17 +444,29 @@ class PerfMeas(object):
         return df
 
     @staticmethod
-    def write_group_to_hdf(hdf, group_name, data_dict, attr_dict={}):
+    def write_group_to_hdf(hdf, group_name, data_dict, attr_dict={},grid_shape=None,nodeuser=None):
         if group_name in hdf:
             raise Exception("group_name {0} already in hdf file".format(group_name))
         grp = hdf.create_group(group_name)
         for name, val in attr_dict.items():
             grp.attrs[name] = val
+        kijs = None
+        if grid_shape is not None and nodeuser is not None:
+            kijs = PerfMeas.get_lrc(grid_shape, list(nodeuser))
         for tag, item in data_dict.items():
             if isinstance(item, list):
                 item = np.array(item)
             if isinstance(item, np.ndarray):
-                dset = grp.create_dataset(tag, item.shape, dtype=item.dtype, data=item)
+                if grid_shape is not None and nodeuser is not None:
+                    if len(item) == len(nodeuser): #3D
+                        arr = np.zeros(grid_shape,dtype=item.dtype)
+                        for kij, v in zip(kijs, item):
+                            arr[kij] = v
+                        dset = grp.create_dataset(tag, grid_shape, dtype=item.dtype, data=arr)
+                    else:
+                        raise Exception("doh!")
+                else:
+                    dset = grp.create_dataset(tag, item.shape, dtype=item.dtype, data=item)
             elif isinstance(item, dict):
                 if "nodelist" in item:
                     iitem = item["nodelist"]
@@ -470,6 +478,13 @@ class PerfMeas(object):
                     print("Mf6Adj._write_group_to_hdf(): unused data_dict item {0}".format(tag))
             else:
                 raise Exception("unrecognized data_dict entry: {0},type:{1}".format(tag, type(item)))
+        if nodeuser is not None:
+            dset = grp.create_dataset("nodeuser", nodeuser.shape, dtype=nodeuser.dtype, data=nodeuser)
+        if kijs is not None:
+            for idx,name in enumerate(["k","i","j"]):
+                arr = np.array([kij[idx] for kij in kijs],dtype=int)
+                dset = grp.create_dataset(name, arr.shape, dtype=arr.dtype, data=arr)
+
 
     @staticmethod
     def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
