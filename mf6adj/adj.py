@@ -243,6 +243,7 @@ class Mf6Adj(object):
                                 nn = np.where(nuser == n)[0]
                                 if nn.shape[0] != 1:
                                     raise Exception("node num {0} not in reduced node num".format(n))
+                                nn = nn[0]
                                 pm_entries.append(PerfMeasRecord(kper, kstp, nn, weight=weight, obsval=obsval))
                             else:
                                 pm_entries.append(
@@ -421,12 +422,16 @@ class Mf6Adj(object):
         data_dict["storage"] = storage
         nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NODEUSER", gwf) - 1
         data_dict["nodeuser"] = nodeuser
+        nodereduced = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NODEREDUCED", gwf) - 1
+        data_dict["nodereduced"] = nodereduced
         ndim = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NDIM", gwf)
         data_dict["ndim"] = ndim
         nnodes = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "NODES", gwf)
         data_dict["nnodes"] = nnodes
         ndim = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "NDIM", gwf)
         data_dict["ndim"] = ndim
+        idomain = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "IDOMAIN", gwf)
+        data_dict["idomain"] = idomain
 
         if self.is_structured:
             nlay = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NLAY", gwf)

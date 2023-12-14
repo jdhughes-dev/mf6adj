@@ -295,9 +295,11 @@ class PerfMeas(object):
             kk_sol_map[kk] = sol
 
         # nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
-        nnodes = hdf["gwf_info"]["nnodes"]
+        nnodes = hdf["gwf_info"]["nnodes"][:]
         print(hdf["gwf_info"].keys())
         nodeuser = hdf["gwf_info"]["nodeuser"][:]
+        nodereduced = hdf["gwf_info"]["nodereduced"][:]
+
         lamb = np.zeros(nnodes)
 
         grid_shape = None
@@ -309,6 +311,16 @@ class PerfMeas(object):
 
         ia = hdf["gwf_info"]["ia"][:]
         ja = hdf["gwf_info"]["ja"][:]
+        ihc = hdf["gwf_info"]["ihc"][:]
+        jas = hdf["gwf_info"]["jas"][:]
+        cl1 = hdf["gwf_info"]["cl1"][:]
+        cl2 = hdf["gwf_info"]["cl2"][:]
+        hwva = hdf["gwf_info"]["hwva"][:]
+        top = hdf["gwf_info"]["top"][:]
+        bot = hdf["gwf_info"]["bot"][:]
+        icelltype = hdf["gwf_info"]["icelltype"][:]
+        area = hdf["gwf_info"]["area"][:]
+        idomain = hdf["gwf_info"]["idomain"][:]
 
         comp_k33_sens = np.zeros(nnodes)
         comp_k_sens = np.zeros(nnodes)
@@ -369,17 +381,8 @@ class PerfMeas(object):
 
             is_newton = hdf[sol_key].attrs["is_newton"]
             k_sens, k33_sens = PerfMeas.lam_dresdk_h(is_newton, lamb, hdf[sol_key]["sat"][:],
-                                                     hdf[sol_key]["head"][:],
-                                                     hdf["gwf_info"]["ihc"][:],
-                                                     ia,
-                                                     ja,
-                                                     hdf["gwf_info"]["jas"][:],
-                                                     hdf["gwf_info"]["cl1"][:],
-                                                     hdf["gwf_info"]["cl2"][:],
-                                                     hdf["gwf_info"]["hwva"][:],
-                                                     hdf["gwf_info"]["top"][:],
-                                                     hdf["gwf_info"]["bot"][:],
-                                                     hdf["gwf_info"]["icelltype"][:],
+                                                     hdf[sol_key]["head"][:], ihc, ia, ja, jas, cl1, cl2,
+                                                     hwva, top, bot, icelltype,
                                                      hdf[sol_key]["k11"][:],
                                                      hdf[sol_key]["k33"][:]
                                                      )
@@ -404,7 +407,7 @@ class PerfMeas(object):
                 comp_ghb_head_sens += sens_ghb_head
                 comp_ghb_cond_sens += sens_ghb_cond
 
-            sens_rch = lamb * hdf["gwf_info"]["area"][:]
+            sens_rch = lamb * area
             comp_rch_sens += sens_rch
             data["rech"] = sens_rch
 
@@ -414,19 +417,12 @@ class PerfMeas(object):
             if self.verbose_level > 2:
                 data["amat"] = amat
                 data["rhs"] = rhs
-            PerfMeas.write_group_to_hdf(adf, sol_key, data, nodeuser=nodeuser,grid_shape=grid_shape)
+
+            PerfMeas.write_group_to_hdf(adf, sol_key, data, nodeuser=nodeuser, grid_shape=grid_shape,nodereduced=nodereduced)
 
         data = {}
         data["k11"] = comp_k_sens
         data["k33"] = comp_k33_sens
-        # self.save_array("comp_sens_k33", comp_k33_sens, gwf_name, gwf, mg_structured)
-        # self.save_array("comp_sens_k11", comp_k_sens, gwf_name, gwf, mg_structured)
-        # addr = ["NODEUSER", gwf_name, "DIS"]
-        # wbaddr = gwf.get_var_address(*addr)
-        # nuser = gwf.get_value(wbaddr) - 1
-        # if len(nuser) == 1:
-        #    nuser = np.arange(nnodes, dtype=int)
-        # df = pd.DataFrame(data, index=nuser)
 
         if has_sto:
             data["ss"] = comp_ss_sens
@@ -435,16 +431,18 @@ class PerfMeas(object):
             data["ghbhead"] = comp_ghb_head_sens
             data["ghbcond"] = comp_ghb_cond_sens
         data["rch"] = comp_rch_sens
-        PerfMeas.write_group_to_hdf(adf, "composite", data,nodeuser=nodeuser,grid_shape=grid_shape)
+        PerfMeas.write_group_to_hdf(adf, "composite", data, nodeuser=nodeuser, grid_shape=grid_shape,nodereduced=nodereduced)
         adf.close()
         hdf.close()
 
-        df = pd.DataFrame({"k11":comp_k_sens,"k33":comp_k33_sens,"welq":comp_welq_sens,"rch":comp_rch_sens},index=nodeuser)
+        df = pd.DataFrame({"k11": comp_k_sens, "k33": comp_k33_sens, "welq": comp_welq_sens, "rch": comp_rch_sens},
+                          index=nodeuser)
+
         df.to_csv("{0}_adj_summary.csv".format(self._name))
         return df
 
     @staticmethod
-    def write_group_to_hdf(hdf, group_name, data_dict, attr_dict={},grid_shape=None,nodeuser=None):
+    def write_group_to_hdf(hdf, group_name, data_dict, attr_dict={}, grid_shape=None, nodeuser=None,nodereduced=None):
         if group_name in hdf:
             raise Exception("group_name {0} already in hdf file".format(group_name))
         grp = hdf.create_group(group_name)
@@ -458,13 +456,19 @@ class PerfMeas(object):
                 item = np.array(item)
             if isinstance(item, np.ndarray):
                 if grid_shape is not None and nodeuser is not None:
-                    if len(item) == len(nodeuser): #3D
-                        arr = np.zeros(grid_shape,dtype=item.dtype)
+                    if len(item) == len(nodeuser):  # 3D
+                        arr = np.zeros(grid_shape, dtype=item.dtype)
                         for kij, v in zip(kijs, item):
                             arr[kij] = v
+
                         dset = grp.create_dataset(tag, grid_shape, dtype=item.dtype, data=arr)
                     else:
-                        raise Exception("doh!")
+                        raise Exception("doh! "+str(tag))
+                elif nodeuser is not None and nodereduced is not None:
+                    arr = np.zeros_like(nodereduced, dtype=item.dtype)
+                    for inode,v in zip(nodeuser,item):
+                        arr[inode] = v
+                    dset = grp.create_dataset(tag, arr.shape, dtype=item.dtype, data=arr)
                 else:
                     dset = grp.create_dataset(tag, item.shape, dtype=item.dtype, data=item)
             elif isinstance(item, dict):
@@ -481,10 +485,9 @@ class PerfMeas(object):
         if nodeuser is not None:
             dset = grp.create_dataset("nodeuser", nodeuser.shape, dtype=nodeuser.dtype, data=nodeuser)
         if kijs is not None:
-            for idx,name in enumerate(["k","i","j"]):
-                arr = np.array([kij[idx] for kij in kijs],dtype=int)
+            for idx, name in enumerate(["k", "i", "j"]):
+                arr = np.array([kij[idx] for kij in kijs], dtype=int)
                 dset = grp.create_dataset(name, arr.shape, dtype=arr.dtype, data=arr)
-
 
     @staticmethod
     def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):

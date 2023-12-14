@@ -3402,17 +3402,16 @@ def test_xd_box_unstruct_1():
 
 
 
-def freyberg_demo():
+def freyberg_structured_demo():
     
-    #import mf6adj source
     if os.path.exists('mf6adj'):
         shutil.rmtree('mf6adj')
-    shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
+    #shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
+    sys.path.insert(0,os.path.join(".."))
     import mf6adj
 
-    
-    org_d = "freyberg_mf6_pestppv5_test"#os.path.join("models","freyberg")
-    new_d = "freyberg"
+    org_d = "freyberg_structured"
+    new_d = "freyberg_structured_test"
     if os.path.exists(new_d):
         shutil.rmtree(new_d)
     shutil.copytree(org_d,new_d)
@@ -3422,7 +3421,7 @@ def freyberg_demo():
     shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
     shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
     shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
-    shutil.copytree(os.path.join('mf6adj'), os.path.join(new_d, 'mf6adj'))
+    #shutil.copytree(os.path.join('mf6adj'), os.path.join(new_d, 'mf6adj'))
 
     os.chdir(new_d)
     os.system("mf6")
@@ -3474,15 +3473,19 @@ def freyberg_demo():
     keys.sort()
     print(keys)
     from matplotlib.backends.backend_pdf import PdfPages
+    idomain = np.loadtxt(os.path.join(new_d,"freyberg6.dis_idomain_layer1.txt"))
     with PdfPages(os.path.join(new_d,"results.pdf")) as pdf:
         for key in keys:
+            if key != "composite":
+                continue
+
             grp = hdf[key]
             plot_keys = [i for i in grp.keys() if len(grp[i].shape) == 3]
-
             for pkey in plot_keys:
 
                 arr = grp[pkey][:]
                 for k,karr in enumerate(arr):
+                    karr[idomain < 1] = np.nan
                     fig, ax = plt.subplots(1, 1, figsize=(6, 5))
                     cb = ax.imshow(karr)
                     plt.colorbar(cb,ax=ax)
@@ -3493,45 +3496,120 @@ def freyberg_demo():
                     print("...",key, pkey,k+1)
 
 
+def freyberg_quadtree_demo():
+    if os.path.exists('mf6adj'):
+        shutil.rmtree('mf6adj')
+    #shutil.copytree(os.path.join('..', 'mf6adj'), os.path.join('mf6adj'))
+    sys.path.insert(0,os.path.join(".."))
+    import mf6adj
+
+    org_d = "freyberg_quadtree"
+    new_d = "freyberg_quadtree_test"
+    prep_run = False
+    run_adj = False
+
+    if prep_run:
+        if os.path.exists(new_d):
+            shutil.rmtree(new_d)
+        shutil.copytree(org_d, new_d)
+        shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
+        shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
+        shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+        shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+        shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+        shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
+
+        os.chdir(new_d)
+        os.system("mf6")
+        os.chdir("..")
 
 
+    if run_adj:
+        df = pd.read_csv(os.path.join(new_d,"freyberg6.obs_continuous_heads.csv.txt"),header=None,names=["site","otype","layer","node"])
+        df.loc[:,"k"] = df.layer.astype(int) - 1
+        df.loc[:,"inode"] = df.node.astype(int) - 1
 
-    # files = [f for f in os.listdir(new_d) if "_comp_" in f and f.endswith(".dat") and "ss" not in f and "rch" not in f and "wel" not in f]
-    #
-    # assert len(files) > 0
-    # forcing_files = [f for f in os.listdir(new_d) if "_sens_" in f and "comp" not in f and "kper" in f and \
-    # (("wel" in f and "k002." in f) or ("rch" in f and "k000." in f))]
-    #
-    # assert len(forcing_files) > 0
-    # files.extend(forcing_files)
-    # files.sort()
-    # ijarr = np.zeros((40,20))
-    # for i,j in k_dict[0]:
-    #     ijarr[i,j] = 1
-    # ijarr[ijarr==0] = np.nan
-    #
-    # from matplotlib.backends.backend_pdf import PdfPages
-    # with PdfPages(os.path.join(new_d,"results.pdf")) as pdf:
-    #     for f in files:
-    #         print("...plotting",f)
-    #         k = f.split(".")[0].split("_")[-1][1:]
-    #
-    #         arr = np.loadtxt(os.path.join(new_d,f))
-    #         arr[arr==0.0] = np.nan
-    #         fig,ax = plt.subplots(1,1,figsize=(6,5))
-    #         cb = ax.imshow(arr)
-    #         plt.colorbar(cb,ax=ax,label="sensitivity")
-    #         ax.imshow(ijarr,cmap="jet_r",alpha=0.75)
-    #         ax.set_title(f,loc="left")
-    #         plt.tight_layout()
-    #         pdf.savefig()
-    #         plt.close(fig)
+        np.random.seed(11111)
+        rvals = np.random.random(df.shape[0]) + 36
+        with open(os.path.join(new_d, "test.adj"), 'w') as f:
 
+            f.write("begin performance_measure pm1 type residual\n")
+            for rval, k,inode in zip(rvals, df.k,df.inode):
+                for kper in range(25):
+                    f.write("{0} 1 {1} {2} 1.0  {2}\n".format(kper + 1, k, inode, rval))
+            f.write("end performance_measure\n\n")
+
+        start = datetime.now()
+        os.chdir(new_d)
+        adj = mf6adj.Mf6Adj("test.adj", os.path.split(local_lib_name)[1], verbose_level=2)
+        adj.solve_gwf()
+        adj.solve_adjoint()
+        adj.finalize()
+        os.chdir("..")
+        duration = (datetime.now() - start).total_seconds()
+        print("took:", duration)
+
+    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adj_pm")]
+
+    result_hdf.sort()
+    print(result_hdf)
+    result_hdf = result_hdf[-1]
+    print("using hdf",result_hdf)
+    import h5py
+    hdf = h5py.File(os.path.join(new_d, result_hdf), 'r')
+    keys = list(hdf.keys())
+    keys.sort()
+    print(keys)
+    import flopy
+    sim = flopy.mf6.MFSimulation.load(sim_ws=os.path.join(new_d))
+    m = sim.get_model()
+    #m.dis.top.plot()
+    #plt.show()
+    #return
+    nplc = m.dis.top.array.shape[0]
+    head = hdf["solution_kper:00000_kstp:00000"]["head"][:]
+    nlay = int(head.shape[0] / nplc)
+    head = head.reshape((nlay,nplc))
+    idomain = m.dis.idomain.array.copy()
+    idomain = idomain.reshape((nlay,nplc))
+    from matplotlib.backends.backend_pdf import PdfPages
+    with PdfPages(os.path.join(new_d, "results.pdf")) as pdf:
+        for key in keys:
+            print(key)
+            if key != "composite":
+                continue
+            grp = hdf[key]
+            plot_keys = [i for i in grp.keys()]
+
+            for pkey in plot_keys:
+                print(pkey)
+                #if "k11" not in pkey:
+                #    continue
+
+                arr = grp[pkey][:]
+                nlay = int(arr.shape[0] / nplc)
+                arr = arr.reshape((nlay,nplc))#.transpose()
+                for k, karr in enumerate(arr):
+                    print(karr)
+                    karr[idomain[k]==0] = np.nan
+                    #fig, ax = plt.subplots(1, 1, figsize=(6, 5))
+                    m.dis.top = karr#np.log10(np.abs(karr))
+                    ax = m.dis.top.plot()
+                    h = head[k].copy()
+                    h[idomain[k] == 0] = np.nan
+                    m.dis.top = h
+                    print(np.nanmin(h),np.nanmax(h))
+                    m.dis.top.plot()
+                    print(h)
+                    plt.show()
+                    return
+                #break
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
     #test_xd_box_1()
-    freyberg_demo()
+    #freyberg_structured_demo()
+    freyberg_quadtree_demo()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()
