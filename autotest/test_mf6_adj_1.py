@@ -2690,18 +2690,18 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
     shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
 
-    shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
-    shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
-    shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+    #shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+    #shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+    #shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
     shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
 
     org_mh_dir = "mh_org_codes"
     for f in os.listdir(org_mh_dir):
         shutil.copy2(os.path.join(org_mh_dir, f), os.path.join(new_d, f))
 
-    org_aux_dir = "xd_box_test_aux_files"
-    for f in os.listdir(org_aux_dir):
-        shutil.copy2(os.path.join(org_aux_dir, f), os.path.join(new_d, f))
+    #org_aux_dir = "xd_box_test_aux_files"
+    #for f in os.listdir(org_aux_dir):
+    #    shutil.copy2(os.path.join(org_aux_dir, f), os.path.join(new_d, f))
 
 
 
@@ -3169,12 +3169,12 @@ def test_xd_box_1():
     pm_locs.sort()
 
     assert len(pm_locs) > 0
-
+    sys.path.insert(0,os.path.join(".."))
+    import mf6adj
     if run_adj:
         bd = os.getcwd()
         os.chdir(new_d)
         sys.path.append(os.path.join("..",".."))
-        import mf6adj
 
         print('calculating mf6adj sensitivity')
         # with open("test.adj",'w') as f:
@@ -3254,7 +3254,7 @@ def test_xd_box_unstruct_1():
 
 
     # workflow flags
-    include_id0 = False  # include an idomain = cell - has to be false for unstructured...
+    include_id0 = True  # include an idomain = cell - has to be false for unstructured...
     include_sto = True
 
     clean = True # run the pertbuation process
@@ -3268,22 +3268,32 @@ def test_xd_box_unstruct_1():
 
     new_d = 'xd_box_1_unstruct'
     nrow = ncol = 15
+    nlay = 2
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=nrow, ncol=ncol,nlay=2,
+       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=nrow, ncol=ncol,nlay=nlay,
                                 q=-0.1,icelltype=1,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
     gwf = sim.get_model()
+    obsval = 1.0
 
+    pert_mult = 1.01
+    weight = 1.0
     xcc, ycc = np.atleast_2d(gwf.modelgrid.xcellcenters),np.atleast_2d(gwf.modelgrid.ycellcenters)
 
     from flopy.utils.gridgen import Gridgen
     g = Gridgen(gwf.dis, model_ws=new_d, exe_name=gg_bin)
     g.build(verbose=True)
     gridprops = g.get_gridprops_disv()
+    idomain = gwf.dis.idomain.array.copy()
+
+    disv_idomain = []
+    for k in range(gwf.dis.nlay.data):
+        disv_idomain.append(idomain[k].flatten())
     gwf.remove_package("dis")
-    disv = flopy.mf6.ModflowGwfdisv(gwf, **gridprops)
+    disv = flopy.mf6.ModflowGwfdisv(gwf,idomain=disv_idomain,**gridprops)
+
     disv.write()
     ghb = gwf.get_package("ghb")
 
@@ -3315,7 +3325,6 @@ def test_xd_box_unstruct_1():
     nam_file = os.path.join(new_d,"freyberg6.nam")
     lines = open(nam_file,'r').readlines()
 
-    print(lines)
 
     with open(nam_file,'w') as f:
         for line in lines:
@@ -3325,17 +3334,7 @@ def test_xd_box_unstruct_1():
                 line = "GHB6 freyberg6_disv.ghb ghb\n"
             f.write(line)
 
-    bd = os.getcwd()
-    os.chdir(new_d)
-    os.system(os.path.split(mf6_bin)[-1])
-    os.chdir(bd)
-
-    #gwf.remove_package("ghb")
-    #ghb = flopy.mf6.ModflowGwfghb(gwf,stress_period_data=ghb_spd)
-    #ghb.write()
-
-    return
-    #sim.write_simulation()
+    pyemu.os_utils.run("mf6",cwd=new_d)
 
     p_kinodes = []
     for k in range(nlay):
@@ -3351,16 +3350,18 @@ def test_xd_box_unstruct_1():
     pm_locs.sort()
 
     assert len(pm_locs) > 0
-    if run_pert:
-        run_xd_box_pert(new_d,p_kinodes,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
+
+    #if run_pert:
+    #    run_xd_box_pert(new_d,p_kinodes,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
+
+    sys.path.insert(0,os.path.join(".."))
+    import mf6adj
 
     if run_adj:
         bd = os.getcwd()
         os.chdir(new_d)
-        sys.path.append(os.path.join("..",".."))
-        import mf6adj
 
-        print('calculating mf6adj sensitivity')
+
         with open("test.adj",'w') as f:
             f.write("\nbegin options\n\nend options\n\n")
             for kper in range(sim.tdis.nper.data):
@@ -3376,7 +3377,7 @@ def test_xd_box_unstruct_1():
                     f.write("{0} 1 {1} {2} {3} {4}\n".format(kper+1,k+1,inode+1,obsval,weight))
                     f.write("end performance_measure\n\n")
 
-        adj = mf6adj.Mf6Adj("test.adj", local_lib_name, True,verbose_level=1)
+        adj = mf6adj.Mf6Adj("test.adj", local_lib_name, verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
         adj.finalize()
@@ -3427,7 +3428,7 @@ def freyberg_structured_demo():
     os.system("mf6")
     os.chdir("..")
 
-    kijs = []
+    lrcs = []
     k_dict = {}
     with open(os.path.join(new_d,"head.obs"),'r') as f:
         f.readline()
@@ -3435,7 +3436,7 @@ def freyberg_structured_demo():
             if line.strip().lower().startswith("end"):
                 break
             raw = line.strip().split()
-            kijs.append(" ".join(raw[2:]))
+            lrcs.append(" ".join(raw[2:]))
             k = int(raw[2]) - 1
             i = int(raw[3]) - 1
             j = int(raw[4]) - 1
@@ -3444,13 +3445,13 @@ def freyberg_structured_demo():
             k_dict[k].append([i,j])
 
     np.random.seed(11111)
-    rvals = np.random.random(len(kijs)) + 36
+    rvals = np.random.random(len(lrcs)) + 36
     with open(os.path.join(new_d,"test.adj"),'w') as f:
 
         f.write("begin performance_measure pm1 type residual\n")
-        for rval,kij in zip(rvals,kijs):
+        for rval,lrc in zip(rvals,lrcs):
             for kper in range(25):
-                f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,kij,rval))
+                f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,lrc,rval))
         f.write("end performance_measure\n\n")
 
     start = datetime.now()
@@ -3506,7 +3507,7 @@ def freyberg_quadtree_demo():
     org_d = "freyberg_quadtree"
     new_d = "freyberg_quadtree_test"
     prep_run = False
-    run_adj = False
+    run_adj = True
 
     if prep_run:
         if os.path.exists(new_d):
@@ -3526,17 +3527,17 @@ def freyberg_quadtree_demo():
 
     if run_adj:
         df = pd.read_csv(os.path.join(new_d,"freyberg6.obs_continuous_heads.csv.txt"),header=None,names=["site","otype","layer","node"])
-        df.loc[:,"k"] = df.layer.astype(int) - 1
-        df.loc[:,"inode"] = df.node.astype(int) - 1
+        df.loc[:,"layer"] = df.layer.astype(int)
+        df.loc[:,"node"] = df.node.astype(int)
 
         np.random.seed(11111)
         rvals = np.random.random(df.shape[0]) + 36
         with open(os.path.join(new_d, "test.adj"), 'w') as f:
 
             f.write("begin performance_measure pm1 type residual\n")
-            for rval, k,inode in zip(rvals, df.k,df.inode):
+            for rval, lay,node in zip(rvals, df.layer,df.node):
                 for kper in range(25):
-                    f.write("{0} 1 {1} {2} 1.0  {2}\n".format(kper + 1, k, inode, rval))
+                    f.write("{0} 1 {1} {2} 1.0  {3}\n".format(kper + 1, lay, node, rval))
             f.write("end performance_measure\n\n")
 
         start = datetime.now()
@@ -3592,6 +3593,7 @@ def freyberg_quadtree_demo():
                 for k, karr in enumerate(arr):
                     print(karr)
                     karr[idomain[k]==0] = np.nan
+                    print(np.nanmin(karr),np.nanmax(karr))
                     #fig, ax = plt.subplots(1, 1, figsize=(6, 5))
                     m.dis.top = karr#np.log10(np.abs(karr))
                     ax = m.dis.top.plot()
@@ -3606,10 +3608,10 @@ def freyberg_quadtree_demo():
                 #break
 
 if __name__ == "__main__":
-    #test_xd_box_unstruct_1()
+    test_xd_box_unstruct_1()
     #test_xd_box_1()
     #freyberg_structured_demo()
-    freyberg_quadtree_demo()
+    #freyberg_quadtree_demo()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
     #twod_ss_nested_hetero_head_at_point()

@@ -1,5 +1,6 @@
 BEGIN Options
   CONTINUE
+  MEMORY_PRINT_OPTION  all
 END Options
 
 BEGIN TIMING

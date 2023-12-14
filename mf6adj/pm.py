@@ -10,11 +10,11 @@ import flopy
 
 
 class PerfMeasRecord(object):
-    def __init__(self, kper, kstp, nnode, k=None, i=None, j=None, weight=None, obsval=None):
+    def __init__(self, kper, kstp, inode, k=None, i=None, j=None, weight=None, obsval=None):
         self._kper = int(kper)
         self._kstp = int(kstp)
         self.kperkstp = (self._kper, self._kstp)
-        self.nnode = int(nnode)
+        self.inode = int(inode)
         self._k = None
         if k is not None:
             self._k = int(k)
@@ -30,6 +30,8 @@ class PerfMeasRecord(object):
         self.obsval = None
         if obsval is not None:
             self.obsval = float(obsval)
+    def __repr__(self):
+        return "{0}, {1}, {2}".format(self.kperkstp,self.inode, self._k)
 
 
 class PerfMeas(object):
@@ -67,9 +69,9 @@ class PerfMeas(object):
         result = 0.0
         for pfr in self._entries:
             if self._type == "direct":
-                result += pfr.weight * head_dict[pfr.kperkstp][pfr.nnode]
+                result += pfr.weight * head_dict[pfr.kperkstp][pfr.inode]
             elif self._type == "residual":
-                result += (pfr.weight * (head_dict[pfr.kperkstp][pfr.nnode] - pfr.obsval)) ** 2
+                result += (pfr.weight * (head_dict[pfr.kperkstp][pfr.inode] - pfr.obsval)) ** 2
         return result
 
     # def solve_adjoint_old(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict,
@@ -296,7 +298,7 @@ class PerfMeas(object):
 
         # nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
         nnodes = hdf["gwf_info"]["nnodes"][:]
-        print(hdf["gwf_info"].keys())
+        #print(hdf["gwf_info"].keys())
         nodeuser = hdf["gwf_info"]["nodeuser"][:]
         nodereduced = hdf["gwf_info"]["nodereduced"][:]
 
@@ -350,7 +352,7 @@ class PerfMeas(object):
 
             print('solving adjoint solution for PerfMeas:', self._name, " (kper,kstp)", kk)
             sol_key = kk_sol_map[kk]
-            # print(hdf[sol_key].keys())
+            #print(hdf[sol_key].keys())
             if sol_key in adf:
                 raise Exception("solution key '{0}' already in adjoint hdf5 file".format(sol_key))
 
@@ -373,6 +375,7 @@ class PerfMeas(object):
             # continue
 
             amat = hdf[sol_key]["amat"][:]
+            head = hdf[sol_key]["head"][:]
             amat_sp = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
             amat_sp_t = amat_sp.transpose()
             lamb = spsolve(amat_sp_t, rhs)
@@ -381,7 +384,7 @@ class PerfMeas(object):
 
             is_newton = hdf[sol_key].attrs["is_newton"]
             k_sens, k33_sens = PerfMeas.lam_dresdk_h(is_newton, lamb, hdf[sol_key]["sat"][:],
-                                                     hdf[sol_key]["head"][:], ihc, ia, ja, jas, cl1, cl2,
+                                                     head, ihc, ia, ja, jas, cl1, cl2,
                                                      hwva, top, bot, icelltype,
                                                      hdf[sol_key]["k11"][:],
                                                      hdf[sol_key]["k33"][:]
@@ -400,8 +403,12 @@ class PerfMeas(object):
             data["welq"] = lamb
             comp_welq_sens += lamb
 
-            if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
-                sens_ghb_head, sens_ghb_cond = self.lam_drhs_dghb(lamb, head_dict[kk], gwf_package_dict["ghb6"][kk])
+            #if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
+            if "ghb" in hdf[sol_key]:
+                #print(hdf[sol_key]["ghb"].keys())
+                sp_ghb_dict = {"bound":hdf[sol_key]["ghb"]["bound"][:],
+                               "node":hdf[sol_key]["ghb"]["nodelist"][:]}
+                sens_ghb_head, sens_ghb_cond = self.lam_drhs_dghb(lamb, head, sp_ghb_dict)
                 data["ghbhead_" + sol_key] = sens_ghb_head
                 data["ghbcond_" + sol_key] = sens_ghb_cond
                 comp_ghb_head_sens += sens_ghb_head
@@ -472,14 +479,22 @@ class PerfMeas(object):
                 else:
                     dset = grp.create_dataset(tag, item.shape, dtype=item.dtype, data=item)
             elif isinstance(item, dict):
-                if "nodelist" in item:
-                    iitem = item["nodelist"]
-                    dset = grp.create_dataset(tag, iitem.shape, dtype=iitem.dtype, data=iitem)
-                elif "bound" in item:
-                    iitem = item["bound"]
-                    dset = grp.create_dataset(tag, iitem.shape, dtype=iitem.dtype, data=iitem)
-                else:
-                    print("Mf6Adj._write_group_to_hdf(): unused data_dict item {0}".format(tag))
+                subgrp = grp.create_group(tag)
+                for k,v in item.items():
+                    if isinstance(v,np.ndarray):
+                        dset = subgrp.create_dataset(k, v.shape, dtype=v.dtype, data=v)
+                    else:
+                        print("WARNING: unknown dtype, setting as attribute for group {2}: {0} {1}".format(k,type(v), tag))
+                        subgrp.attrs[k] = v
+                        print()
+                # if "nodelist" in item:
+                #     iitem = item["nodelist"]
+                #     dset = grp.create_dataset(tag, iitem.shape, dtype=iitem.dtype, data=iitem)
+                # elif "bound" in item:
+                #     iitem = item["bound"]
+                #     dset = grp.create_dataset(tag, iitem.shape, dtype=iitem.dtype, data=iitem)
+                # else:
+                #     print("Mf6Adj._write_group_to_hdf(): unused data_dict item {0}".format(tag))
             else:
                 raise Exception("unrecognized data_dict entry: {0},type:{1}".format(tag, type(item)))
         if nodeuser is not None:
@@ -633,12 +648,13 @@ class PerfMeas(object):
         result_head = np.zeros_like(lamb)
         result_cond = np.zeros_like(lamb)
 
-        for id in sp_dict:
-            n = id["node"] - 1
+        #for id in sp_dict:
+        for node,bound in zip(sp_dict["node"],sp_dict["bound"]):
+            n = node - 1
             # the second item in bound should be cond
-            result_head[n] = lamb[n] * id["bound"][1]
+            result_head[n] = lamb[n] * bound[1]
             # the first item in bound should be head
-            lam_drhs_dcond = lamb[n] * id["bound"][0]
+            lam_drhs_dcond = lamb[n] * bound[0]
             lam_dadcond_h = -1.0 * lamb[n] * head[n]
             result_cond[n] = lam_drhs_dcond + lam_dadcond_h
 
@@ -943,9 +959,9 @@ class PerfMeas(object):
             if pfr.kperkstp == kk:
                 if self._type == "direct":
                     # dfdh[pfr.nnode] = -1. * pfr.weight / deltat_dict[kk]
-                    dfdh[pfr.nnode] = pfr.weight
+                    dfdh[pfr.inode] = pfr.weight
                 elif self._type == "residual":
-                    dfdh[pfr.nnode] = 2.0 * pfr.weight * (head_dict[kk][pfr.nnode] - pfr.obsval)
+                    dfdh[pfr.inode] = 2.0 * pfr.weight * (head_dict[kk][pfr.inode] - pfr.obsval)
         return dfdh
 
     def _dfdh(self, kk, head):
@@ -954,9 +970,9 @@ class PerfMeas(object):
             if pfr.kperkstp == kk:
                 if self._type == "direct":
                     # dfdh[pfr.nnode] = -1. * pfr.weight / deltat_dict[kk]
-                    dfdh[pfr.nnode] = pfr.weight
+                    dfdh[pfr.inode] = pfr.weight
                 elif self._type == "residual":
-                    dfdh[pfr.nnode] = 2.0 * pfr.weight * (head[pfr.nnode] - pfr.obsval)
+                    dfdh[pfr.inode] = 2.0 * pfr.weight * (head[pfr.inode] - pfr.obsval)
         return dfdh
 
     @staticmethod

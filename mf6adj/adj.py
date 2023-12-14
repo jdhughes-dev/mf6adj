@@ -101,6 +101,16 @@ class Mf6Adj(object):
         wbaddr = self._gwf.get_var_address(*addr)
         nred = self._gwf.get_value(wbaddr)
 
+        ncpl = None
+        nlay = None
+        if not self.is_structured:
+            addr = ["NCPL", self._gwf_name.upper(), "DIS"]
+            wbaddr = self._gwf.get_var_address(*addr)
+            ncpl = self._gwf.get_value(wbaddr)
+            addr = ["NLAY", self._gwf_name.upper(), "DIS"]
+            wbaddr = self._gwf.get_var_address(*addr)
+            nlay = self._gwf.get_value(wbaddr)
+
         with open(self.adj_filename, 'r') as f:
             count = 0
             while True:
@@ -122,7 +132,7 @@ class Mf6Adj(object):
 
                         if line2 == "":
                             raise EOFError("EOF while reading options")
-                        elif len(line.strip()) == 0 or line.strip()[0] == "#":
+                        elif len(line2.strip()) == 0 or line2.strip()[0] == "#":
                             continue
                         elif line2.lower().strip().startswith("begin"):
                             raise Exception("a new begin block found while parsing options")
@@ -183,6 +193,7 @@ class Mf6Adj(object):
                                     raise Exception(
                                         "residual performance measure {0} line {1} has wrong number of entries, should be 7".format(
                                             pm_name, line2))
+                                #todo: wrap these in try-except
                                 weight = float(raw[5])
                                 obsval = float(raw[6])
 
@@ -213,41 +224,49 @@ class Mf6Adj(object):
                                                    obsval=obsval))
                         else:
                             # raise NotImplementedError("only structured grids currently supported")
-                            if len(raw) < 3:
+                            if len(raw) < 5:
                                 raise Exception(
-                                    "performance measure {0} line {1} has too few entries, need at least 3".format(
+                                    "performance measure {0} line {1} has too few entries, need at least 5".format(
                                         pm_name, line2))
                             weight = None
                             if pm_type == "direct":
-                                if len(raw) < 4:
-                                    raise Exception(
-                                        "direct performance measure {0} line {1} has wrong number of entries, should be 4".format(
-                                            pm_name, line2))
-                                weight = float(raw[3])
-                            obsval = None
-                            if pm_type == "residual":
                                 if len(raw) < 5:
                                     raise Exception(
-                                        "residual performance measure {0} line {1} has wrong number of entries, should be 5".format(
+                                        "direct performance measure {0} line {1} has wrong number of entries, should be 5".format(
                                             pm_name, line2))
                                 weight = float(raw[4])
-                                obsval = float(raw[3])
+                            obsval = None
+                            if pm_type == "residual":
+                                if len(raw) < 6:
+                                    raise Exception(
+                                        "residual performance measure {0} line {1} has wrong number of entries, should be 6".format(
+                                            pm_name, line2))
+                                #todo: wrap these in try-except
+                                weight = float(raw[4])
+                                obsval = float(raw[5])
 
                             try:
-                                n = int(raw[2])
+                                lay = int(raw[2])
                             except:
-                                raise Exception("error casting node info info on line {0}: '{1}'".format(count, line2))
+                                raise Exception("error casting layer info info on line {0}: '{1}'".format(count, line2))
+
+                            try:
+                                node = int(raw[3])
+                            except:
+                                raise Exception("error casting layer info info on line {0}: '{1}'".format(count, line2))
+
+                            inode = ((ncpl * (lay-1)) + node) - 1
 
                             # if there is a reduced node scheme
                             if len(nuser) > 1:
-                                nn = np.where(nuser == n)[0]
+                                nn = np.where(nuser == inode)[0]
                                 if nn.shape[0] != 1:
                                     raise Exception("node num {0} not in reduced node num".format(n))
                                 nn = nn[0]
-                                pm_entries.append(PerfMeasRecord(kper, kstp, nn, weight=weight, obsval=obsval))
+                                pm_entries.append(PerfMeasRecord(kper, kstp, nn, k=lay-1, weight=weight, obsval=obsval))
                             else:
                                 pm_entries.append(
-                                    PerfMeasRecord(kper, kstp, n - 1, weight=weight, obsval=obsval))
+                                    PerfMeasRecord(kper, kstp, inode, k=lay-1, weight=weight, obsval=obsval))
 
                     if len(pm_entries) == 0:
                         raise Exception("no entries found for PM {0}".format(pm_name))
@@ -256,7 +275,6 @@ class Mf6Adj(object):
                         raise Exception("PM {0} multiply defined".format(pm_name))
                     self._performance_measures.append(
                         PerfMeas(pm_name, pm_type, pm_entries, self.is_structured, self.verbose_level))
-
 
                 else:
                     raise Exception("unrecognized adj file input on line {0}: '{1}'".format(count, line))
