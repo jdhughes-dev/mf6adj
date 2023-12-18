@@ -2764,12 +2764,12 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     for k in [0]:
         for i in range(nrow):
             ghb_rec.append(((k, i, ncol - 1), ghb_stage, 1000.0))
-
-    ghb = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_rec)
+    ghb_spd = {kper:ghb_rec for kper in range(nper)}
+    ghb = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_spd)
 
     if nrow > 1 and ncol > 1:
         wel_rec = [(nlay - 1, int(nrow / 2), int(ncol / 2), q)]
-        wel = flopy.mf6.ModflowGwfwel(gwf, stress_period_data=wel_rec)
+        wel = flopy.mf6.ModflowGwfwel(gwf, stress_period_data={kper:wel_rec for kper in range(nper)})
 
     flopy.mf6.ModflowGwfrcha(gwf, recharge=0.0001)
 
@@ -3127,7 +3127,7 @@ def test_xd_box_1():
     include_sto = True
 
     clean = True # run the pertbuation process
-    run_pert = True # the pertubations
+    run_pert = False # the pertubations
     plot_pert_results = True #plot the pertubation results
 
     run_adj = True
@@ -3137,11 +3137,15 @@ def test_xd_box_1():
 
     new_d = 'xd_box_1_test'
 
+    nrow = ncol = 15
+    nlay = 2
+    nper = 3
     if clean:
-       sim = setup_xd_box_model(new_d,nper=3,include_sto=include_sto,include_id0=include_id0,nrow=5,ncol=5,nlay=2,
-                                q=-0.1,icelltype=1,iconvert=1,newton=True,delrowcol=1.0,full_sat_ghb=False)
+        sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
+                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=0, newton=True, delrowcol=1.0, full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
+
 
     gwf = sim.get_model()
     id = gwf.dis.idomain.array
@@ -3221,7 +3225,7 @@ def test_xd_box_1():
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
-        adj._perturbation_test()
+        #adj._perturbation_test()
         adj.finalize()
 
 
@@ -3247,7 +3251,7 @@ def test_xd_box_1():
     if run_pert:
         run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 
-    xd_box_compare(new_d,plot_compare)
+    #xd_box_compare(new_d,plot_compare)
 
 
 def test_xd_box_unstruct_1():
@@ -3258,20 +3262,23 @@ def test_xd_box_unstruct_1():
     include_sto = True
 
     clean = True # run the pertbuation process
-    run_pert = True # the pertubations
-    plot_pert_results = True #plot the pertubation results
+    #run_pert = False # the pertubations
+    #plot_pert_results = True #plot the pertubation results
 
     run_adj = True
     plot_adj_results = False # plot adj result
 
-    plot_compare = True
+    #plot_compare = True
 
-    new_d = 'xd_box_1_unstruct'
+    new_d = 'xd_box_1_unstruct_test'
     nrow = ncol = 15
     nlay = 2
+    nper = 3
     if clean:
-       sim = setup_xd_box_model(new_d,include_sto=include_sto,include_id0=include_id0,nrow=nrow, ncol=ncol,nlay=nlay,
-                                q=-0.1,icelltype=1,iconvert=0,newton=True,delrowcol=1.0,full_sat_ghb=False)
+        sim = setup_xd_box_model(new_d, nper=nper, include_sto=include_sto, include_id0=include_id0, nrow=nrow,
+                                 ncol=ncol,
+                                 nlay=nlay, q=-0.1, icelltype=1, iconvert=0, newton=True, delrowcol=1.0,
+                                 full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -3295,14 +3302,43 @@ def test_xd_box_unstruct_1():
     disv = flopy.mf6.ModflowGwfdisv(gwf,idomain=disv_idomain,**gridprops)
 
     disv.write()
+
+    wel = gwf.get_package("wel")
+    if wel is not None:
+        f_wel = open(os.path.join(new_d, "freyberg6_disv.wel"), 'w')
+        f_wel.write("begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n")
+
+        f_wel.write(
+            "begin dimensions\nmaxbound {0}\nend dimensions\n\n".format(wel.stress_period_data.data[0].shape[0]))
+
+        wel_spd = {}
+        for kper in range(sim.tdis.nper.data):
+            rarray = wel.stress_period_data.data[kper]
+            print(rarray.dtype)
+            xs = [xcc[cid[1], cid[2]] for cid in rarray.cellid]
+            ys = [ycc[cid[1], cid[2]] for cid in rarray.cellid]
+            ilay = [cid[0] for cid in rarray.cellid]
+            xys = [(x, y) for x, y in zip(xs, ys)]
+            # use zero for the layer so that we get the cell2d value back
+            inodes = [g.intersect([xy], "point", 0)[0][0] for xy, il in zip(xys, ilay)]
+            #data = [[(il, inode), bhead, cond] for il, inode, bhead, cond in
+            #        zip(ilay, inodes, rarray.flux)]
+            #wel_spd[kper] = data
+            f_wel.write("begin period {0}\n".format(kper + 1))
+            [f_wel.write("{0:9d} {1:9d} {2:15.6E}\n".format(il + 1, inode + 1, q)) for
+             il, inode, q in
+             zip(ilay, inodes, rarray.q)]
+            f_wel.write("end period {0}\n\n".format(kper + 1))
+        f_wel.close()
+
     ghb = gwf.get_package("ghb")
-
-    f_ghb = open(os.path.join(new_d,"freyberg6_disv.ghb"),'w')
-    f_ghb.write("begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n")
-
-    f_ghb.write("begin dimensions\nmaxbound {0}\nend dimensions\n\n".format(ghb.stress_period_data.data[0].shape[0]))
-
     if ghb is not None:
+        f_ghb = open(os.path.join(new_d, "freyberg6_disv.ghb"), 'w')
+        f_ghb.write("begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n")
+
+        f_ghb.write(
+            "begin dimensions\nmaxbound {0}\nend dimensions\n\n".format(ghb.stress_period_data.data[0].shape[0]))
+
         ghb_spd = {}
         for kper in range(sim.tdis.nper.data):
             rarray = ghb.stress_period_data.data[kper]
@@ -3319,7 +3355,7 @@ def test_xd_box_unstruct_1():
             [f_ghb.write("{0:9d} {1:9d} {2:15.6E} {3:15.6E}\n".format(il+1,inode+1,bhead,cond)) for il, inode, bhead, cond in
                     zip(ilay, inodes, rarray.bhead, rarray.cond)]
             f_ghb.write("end period {0}\n\n".format(kper+1))
-    f_ghb.close()
+        f_ghb.close()
 
     # now hack the nam file
     nam_file = os.path.join(new_d,"freyberg6.nam")
@@ -3332,6 +3368,8 @@ def test_xd_box_unstruct_1():
                 line = "DISV6 freyberg6.disv disv\n"
             elif "ghb" in line.lower():
                 line = "GHB6 freyberg6_disv.ghb ghb\n"
+            elif "wel" in line.lower():
+                line = "WEL6 freyberg6_disv.wel wel\n"
             f.write(line)
 
     pyemu.os_utils.run("mf6",cwd=new_d)
@@ -3362,20 +3400,36 @@ def test_xd_box_unstruct_1():
         os.chdir(new_d)
 
 
+        # with open("test.adj",'w') as f:
+        #     f.write("\nbegin options\n\nend options\n\n")
+        #     for kper in range(sim.tdis.nper.data):
+        #         for p_kinode in pm_locs:
+        #             k,inode = p_kinode
+        #             pm_name = "direct_kper{0:03d}_pk{1:03d}_pinode{2:03d}".format(kper,k,inode)
+        #             f.write("begin performance_measure {0} type direct\n".format(pm_name))
+        #             f.write("{0} 1 {1} {2} {3} \n".format(kper+1,k+1,inode+1,weight))
+        #             f.write("end performance_measure\n\n")
+        #
+        #             pm_name = "phi_kper{0:03d}_pk{1:03d}_pinode{2:03d}".format(kper, k, inode)
+        #             f.write("begin performance_measure {0} type residual\n".format(pm_name))
+        #             f.write("{0} 1 {1} {2} {3} {4}\n".format(kper+1,k+1,inode+1,obsval,weight))
+        #             f.write("end performance_measure\n\n")
+
         with open("test.adj",'w') as f:
             f.write("\nbegin options\n\nend options\n\n")
-            for kper in range(sim.tdis.nper.data):
-                for p_kinode in pm_locs:
-                    k,inode = p_kinode
-                    pm_name = "direct_kper{0:03d}_pk{1:03d}_pinode{2:03d}".format(kper,k,inode)
-                    f.write("begin performance_measure {0} type direct\n".format(pm_name))
+            for p_kinode in pm_locs:
+                k, inode = p_kinode
+                pm_name = "direct_pk{0:03d}_pinode{1:03d}".format(k, inode)
+                f.write("begin performance_measure {0} type direct\n".format(pm_name))
+                for kper in range(sim.tdis.nper.data):
                     f.write("{0} 1 {1} {2} {3} \n".format(kper+1,k+1,inode+1,weight))
-                    f.write("end performance_measure\n\n")
+                f.write("end performance_measure\n\n")
 
-                    pm_name = "phi_kper{0:03d}_pk{1:03d}_pinode{2:03d}".format(kper, k, inode)
-                    f.write("begin performance_measure {0} type residual\n".format(pm_name))
+                pm_name = "phi_pk{0:03d}_pinode{1:03d}".format(k, inode)
+                f.write("begin performance_measure {0} type residual\n".format(pm_name))
+                for kper in range(sim.tdis.nper.data):
                     f.write("{0} 1 {1} {2} {3} {4}\n".format(kper+1,k+1,inode+1,obsval,weight))
-                    f.write("end performance_measure\n\n")
+                f.write("end performance_measure\n\n")
 
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name, verbose_level=1)
         adj.solve_gwf()
@@ -3507,7 +3561,7 @@ def freyberg_quadtree_demo():
     org_d = "freyberg_quadtree"
     new_d = "freyberg_quadtree_test"
     prep_run = False
-    run_adj = True
+    run_adj = False
 
     if prep_run:
         if os.path.exists(new_d):
@@ -3596,12 +3650,12 @@ def freyberg_quadtree_demo():
                     print(np.nanmin(karr),np.nanmax(karr))
                     #fig, ax = plt.subplots(1, 1, figsize=(6, 5))
                     m.dis.top = karr#np.log10(np.abs(karr))
-                    ax = m.dis.top.plot()
+                    ax = m.dis.top.plot(colorbar=True)
                     h = head[k].copy()
                     h[idomain[k] == 0] = np.nan
                     m.dis.top = h
                     print(np.nanmin(h),np.nanmax(h))
-                    m.dis.top.plot()
+                    m.dis.top.plot(colorbar=True)
                     print(h)
                     plt.show()
                     return
@@ -3609,7 +3663,7 @@ def freyberg_quadtree_demo():
 
 if __name__ == "__main__":
     test_xd_box_unstruct_1()
-    #test_xd_box_1()
+    test_xd_box_1()
     #freyberg_structured_demo()
     #freyberg_quadtree_demo()
     #basic_freyberg()

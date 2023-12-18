@@ -484,9 +484,9 @@ class PerfMeas(object):
                     if isinstance(v,np.ndarray):
                         dset = subgrp.create_dataset(k, v.shape, dtype=v.dtype, data=v)
                     else:
-                        print("WARNING: unknown dtype, setting as attribute for group {2}: {0} {1}".format(k,type(v), tag))
+                        #print("WARNING: unknown dtype, setting as attribute for group {2}: {0} {1}".format(k,type(v), tag))
                         subgrp.attrs[k] = v
-                        print()
+                        #print()
                 # if "nodelist" in item:
                 #     iitem = item["nodelist"]
                 #     dset = grp.create_dataset(tag, iitem.shape, dtype=iitem.dtype, data=iitem)
