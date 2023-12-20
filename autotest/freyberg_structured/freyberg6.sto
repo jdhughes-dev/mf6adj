@@ -3,9 +3,9 @@ END Options
 
 BEGIN GRIDDATA
   iconvert  LAYERED
-    CONSTANT  0
-    CONSTANT  0
-    CONSTANT  0
+    CONSTANT  1
+    CONSTANT  1
+    CONSTANT  1
   ss  LAYERED
     OPEN/CLOSE  'sto_ss_0.dat'  FACTOR  1.0
     OPEN/CLOSE  'sto_ss_1.dat'  FACTOR  1.0

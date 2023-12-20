@@ -404,13 +404,23 @@ class PerfMeas(object):
             comp_welq_sens += lamb
 
             #if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
-            if "ghb" in hdf[sol_key]:
+            # look for ghb packages
+            ghb_keys = []
+            for key in hdf[sol_key]:
+                dset = hdf[sol_key][key]
+                ptype = dset.attrs.get("ptype",None)
+                if ptype is not None and ptype.lower() == "ghb6":
+                    ghb_keys.append(key)
+
+            #if "ghb" in hdf[sol_key]:
+            for ghb_key in ghb_keys:
+
                 #print(hdf[sol_key]["ghb"].keys())
-                sp_ghb_dict = {"bound":hdf[sol_key]["ghb"]["bound"][:],
-                               "node":hdf[sol_key]["ghb"]["nodelist"][:]}
+                sp_ghb_dict = {"bound":hdf[sol_key][ghb_key]["bound"][:],
+                               "node":hdf[sol_key][ghb_key]["nodelist"][:]}
                 sens_ghb_head, sens_ghb_cond = self.lam_drhs_dghb(lamb, head, sp_ghb_dict)
-                data["ghbhead_" + sol_key] = sens_ghb_head
-                data["ghbcond_" + sol_key] = sens_ghb_cond
+                data[ghb_key+ "_" + sol_key] = sens_ghb_head
+                data[ghb_key + "_" + sol_key] = sens_ghb_cond
                 comp_ghb_head_sens += sens_ghb_head
                 comp_ghb_cond_sens += sens_ghb_cond
 

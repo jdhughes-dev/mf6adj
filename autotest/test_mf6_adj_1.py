@@ -3502,10 +3502,11 @@ def freyberg_structured_demo():
     rvals = np.random.random(len(lrcs)) + 36
     with open(os.path.join(new_d,"test.adj"),'w') as f:
 
-        f.write("begin performance_measure pm1 type residual\n")
+        f.write("begin performance_measure pm1 type direct\n")
         for rval,lrc in zip(rvals,lrcs):
             for kper in range(25):
-                f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,lrc,rval))
+                #f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,lrc,rval))
+                f.write("{0} 1 {1} 1.0\n".format(kper + 1, lrc, rval))
         f.write("end performance_measure\n\n")
 
     start = datetime.now()
@@ -3661,10 +3662,331 @@ def freyberg_quadtree_demo():
                     return
                 #break
 
+
+def freyberg_structured_highres_demo():
+    if os.path.exists('mf6adj'):
+        shutil.rmtree('mf6adj')
+    # shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
+    sys.path.insert(0, os.path.join(".."))
+    import mf6adj
+
+    org_d = "freyberg_highres"
+    new_d = "freyberg_highres_test"
+    if os.path.exists(new_d):
+        shutil.rmtree(new_d)
+    shutil.copytree(org_d, new_d)
+    shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
+    shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
+    shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+    shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+    shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+    shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
+    # shutil.copytree(os.path.join('mf6adj'), os.path.join(new_d, 'mf6adj'))
+
+    os.chdir(new_d)
+    os.system("mf6")
+    os.chdir("..")
+
+    # lrcs = []
+    # k_dict = {}
+    # with open(os.path.join(new_d, "head.obs"), 'r') as f:
+    #     f.readline()
+    #     for line in f:
+    #         if line.strip().lower().startswith("end"):
+    #             break
+    #         raw = line.strip().split()
+    #         lrcs.append(" ".join(raw[2:]))
+    #         k = int(raw[2]) - 1
+    #         i = int(raw[3]) - 1
+    #         j = int(raw[4]) - 1
+    #         if k not in k_dict:
+    #             k_dict[k] = []
+    #         k_dict[k].append([i, j])
+
+    df = pd.read_csv(os.path.join(new_d, "freyberg6.obs_continuous_heads.csv.txt"), header=None,
+                     names=["site", "otype", "layer", "row","col"],delim_whitespace=True)
+    df.loc[:, "layer"] = df.layer.astype(int)
+    df.loc[:, "row"] = df.row.astype(int)
+    df.loc[:, "col"] = df.col.astype(int)
+
+    np.random.seed(11111)
+    rvals = np.random.random(df.shape[0]) + 36
+    with open(os.path.join(new_d, "test.adj"), 'w') as f:
+
+        f.write("begin performance_measure pm1 type direct\n")
+        for rval, lay, row,col in zip(rvals, df.layer, df.row,df.col):
+            for kper in range(25):
+                #f.write("{0} 1 {1} {2} {3} 1.0  {4}\n".format(kper + 1, lay, row, col, rval))
+                f.write("{0} 1 {1} {2} {3} 1.0\n".format(kper + 1, lay, row, col, rval))
+        f.write("end performance_measure\n\n")
+
+    # np.random.seed(11111)
+    # rvals = np.random.random(len(lrcs)) + 36
+    # with open(os.path.join(new_d, "test.adj"), 'w') as f:
+    #
+    #     f.write("begin performance_measure pm1 type residual\n")
+    #     for rval, lrc in zip(rvals, lrcs):
+    #         for kper in range(25):
+    #             f.write("{0} 1 {1} 1.0  {2}\n".format(kper + 1, lrc, rval))
+    #     f.write("end performance_measure\n\n")
+
+    start = datetime.now()
+    os.chdir(new_d)
+    adj = mf6adj.Mf6Adj("test.adj", os.path.split(local_lib_name)[1], verbose_level=2)
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
+    os.chdir("..")
+    duration = (datetime.now() - start).total_seconds()
+    print("took:", duration)
+
+    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adj_pm")]
+    print(result_hdf)
+    assert len(result_hdf) == 1
+    result_hdf = result_hdf[0]
+    import h5py
+    hdf = h5py.File(os.path.join(new_d, result_hdf), 'r')
+    keys = list(hdf.keys())
+    keys.sort()
+    print(keys)
+    from matplotlib.backends.backend_pdf import PdfPages
+    idomain = np.loadtxt(os.path.join(new_d, "freyberg6.dis_idomain_layer1.txt"))
+    with PdfPages(os.path.join(new_d, "results.pdf")) as pdf:
+        for key in keys:
+            if key != "composite":
+                continue
+
+            grp = hdf[key]
+            plot_keys = [i for i in grp.keys() if len(grp[i].shape) == 3]
+            for pkey in plot_keys:
+
+                arr = grp[pkey][:]
+                for k, karr in enumerate(arr):
+                    karr[idomain < 1] = np.nan
+                    fig, ax = plt.subplots(1, 1, figsize=(6, 5))
+                    cb = ax.imshow(karr)
+                    plt.colorbar(cb, ax=ax)
+                    ax.set_title(key + ", " + pkey + ", layer:{0}".format(k + 1), loc="left")
+                    plt.tight_layout()
+                    pdf.savefig()
+                    plt.close(fig)
+                    print("...", key, pkey, k + 1)
+
+
+def freyberg_notional_unstruct_demo():
+    if os.path.exists('mf6adj'):
+        shutil.rmtree('mf6adj')
+    # shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
+    sys.path.insert(0, os.path.join(".."))
+    import mf6adj
+
+    org_d = "freyberg_structured"
+    new_d = "freyberg_notional_unstructured_test"
+    if os.path.exists(new_d):
+        shutil.rmtree(new_d)
+    shutil.copytree(org_d, new_d)
+    shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
+    shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
+    shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+    shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+    shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+    shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
+    # shutil.copytree(os.path.join('mf6adj'), os.path.join(new_d, 'mf6adj'))
+
+    os.chdir(new_d)
+    os.system("mf6")
+    os.chdir("..")
+
+    sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
+    gwf = sim.get_model()
+
+    xcc, ycc = np.atleast_2d(gwf.modelgrid.xcellcenters), np.atleast_2d(gwf.modelgrid.ycellcenters)
+
+    from flopy.utils.gridgen import Gridgen
+    g = Gridgen(gwf.dis, model_ws=new_d, exe_name=gg_bin)
+    g.build(verbose=True)
+    gridprops = g.get_gridprops_disv()
+    idomain = gwf.dis.idomain.array.copy()
+
+    disv_idomain = []
+    for k in range(gwf.dis.nlay.data):
+        disv_idomain.append(idomain[k].flatten())
+    nrow,ncol = gwf.dis.nrow.data,gwf.dis.ncol.data
+    gwf.remove_package("dis")
+    disv = flopy.mf6.ModflowGwfdisv(gwf, idomain=disv_idomain, **gridprops)
+
+    disv.write()
+
+    sfr = gwf.get_package("sfr")
+    #f_wel = open(os.path.join(new_d, "freyberg6_disv.sfr"), 'w')
+    #f_wel.write("begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n")
+    sfr_pdata = pd.DataFrame.from_records(sfr.packagedata.array)
+    print(sfr_pdata)
+    sfr_pdata.loc[:,"cellid"] = sfr_pdata.cellid.apply(lambda x: (x[0],x[1]*ncol+x[2]))
+    sfr.packagedata = sfr_pdata.to_records(index=False)
+    sfr.write()
+
+    wel = gwf.get_package("wel")
+    if wel is not None:
+        f_wel = open(os.path.join(new_d, "freyberg6_disv.wel"), 'w')
+        f_wel.write("begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n")
+
+        f_wel.write(
+            "begin dimensions\nmaxbound {0}\nend dimensions\n\n".format(wel.stress_period_data.data[0].shape[0]))
+
+        wel_spd = {}
+        for kper in range(sim.tdis.nper.data):
+            if kper not in wel.stress_period_data.data:
+                continue
+            rarray = wel.stress_period_data.data[kper]
+            print(rarray.dtype)
+            xs = [xcc[cid[1], cid[2]] for cid in rarray.cellid]
+            ys = [ycc[cid[1], cid[2]] for cid in rarray.cellid]
+            ilay = [cid[0] for cid in rarray.cellid]
+            xys = [(x, y) for x, y in zip(xs, ys)]
+            # use zero for the layer so that we get the cell2d value back
+            inodes = [g.intersect([xy], "point", 0)[0][0] for xy, il in zip(xys, ilay)]
+            # data = [[(il, inode), bhead, cond] for il, inode, bhead, cond in
+            #        zip(ilay, inodes, rarray.flux)]
+            # wel_spd[kper] = data
+            f_wel.write("begin period {0}\n".format(kper + 1))
+            [f_wel.write("{0:9d} {1:9d} {2:15.6E}\n".format(il + 1, inode + 1, q)) for
+             il, inode, q in
+             zip(ilay, inodes, rarray.q)]
+            f_wel.write("end period {0}\n\n".format(kper + 1))
+        f_wel.close()
+
+    ghb = gwf.get_package("ghb")
+    if ghb is not None:
+        f_ghb = open(os.path.join(new_d, "freyberg6_disv.ghb"), 'w')
+        f_ghb.write("begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n")
+
+        f_ghb.write(
+            "begin dimensions\nmaxbound {0}\nend dimensions\n\n".format(ghb.stress_period_data.data[0].shape[0]))
+
+        ghb_spd = {}
+        for kper in range(sim.tdis.nper.data):
+            if kper not in ghb.stress_period_data.data:
+                continue
+            rarray = ghb.stress_period_data.data[kper]
+            # print(rarray)
+            xs = [xcc[cid[1], cid[2]] for cid in rarray.cellid]
+            ys = [ycc[cid[1], cid[2]] for cid in rarray.cellid]
+            ilay = [cid[0] for cid in rarray.cellid]
+            xys = [(x, y) for x, y in zip(xs, ys)]
+            # use zero for the layer so that we get the cell2d value back
+            inodes = [g.intersect([xy], "point", 0)[0][0] for xy, il in zip(xys, ilay)]
+            data = [[(il, inode), bhead, cond] for il, inode, bhead, cond in
+                    zip(ilay, inodes, rarray.bhead, rarray.cond)]
+            ghb_spd[kper] = data
+            f_ghb.write("begin period {0}\n".format(kper + 1))
+            [f_ghb.write("{0:9d} {1:9d} {2:15.6E} {3:15.6E}\n".format(il + 1, inode + 1, bhead, cond)) for
+             il, inode, bhead, cond in
+             zip(ilay, inodes, rarray.bhead, rarray.cond)]
+            f_ghb.write("end period {0}\n\n".format(kper + 1))
+        f_ghb.close()
+
+    df = pd.read_csv(os.path.join(new_d,"head.obs"),skipfooter=1,skiprows=1,header=None,names=["site","otype","l","r","c"],delim_whitespace=True)
+    df.loc[:,"node"] = df.apply(lambda x: (int(x.r)*ncol)+int(x.c),axis=1)
+    with open(os.path.join(new_d,"head.obs"),'w') as f:
+        f.write("BEGIN CONTINUOUS FILEOUT heads.csv\n")
+        for site,otype,lay,node in zip(df.site,df.otype,df.l,df.node):
+            f.write("{0} {1} {2} {3}\n".format(site,otype,lay,node))
+        f.write("END CONTINUOUS")
+
+
+
+    # now hack the nam file
+    nam_file = os.path.join(new_d, "freyberg6.nam")
+    lines = open(nam_file, 'r').readlines()
+
+    with open(nam_file,'w') as f:
+        for line in lines:
+            if "dis" in line.lower():
+                line = "DISV6 freyberg6.disv disv\n"
+            elif "ghb" in line.lower():
+                line = "GHB6 freyberg6_disv.ghb ghb\n"
+            elif "wel" in line.lower():
+                line = "WEL6 freyberg6_disv.wel wel\n"
+            f.write(line)
+
+    pyemu.os_utils.run("mf6",cwd=new_d)
+
+    lrcs = []
+    k_dict = {}
+    with open(os.path.join(new_d, "head.obs"), 'r') as f:
+        f.readline()
+        for line in f:
+            if line.strip().lower().startswith("end"):
+                break
+            raw = line.strip().split()
+            lrcs.append(" ".join(raw[2:]))
+            k = int(raw[2]) - 1
+            inode = int(raw[3]) - 1
+            if k not in k_dict:
+                k_dict[k] = []
+            k_dict[k].append([inode])
+
+    np.random.seed(11111)
+    rvals = np.random.random(len(lrcs)) + 36
+    with open(os.path.join(new_d, "test.adj"), 'w') as f:
+
+        f.write("begin performance_measure pm1 type direct\n")
+        for rval, lrc in zip(rvals, lrcs):
+            for kper in range(25):
+                # f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,lrc,rval))
+                f.write("{0} 1 {1} 1.0\n".format(kper + 1, lrc, rval))
+        f.write("end performance_measure\n\n")
+
+    start = datetime.now()
+    os.chdir(new_d)
+    adj = mf6adj.Mf6Adj("test.adj", os.path.split(local_lib_name)[1], verbose_level=2)
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
+    os.chdir("..")
+    duration = (datetime.now() - start).total_seconds()
+    print("took:", duration)
+
+    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adj_pm")]
+    print(result_hdf)
+    assert len(result_hdf) == 1
+    result_hdf = result_hdf[0]
+    import h5py
+    hdf = h5py.File(os.path.join(new_d, result_hdf), 'r')
+    keys = list(hdf.keys())
+    keys.sort()
+    print(keys)
+    from matplotlib.backends.backend_pdf import PdfPages
+    idomain = np.loadtxt(os.path.join(new_d, "freyberg6.dis_idomain_layer1.txt"))
+    with PdfPages(os.path.join(new_d, "results.pdf")) as pdf:
+        for key in keys:
+            if key != "composite":
+                continue
+
+            grp = hdf[key]
+            plot_keys = [i for i in grp.keys() if len(grp[i].shape) == 3]
+            for pkey in plot_keys:
+
+                arr = grp[pkey][:]
+                for k, karr in enumerate(arr):
+                    karr[idomain < 1] = np.nan
+                    fig, ax = plt.subplots(1, 1, figsize=(6, 5))
+                    cb = ax.imshow(karr)
+                    plt.colorbar(cb, ax=ax)
+                    ax.set_title(key + ", " + pkey + ", layer:{0}".format(k + 1), loc="left")
+                    plt.tight_layout()
+                    pdf.savefig()
+                    plt.close(fig)
+                    print("...", key, pkey, k + 1)
+
 if __name__ == "__main__":
-    test_xd_box_unstruct_1()
-    test_xd_box_1()
+    #test_xd_box_unstruct_1()
+    #test_xd_box_1()
+
     #freyberg_structured_demo()
+    #freyberg_structured_highres_demo()
+    freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()
