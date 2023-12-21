@@ -5,15 +5,19 @@ mf module.  Contains the ModflowGlobal, ModflowList, and Modflow classes.
 """
 
 import os
-import flopy
+import warnings
 from inspect import getfullargspec
+from pathlib import Path
+from typing import Optional, Union
+
+import flopy
+
+from ..discretization.modeltime import ModelTime
+from ..discretization.structuredgrid import StructuredGrid
+from ..discretization.unstructuredgrid import UnstructuredGrid
 from ..mbase import BaseModel
 from ..pakbase import Package
 from ..utils import mfreadnam
-from ..discretization.structuredgrid import StructuredGrid
-from ..discretization.unstructuredgrid import UnstructuredGrid
-from ..discretization.grid import Grid
-from flopy.discretization.modeltime import ModelTime
 from .mfpar import ModflowPar
 
 
@@ -24,7 +28,7 @@ class ModflowGlobal(Package):
     """
 
     def __init__(self, model, extension="glo"):
-        Package.__init__(self, model, extension, "GLOBAL", 1)
+        super().__init__(model, extension, "GLOBAL", 1)
         return
 
     def __repr__(self):
@@ -42,7 +46,7 @@ class ModflowList(Package):
     """
 
     def __init__(self, model, extension="list", unitnumber=2):
-        Package.__init__(self, model, extension, "LIST", unitnumber)
+        super().__init__(model, extension, "LIST", unitnumber)
         return
 
     def __repr__(self):
@@ -67,16 +71,16 @@ class Modflow(BaseModel):
     version : str, default "mf2005"
         MODFLOW version. Choose one of: "mf2k", "mf2005" (default),
         "mfnwt", or "mfusg".
-    exe_name : str, default "mf2005.exe"
-        The name of the executable to use.
+    exe_name : str or PathLike, default "mf2005"
+        The name or path of the executable to use.
     structured : bool, default True
         Specify if model grid is structured (default) or unstructured.
     listunit : int, default 2
         Unit number for the list file.
-    model_ws : str, default "."
+    model_ws : str or PathLike, default "."
         Model workspace.  Directory name to create model data sets.
         (default is the present working directory).
-    external_path : str, optional
+    external_path : str or PathLike, optional
         Location for external files.
     verbose : bool, default False
         Print additional information to the screen.
@@ -105,11 +109,11 @@ class Modflow(BaseModel):
         modelname="modflowtest",
         namefile_ext="nam",
         version="mf2005",
-        exe_name="mf2005.exe",
+        exe_name: Union[str, os.PathLike] = "mf2005",
         structured=True,
         listunit=2,
-        model_ws=".",
-        external_path=None,
+        model_ws: Union[str, os.PathLike] = os.curdir,
+        external_path: Optional[Union[str, os.PathLike]] = None,
         verbose=False,
         **kwargs,
     ):
@@ -158,7 +162,9 @@ class Modflow(BaseModel):
                 print(f"Note: external_path {external_path} already exists")
             else:
                 os.makedirs(os.path.join(model_ws, external_path))
-        self.external_path = external_path
+            self.external_path = str(external_path)
+        else:
+            self.external_path = None
         self.verbose = verbose
         self.mfpar = ModflowPar()
 
@@ -179,7 +185,6 @@ class Modflow(BaseModel):
             "pval": flopy.modflow.ModflowPval,
             "bas6": flopy.modflow.ModflowBas,
             "dis": flopy.modflow.ModflowDis,
-            "disu": flopy.modflow.ModflowDisU,
             "bcf6": flopy.modflow.ModflowBcf,
             "lpf": flopy.modflow.ModflowLpf,
             "hfb6": flopy.modflow.ModflowHfb,
@@ -204,7 +209,6 @@ class Modflow(BaseModel):
             "pcgn": flopy.modflow.ModflowPcgn,
             "nwt": flopy.modflow.ModflowNwt,
             "pks": flopy.modflow.ModflowPks,
-            "sms": flopy.modflow.ModflowSms,
             "sfr": flopy.modflow.ModflowSfr2,
             "lak": flopy.modflow.ModflowLak,
             "gage": flopy.modflow.ModflowGage,
@@ -225,28 +229,14 @@ class Modflow(BaseModel):
             "vdf": flopy.seawat.SeawatVdf,
             "vsc": flopy.seawat.SeawatVsc,
         }
-        return
 
     def __repr__(self):
         nrow, ncol, nlay, nper = self.get_nrow_ncol_nlay_nper()
-        if nrow is not None:
-            # structured case
-            s = (
-                "MODFLOW {} layer(s) {} row(s) {} column(s) "
-                "{} stress period(s)".format(nlay, nrow, ncol, nper)
-            )
-        else:
-            # unstructured case
-            nodes = ncol.sum()
-            nodelay = " ".join(str(i) for i in ncol)
-            print(nodelay, nlay, nper)
-            s = (
-                "MODFLOW unstructured\n"
-                "  nodes = {}\n"
-                "  layers = {}\n"
-                "  periods = {}\n"
-                "  nodelay = {}\n".format(nodes, nlay, nper, ncol)
-            )
+        # structured case
+        s = (
+            "MODFLOW {} layer(s) {} row(s) {} column(s) "
+            "{} stress period(s)".format(nlay, nrow, ncol, nper)
+        )
         return s
 
     #
@@ -288,7 +278,18 @@ class Modflow(BaseModel):
             ibound = self.bas6.ibound.array
         else:
             ibound = None
-
+        # take the first non-None entry
+        crs = (
+            self._modelgrid.crs
+            or self._modelgrid.proj4
+            or self._modelgrid.epsg
+        )
+        common_kwargs = {
+            "crs": crs,
+            "xoff": self._modelgrid.xoffset,
+            "yoff": self._modelgrid.yoffset,
+            "angrot": self._modelgrid.angrot,
+        }
         if self.get_package("disu") is not None:
             # build unstructured grid
             self._modelgrid = UnstructuredGrid(
@@ -302,11 +303,9 @@ class Modflow(BaseModel):
                 botm=self.disu.bot.array,
                 idomain=ibound,
                 lenuni=self.disu.lenuni,
-                proj4=self._modelgrid.proj4,
-                epsg=self._modelgrid.epsg,
-                xoff=self._modelgrid.xoffset,
-                yoff=self._modelgrid.yoffset,
-                angrot=self._modelgrid.angrot,
+                iac=self.disu.iac.array,
+                ja=self.disu.ja.array,
+                **common_kwargs,
             )
             print(
                 "WARNING: Model grid functionality limited for unstructured "
@@ -321,13 +320,9 @@ class Modflow(BaseModel):
                 self.dis.botm.array,
                 ibound,
                 self.dis.lenuni,
-                proj4=self._modelgrid.proj4,
-                epsg=self._modelgrid.epsg,
-                xoff=self._modelgrid.xoffset,
-                yoff=self._modelgrid.yoffset,
-                angrot=self._modelgrid.angrot,
                 nlay=self.dis.nlay,
                 laycbd=self.dis.laycbd.array,
+                **common_kwargs,
             )
 
         # resolve offsets
@@ -347,8 +342,7 @@ class Modflow(BaseModel):
             xoff,
             yoff,
             self._modelgrid.angrot,
-            self._modelgrid.epsg,
-            self._modelgrid.proj4,
+            self._modelgrid.crs or self._modelgrid.epsg,
         )
         self._mg_resync = not self._modelgrid.is_complete
         return self._modelgrid
@@ -576,7 +570,6 @@ class Modflow(BaseModel):
         return
 
     def load_results(self, **kwargs):
-
         # remove model if passed as a kwarg
         if "model" in kwargs:
             kwargs.pop("model")
@@ -634,7 +627,6 @@ class Modflow(BaseModel):
         # get subsidence, if written
         subObj = None
         try:
-
             if self.sub is not None and "subsidence.hds" in self.sub.extension:
                 idx = self.sub.extension.index("subsidence.hds")
                 subObj = head_const(
@@ -661,11 +653,11 @@ class Modflow(BaseModel):
     @classmethod
     def load(
         cls,
-        f,
+        f: str,
         version="mf2005",
-        exe_name="mf2005.exe",
+        exe_name: Union[str, os.PathLike] = "mf2005",
         verbose=False,
-        model_ws=".",
+        model_ws: Union[str, os.PathLike] = os.curdir,
         load_only=None,
         forgive=False,
         check=True,
@@ -679,20 +671,20 @@ class Modflow(BaseModel):
             Path to MODFLOW name file to load.
         version : str, default "mf2005"
             MODFLOW version. Choose one of: "mf2k", "mf2005" (default),
-            "mfnwt", or "mfusg". Note that this can be modified on loading
+            or "mfnwt". Note that this can be modified on loading
             packages unique to different MODFLOW versions.
-        exe_name : str, default "mf2005.exe"
-            MODFLOW executable name.
+        exe_name : str or PathLike, default "mf2005"
+            MODFLOW executable name or path.
         verbose : bool, default False
             Show messages that can be useful for debugging.
-        model_ws : str, default "."
+        model_ws : str or PathLike, default "."
             Model workspace path. Default is the current directory.
         load_only : list, str or None
             List of case insensitive packages to load, e.g. ["bas6", "lpf"].
             One package can also be specified, e.g. "rch". Default is None,
             which attempts to load all files. An empty list [] will not load
-            any additional packages than is necessary. At a minimum, "dis" or
-            "disu" is always loaded.
+            any additional packages than is necessary. At a minimum, "dis" is
+            always loaded.
         forgive : bool, optional
             Option to raise exceptions on package load failure, which can be
             useful for debugging. Default False.
@@ -710,26 +702,19 @@ class Modflow(BaseModel):
 
         """
         # similar to modflow command: if file does not exist , try file.nam
-        namefile_path = os.path.join(model_ws, f)
-        if not os.path.isfile(namefile_path) and os.path.isfile(
-            f"{namefile_path}.nam"
-        ):
-            namefile_path += ".nam"
-        if not os.path.isfile(namefile_path):
-            raise OSError(f"cannot find name file: {namefile_path}")
+        namefile_path = Path(model_ws).expanduser().absolute() / f
+        namefile_path_sfx = namefile_path.with_suffix(".nam")
+        if not namefile_path.is_file() and namefile_path_sfx.is_file():
+            namefile_path = namefile_path_sfx
+        if not namefile_path.is_file():
+            raise FileNotFoundError(f"cannot find name file: {namefile_path}")
 
         # Determine model name from 'f', without any extension or path
-        modelname = os.path.splitext(os.path.basename(f))[0]
-
-        # if model_ws is None:
-        #    model_ws = os.path.dirname(f)
+        modelname = namefile_path.stem
         if verbose:
             print(f"\nCreating new model with name: {modelname}\n{50 * '-'}\n")
 
-        attribs = mfreadnam.attribs_from_namfile_header(
-            os.path.join(model_ws, f)
-        )
-
+        attribs = mfreadnam.attribs_from_namfile_header(namefile_path)
         ml = cls(
             modelname,
             version=version,
@@ -770,6 +755,12 @@ class Modflow(BaseModel):
             ml.structured = False
         # update the modflow version
         ml.set_version(version)
+
+        # DEPRECATED since version 3.3.4
+        if ml.version == "mfusg":
+            raise ValueError(
+                "flopy.modflow.Modflow no longer supports mfusg; use flopy.mfusg.MfUsg() instead"
+            )
 
         # reset unit number for glo file
         if version == "mf2k":

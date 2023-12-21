@@ -1,5 +1,7 @@
 import numpy as np
+
 from ..pakbase import Package
+from ..utils.flopy_io import line_strip
 from ..utils.recarray_utils import create_empty_recarray
 
 
@@ -93,21 +95,12 @@ class ModflowHob(Package):
         unitnumber=None,
         filenames=None,
     ):
-        """
-        Package constructor
-        """
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowHob._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
 
         # set filenames[1] to hobname if filenames[1] is not None
         if filenames[1] is None:
@@ -115,38 +108,26 @@ class ModflowHob(Package):
                 filenames[1] = hobname
 
         if iuhobsv is not None:
-            fname = filenames[1]
             model.add_output_file(
                 iuhobsv,
-                fname=fname,
+                fname=filenames[1],
                 extension="hob.out",
                 binflag=False,
-                package=ModflowHob._ftype(),
+                package=self._ftype(),
             )
         else:
             iuhobsv = 0
 
-        # Fill namefile items
-        name = [ModflowHob._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent,
-        # extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
-        self.url = "hob.htm"
+        self.url = "hob.html"
         self._generate_heading()
 
         self.iuhobsv = iuhobsv
@@ -350,7 +331,7 @@ class ModflowHob(Package):
                 break
 
         # read dataset 1
-        t = line.strip().split()
+        t = line_strip(line).split()
         nh = int(t[0])
         iuhobsv = None
         hobdry = 0
@@ -360,7 +341,7 @@ class ModflowHob(Package):
 
         # read dataset 2
         line = f.readline()
-        t = line.strip().split()
+        t = line_strip(line).split()
         tomulth = float(t[0])
 
         # read observation data
@@ -376,7 +357,7 @@ class ModflowHob(Package):
         while True:
             # read dataset 3
             line = f.readline()
-            t = line.strip().split()
+            t = line_strip(line).split()
             obsnam = t[0]
             layer = int(t[1])
             row = int(t[2]) - 1
@@ -393,7 +374,7 @@ class ModflowHob(Package):
                 mlay = {layer: 1.0}
             else:
                 line = f.readline()
-                t = line.strip().split()
+                t = line_strip(line).split()
                 mlay = {}
                 if len(t) >= abs(layer) * 2:
                     for j in range(0, abs(layer) * 2, 2):
@@ -417,7 +398,7 @@ class ModflowHob(Package):
 
                         if j != abs(layer) - 1:
                             line = f.readline()
-                            t = line.strip().split()
+                            t = line_strip(line).split()
                 # reset layer
                 layer = -len(list(mlay.keys()))
 
@@ -436,12 +417,12 @@ class ModflowHob(Package):
                 tsd = []
                 # read data set 5
                 line = f.readline()
-                t = line.strip().split()
+                t = line_strip(line).split()
                 itt = int(t[0])
                 # dataset 6
                 for j in range(abs(irefsp0)):
                     line = f.readline()
-                    t = line.strip().split()
+                    t = line_strip(line).split()
                     names.append(t[0])
                     irefsp = int(t[1]) - 1
                     toffset = float(t[2])

@@ -4,14 +4,15 @@ the ModflowUpw class as `flopy.modflow.ModflowUpw`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow-nwt/MODFLOW-NWT-Guide/upw_upstream_weighting_package.htm>`_.
+<https://water.usgs.gov/ogw/modflow-nwt/MODFLOW-NWT-Guide/upw_upstream_weighting_package.html>`_.
 
 """
 import numpy as np
-from .mfpar import ModflowPar as mfpar
+
 from ..pakbase import Package
 from ..utils import Util2d, Util3d, read1d
 from ..utils.flopy_io import line_parse
+from .mfpar import ModflowPar as mfpar
 
 
 class ModflowUpw(Package):
@@ -24,10 +25,9 @@ class ModflowUpw(Package):
     model : model object
         The model object (of type :class:`flopy.modflow.mf.Modflow`) to which
         this package will be added.
-    ipakcb : int
-        A flag that is used to determine if cell-by-cell budget data should be
-        saved. If ipakcb is non-zero cell-by-cell budget data will be saved.
-        (default is 0).
+    ipakcb : int, optional
+        Toggles whether cell-by-cell budget data should be saved. If None or zero,
+        budget data will not be saved (default is None).
     hdry : float
         Is the head that is assigned to cells that are converted to dry during
         a simulation. Although this value plays no role in the model
@@ -107,9 +107,9 @@ class ModflowUpw(Package):
         filenames=None the package name will be created using the model name
         and package extension and the cbc output name will be created using
         the model name and .cbc extension (for example, modflowtest.cbc),
-        if ipakcbc is a number greater than zero. If a single string is passed
+        if ipakcb is a number greater than zero. If a single string is passed
         the package will be set to the string and cbc output name will be
-        created using the model name and .cbc extension, if ipakcbc is a
+        created using the model name and .cbc extension, if ipakcb is a
         number greater than zero. To define the names for all package files
         (input and output) the length of the list of strings should be 2.
         Default is None.
@@ -158,11 +158,10 @@ class ModflowUpw(Package):
         unitnumber=None,
         filenames=None,
     ):
-
         if model.version != "mfnwt":
             raise Exception(
                 "Error: model version must be mfnwt to use "
-                "{} package".format(ModflowUpw._ftype())
+                f"{self._ftype()} package"
             )
 
         # set default unit number of one is not specified
@@ -170,49 +169,24 @@ class ModflowUpw(Package):
             unitnumber = ModflowUpw._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
 
-        # update external file information with cbc output, if necessary
-        if ipakcb is not None:
-            fname = filenames[1]
-            model.add_output_file(
-                ipakcb, fname=fname, package=ModflowUpw._ftype()
-            )
-        else:
-            ipakcb = 0
+        # cbc output file
+        self.set_cbc_output_file(ipakcb, model, filenames[1])
 
-        # Fill namefile items
-        name = [ModflowUpw._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and
-        # unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
         self._generate_heading()
-        self.url = "upw_upstream_weighting_package.htm"
+        self.url = "upw_upstream_weighting_package.html"
 
         nrow, ncol, nlay, nper = self.parent.nrow_ncol_nlay_nper
-        # item 1
-        self.ipakcb = ipakcb
         # Head in cells that are converted to dry during a simulation
         self.hdry = hdry
         # number of UPW parameters
@@ -314,7 +288,7 @@ class ModflowUpw(Package):
         f_upw.write(f"{self.heading}\n")
         # Item 1: IBCFCB, HDRY, NPLPF
         f_upw.write(
-            "{0:10d}{1:10.3G}{2:10d}{3:10d}{4:s}\n".format(
+            "{:10d}{:10.3G}{:10d}{:10d}{:s}\n".format(
                 self.ipakcb, self.hdry, self.npupw, self.iphdry, self.options
             )
         )
@@ -473,7 +447,6 @@ class ModflowUpw(Package):
         vkcb = [0] * nlay
         # load by layer
         for k in range(nlay):
-
             # hk
             if model.verbose:
                 print(f"   loading hk layer {k + 1:3d}...")
@@ -527,7 +500,6 @@ class ModflowUpw(Package):
 
             # storage properties
             if transient:
-
                 # ss
                 if model.verbose:
                     print(f"   loading ss layer {k + 1:3d}...")

@@ -4,7 +4,7 @@ the ModflowGmg class as `flopy.modflow.ModflowGmg`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/gmg.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/gmg.html>`_.
 
 """
 from ..pakbase import Package
@@ -205,54 +205,32 @@ class ModflowGmg(Package):
         unitnumber=None,
         filenames=None,
     ):
-        """
-        Package constructor.
-
-        """
-
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowGmg._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
 
         # update external file information with gmg output, if necessary
         if iunitmhc is not None:
-            fname = filenames[1]
             model.add_output_file(
                 iunitmhc,
-                fname=fname,
+                fname=filenames[1],
                 extension="gmg.out",
                 binflag=False,
-                package=ModflowGmg._ftype(),
+                package=self._ftype(),
             )
         else:
             iunitmhc = 0
 
-        # Fill namefile items
-        name = [ModflowGmg._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
         # check if a valid model version has been specified
@@ -263,7 +241,7 @@ class ModflowGmg(Package):
             raise Exception(err)
 
         self._generate_heading()
-        self.url = "gmg.htm"
+        self.url = "gmg.html"
 
         self.mxiter = mxiter
         self.iiter = iiter
@@ -383,7 +361,9 @@ class ModflowGmg(Package):
         # dataset 3
         line = f.readline()
         t = line.strip().split()
-        relax = float(t[0])
+        relax = 1.0
+        if ism == 4:
+            relax = float(t[0])
 
         if openfile:
             f.close()

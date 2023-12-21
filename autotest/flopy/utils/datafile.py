@@ -3,9 +3,11 @@ Module to read MODFLOW output files.  The module contains shared
 abstract classes that should not be directly accessed.
 
 """
+import os
+from pathlib import Path
+from typing import Union
+
 import numpy as np
-import flopy.utils
-from ..discretization.structuredgrid import StructuredGrid
 
 
 class Header:
@@ -79,9 +81,9 @@ class Header:
                         ("pertim", floattype),
                         ("totim", floattype),
                         ("text", "a16"),
-                        ("ncol", "i4"),
-                        ("nrow", "i4"),
-                        ("ilay", "i4"),
+                        ("m1", "i4"),
+                        ("m2", "i4"),
+                        ("m3", "i4"),
                     ]
                 )
             elif self.header_type == "vardisv":
@@ -92,8 +94,8 @@ class Header:
                         ("pertim", floattype),
                         ("totim", floattype),
                         ("text", "a16"),
-                        ("ncpl", "i4"),
-                        ("ilay", "i4"),
+                        ("m1", "i4"),
+                        ("m2", "i4"),
                         ("m3", "i4"),
                     ]
                 )
@@ -105,7 +107,7 @@ class Header:
                         ("pertim", floattype),
                         ("totim", floattype),
                         ("text", "a16"),
-                        ("nodes", "i4"),
+                        ("m1", "i4"),
                         ("m2", "i4"),
                         ("m3", "i4"),
                     ]
@@ -147,14 +149,17 @@ class Header:
 
 class LayerFile:
     """
-    The LayerFile class is the abstract base class from which specific derived
-    classes are formed.  LayerFile This class should not be instantiated
-    directly.
+    Base class for layered output files.
+    Do not instantiate directly.
 
     """
 
-    def __init__(self, filename, precision, verbose, kwargs):
-        self.filename = filename
+    def __init__(
+        self, filename: Union[str, os.PathLike], precision, verbose, kwargs
+    ):
+        from ..discretization.structuredgrid import StructuredGrid
+
+        self.filename = Path(filename).expanduser().absolute()
         self.precision = precision
         self.verbose = verbose
         self.file = open(self.filename, "rb")
@@ -190,6 +195,8 @@ class LayerFile:
         if "dis" in kwargs.keys():
             self.dis = kwargs.pop("dis")
             self.mg = self.dis.parent.modelgrid
+        if "tdis" in kwargs.keys():
+            self.tdis = kwargs.pop("tdis")
         if "modelgrid" in kwargs.keys():
             self.mg = kwargs.pop("modelgrid")
         if len(kwargs.keys()) > 0:
@@ -212,15 +219,15 @@ class LayerFile:
                 yoff=0.0,
                 angrot=0.0,
             )
-        return
 
     def to_shapefile(
         self,
-        filename,
+        filename: Union[str, os.PathLike],
         kstpkper=None,
         totim=None,
         mflay=None,
         attrib_name="lf_data",
+        verbose=False,
     ):
         """
         Export model output data to a shapefile at a specific location
@@ -228,8 +235,8 @@ class LayerFile:
 
         Parameters
         ----------
-        filename : str
-            Shapefile name to write
+        filename : str or PathLike
+            Shapefile path to write
         kstpkper : tuple of ints
             A tuple containing the time step and stress period (kstp, kper).
             These are zero-based kstp and kper values.
@@ -240,6 +247,8 @@ class LayerFile:
            will be written
         attrib_name : str
             Base name of attribute columns. (default is 'lf_data')
+        verbose : bool
+            Whether to print verbose output
 
         Returns
         ----------
@@ -274,7 +283,7 @@ class LayerFile:
 
         from ..export.shapefile_utils import write_grid_shapefile
 
-        write_grid_shapefile(filename, self.mg, attrib_dict)
+        write_grid_shapefile(filename, self.mg, attrib_dict, verbose)
 
     def plot(
         self,
@@ -382,7 +391,7 @@ class LayerFile:
             ).transpose()
         ).transpose()
 
-        from flopy.plot.plotutil import PlotUtilities
+        from ..plot.plotutil import PlotUtilities
 
         return PlotUtilities._plot_array_helper(
             plotarray,
@@ -414,6 +423,11 @@ class LayerFile:
             print(header)
         return
 
+    def get_nrecords(self):
+        if isinstance(self.recordarray, np.recarray):
+            return self.recordarray.shape[0]
+        return 0
+
     def _get_data_array(self, totim=0):
         """
         Get the three dimensional data array for the
@@ -422,7 +436,7 @@ class LayerFile:
         """
 
         if totim >= 0.0:
-            keyindices = np.where((self.recordarray["totim"] == totim))[0]
+            keyindices = np.where(self.recordarray["totim"] == totim)[0]
             if len(keyindices) == 0:
                 msg = f"totim value ({totim}) not found in file..."
                 raise Exception(msg)
@@ -462,19 +476,16 @@ class LayerFile:
 
     def get_kstpkper(self):
         """
-        Get a list of unique stress periods and time steps in the file
+        Get a list of unique tuples (stress period, time step) in the file.
+        Indices are 0-based, use the `kstpkper` attribute for 1-based.
 
         Returns
-        ----------
-        out : list of (kstp, kper) tuples
-            List of unique kstp, kper combinations in binary file.  kstp and
-            kper values are presently zero-based.
-
+        -------
+        list of (kstp, kper) tuples
+            List of unique combinations of stress period &
+            time step indices (0-based) in the binary file
         """
-        kstpkper = []
-        for kstp, kper in self.kstpkper:
-            kstpkper.append((kstp - 1, kper - 1))
-        return kstpkper
+        return [(kstp - 1, kper - 1) for kstp, kper in self.kstpkper]
 
     def get_data(self, kstpkper=None, idx=None, totim=None, mflay=None):
         """
@@ -483,10 +494,9 @@ class LayerFile:
         Parameters
         ----------
         idx : int
-            The zero-based record number.  The first record is record 0.
+            The zero-based record number. The first record is record 0.
         kstpkper : tuple of ints
-            A tuple containing the time step and stress period (kstp, kper).
-            These are zero-based kstp and kper values.
+            A tuple (kstep, kper) of zero-based time step and stress period.
         totim : float
             The simulation time.
         mflay : integer
@@ -499,14 +509,9 @@ class LayerFile:
             Array has size (nlay, nrow, ncol) if mflay is None or it has size
             (nrow, ncol) if mlay is specified.
 
-        See Also
-        --------
-
         Notes
         -----
-        if both kstpkper and totim are None, will return the last entry
-        Examples
-        --------
+        If both kstpkper and totim are None, the last entry will be returned.
 
         """
         # One-based kstp and kper for pulling out of recarray
@@ -627,4 +632,3 @@ class LayerFile:
 
         """
         self.file.close()
-        return

@@ -3,7 +3,7 @@ access the ModflowSwi2 class as `flopy.modflow.ModflowSwi2`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow-nwt/MODFLOW-NWT-Guide/swi2_seawater_intrusion_pack.htm>`_.
+<https://water.usgs.gov/ogw/modflow-nwt/MODFLOW-NWT-Guide/swi2_seawater_intrusion_pack.html>`_.
 """
 import numpy as np
 
@@ -26,10 +26,9 @@ class ModflowSwi2(Package):
         flag indicating the density distribution. (default is 1).
     iswizt : int
         unit number for zeta output. (default is None).
-    ipakcb : int
-        A flag that is used to determine if cell-by-cell budget data should be
-        saved. If ipakcb is non-zero cell-by-cell budget data will be saved.
-        (default is None).
+    ipakcb : int, optional
+        Toggles whether cell-by-cell budget data should be saved. If None or zero,
+        budget data will not be saved (default is None).
     iswiobs : int
         flag and unit number SWI2 observation output. (default is 0).
     options : list of strings
@@ -224,42 +223,26 @@ class ModflowSwi2(Package):
         unitnumber=None,
         filenames=None,
     ):
-        """Package constructor."""
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowSwi2._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None, None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None, None, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 4:
-                for idx in range(len(filenames), 4):
-                    filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 4)
 
         # update external file information with zeta output, if necessary
         if iswizt is not None:
-            fname = filenames[1]
             model.add_output_file(
                 iswizt,
-                fname=fname,
+                fname=filenames[1],
                 extension="zta",
-                package=ModflowSwi2._ftype(),
+                package=self._ftype(),
             )
         else:
             iswizt = 0
 
-        # update external file information with swi2 cell-by-cell output,
-        # if necessary
-        if ipakcb is not None:
-            fname = filenames[2]
-            model.add_output_file(
-                ipakcb, fname=fname, package=ModflowSwi2._ftype()
-            )
-        else:
-            ipakcb = 0
+        # cbc output file
+        self.set_cbc_output_file(ipakcb, model, filenames[2])
 
         # Process observations
         if nobs != 0:
@@ -308,29 +291,18 @@ class ModflowSwi2(Package):
                 fname=fname,
                 binflag=binflag,
                 extension=ext,
-                package=ModflowSwi2._ftype(),
+                package=self._ftype(),
             )
         else:
             iswiobs = 0
 
-        # Fill namefile items
-        name = [ModflowSwi2._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and
-        # unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
         nrow, ncol, nlay, nper = self.parent.nrow_ncol_nlay_nper
@@ -355,29 +327,27 @@ class ModflowSwi2(Package):
             print("npln keyword is deprecated. use the nsrf keyword")
             nsrf = npln
 
-        self.nsrf, self.istrat, self.nobs, self.iswizt, self.iswiobs = (
-            nsrf,
-            istrat,
-            nobs,
-            iswizt,
-            iswiobs,
-        )
-        # set cbc unit
-        self.ipakcb = ipakcb
+        self.nsrf = nsrf
+        self.istrat = istrat
+        self.nobs = nobs
+        self.iswizt = iswizt
+        self.iswiobs = iswiobs
 
         # set solver flags
-        self.nsolver, self.iprsol, self.mutsol = nsolver, iprsol, mutsol
+        self.nsolver = nsolver
+        self.iprsol = iprsol
+        self.mutsol = mutsol
 
         # set solver parameters
         self.solver2params = solver2params
         #
-        self.toeslope, self.tipslope, self.alpha, self.beta = (
-            toeslope,
-            tipslope,
-            alpha,
-            beta,
-        )
-        self.nadptmx, self.nadptmn, self.adptfct = nadptmx, nadptmn, adptfct
+        self.toeslope = toeslope
+        self.tipslope = tipslope
+        self.alpha = alpha
+        self.beta = beta
+        self.nadptmx = nadptmx
+        self.nadptmn = nadptmn
+        self.adptfct = adptfct
 
         # Create arrays so that they have the correct size
         if self.istrat == 1:
@@ -450,7 +420,7 @@ class ModflowSwi2(Package):
         # write SWI2 options
         if self.options != None:
             for o in self.options:
-                f.write(" {}".format(o))
+                f.write(f" {o}")
         f.write("\n")
 
         # write dataset 2a

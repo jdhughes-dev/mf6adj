@@ -454,7 +454,8 @@ class PerfMeas(object):
 
         df = pd.DataFrame({"k11": comp_k_sens, "k33": comp_k33_sens, "welq": comp_welq_sens, "rch": comp_rch_sens},
                           index=nodeuser)
-
+        if has_sto:
+            df["ss"] = comp_ss_sens
         df.to_csv("{0}_adj_summary.csv".format(self._name))
         return df
 

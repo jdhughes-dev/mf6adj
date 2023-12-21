@@ -14,10 +14,9 @@ class ModflowBcf(Package):
     model : model object
         The model object (of type :class:`flopy.modflow.Modflow`) to which
         this package will be added.
-    ipakcb : int
-        A flag that is used to determine if cell-by-cell budget data should be
-        saved. If ipakcb is non-zero cell-by-cell budget data will be saved.
-        (default is 53)
+    ipakcb : int, optional
+        Toggles whether cell-by-cell budget data should be saved. If None or zero,
+        budget data will not be saved (default is None).
     intercellt : int
         Intercell transmissivities, harmonic mean (0), arithmetic mean (1),
         logarithmic mean (2), combination (3). (default is 0)
@@ -64,12 +63,15 @@ class ModflowBcf(Package):
         filenames=None the package name will be created using the model name
         and package extension and the cbc output name will be created using
         the model name and .cbc extension (for example, modflowtest.cbc),
-        if ipakcbc is a number greater than zero. If a single string is passed
+        if ipakcb is a number greater than zero. If a single string is passed
         the package will be set to the string and cbc output name will be
-        created using the model name and .cbc extension, if ipakcbc is a
+        created using the model name and .cbc extension, if ipakcb is a
         number greater than zero. To define the names for all package files
         (input and output) the length of the list of strings should be 2.
         Default is None.
+    add_package : bool
+        Flag to add the initialised package object to the parent model object.
+        Default is True.
 
     Methods
     -------
@@ -110,49 +112,27 @@ class ModflowBcf(Package):
         extension="bcf",
         unitnumber=None,
         filenames=None,
+        add_package=True,
     ):
-
         if unitnumber is None:
             unitnumber = ModflowBcf._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
 
-        # update external file information with cbc output, if necessary
-        if ipakcb is not None:
-            fname = filenames[1]
-            model.add_output_file(
-                ipakcb, fname=fname, package=ModflowBcf._ftype()
-            )
-        else:
-            ipakcb = 0
+        # cbc output file
+        self.set_cbc_output_file(ipakcb, model, filenames[1])
 
-        # Fill namefile items
-        name = [ModflowBcf._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
-        self.url = "bcf.htm"
+        self.url = "bcf.html"
 
         nrow, ncol, nlay, nper = self.parent.nrow_ncol_nlay_nper
         # Set values of all parameters
@@ -182,7 +162,6 @@ class ModflowBcf(Package):
         )
 
         # item 1
-        self.ipakcb = ipakcb
         self.hdry = hdry
         self.iwdflg = iwdflg
         self.wetfct = wetfct
@@ -239,7 +218,8 @@ class ModflowBcf(Package):
             "WETDRY",
             locat=self.unit_number[0],
         )
-        self.parent.add_package(self)
+        if add_package:
+            self.parent.add_package(self)
         return
 
     def write_file(self, f=None):
@@ -441,7 +421,6 @@ class ModflowBcf(Package):
         wetdry = [0] * nlay
 
         for k in range(nlay):
-
             # allow for unstructured changing nodes per layer
             if nr is None:
                 nrow = 1

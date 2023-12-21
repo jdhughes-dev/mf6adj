@@ -9,11 +9,14 @@ Additional information for this MODFLOW package can be found at
 """
 
 import os
+
 import numpy as np
-from ..utils.flopy_io import multi_line_strip
+import pandas as pd
+
 from ..pakbase import Package
-from ..utils.recarray_utils import create_empty_recarray
+from ..utils.flopy_io import multi_line_strip
 from ..utils.optionblock import OptionBlock
+from ..utils.recarray_utils import create_empty_recarray
 
 
 class ModflowAg(Package):
@@ -27,9 +30,9 @@ class ModflowAg(Package):
         model object
     options : flopy.utils.OptionBlock object
         option block object
-    time_series : np.recarray
+    time_series : np.recarray or pd.DataFrame
         numpy recarray for the time series block
-    well_list : np.recarray
+    well_list : np.recarray or pd.DataFrame
         recarray of the well_list block
     irrdiversion : dict {per: np.recarray}
         dictionary of the irrdiversion block
@@ -115,7 +118,21 @@ class ModflowAg(Package):
             ),
             ("tabfiles", OptionBlock.simple_tabfile),
             ("phiramp", OptionBlock.simple_flag),
-            ("etdemand", OptionBlock.simple_flag),
+            (
+                "etdemand",
+                {
+                    OptionBlock.dtype: np.bool_,
+                    OptionBlock.nested: True,
+                    OptionBlock.n_nested: 1,
+                    OptionBlock.vars: {
+                        "accel": {
+                            OptionBlock.dtype: float,
+                            OptionBlock.nested: False,
+                            OptionBlock.optional: True,
+                        }
+                    },
+                },
+            ),
             ("trigger", OptionBlock.simple_flag),
             ("timeseries_diversion", OptionBlock.simple_flag),
             ("timeseries_well", OptionBlock.simple_flag),
@@ -193,7 +210,6 @@ class ModflowAg(Package):
         filenames=None,
         nper=0,
     ):
-
         if "nwt" not in model.version:
             raise AssertionError(
                 "Model version must be mfnwt to use the AG package"
@@ -203,30 +219,17 @@ class ModflowAg(Package):
         if unitnumber is None:
             unitnumber = ModflowAg._defaultunit()
 
-        if filenames is None:
-            filenames = [None]
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        name = [ModflowAg._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
+        # call base package constructor
         super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=self._prepare_filenames(filenames),
         )
 
         # set up class
         self._generate_heading()
-        self.url = "ag.htm"
 
         # options
         self.noprint = None
@@ -267,8 +270,16 @@ class ModflowAg(Package):
         else:
             self.options = OptionBlock("", ModflowAg)
 
-        self.time_series = time_series
-        self.well_list = well_list
+        self.time_series = (
+            time_series.to_records(index=False)
+            if isinstance(time_series, pd.DataFrame)
+            else time_series
+        )
+        self.well_list = (
+            well_list.to_records(index=False)
+            if isinstance(well_list, pd.DataFrame)
+            else well_list
+        )
         self.irrdiversion = irrdiversion
         self.irrwell = irrwell
         self.supwell = supwell
@@ -356,7 +367,7 @@ class ModflowAg(Package):
 
             # check if item 12 exists and write item 12 - 14
             if self.segment_list is not None:
-                foo.write("# segment list for irriagation diversions\n")
+                foo.write("# segment list for irrigation diversions\n")
                 foo.write("SEGMENT LIST\n")
                 for iseg in self.segment_list:
                     foo.write(f"{iseg}\n")
@@ -538,17 +549,17 @@ class ModflowAg(Package):
                                     if rec[f"fracsupmax{i}"] != -1e10:
                                         foo.write(
                                             "{:d}   {:f}   {:f}\n".format(
-                                                rec["segid{}".format(i)],
-                                                rec["fracsup{}".format(i)],
-                                                rec["fracsupmax{}".format(i)],
+                                                rec[f"segid{i}"],
+                                                rec[f"fracsup{i}"],
+                                                rec[f"fracsupmax{i}"],
                                             )
                                         )
 
                                     else:
                                         foo.write(
                                             "{:d}   {:f}\n".format(
-                                                rec["segid{}".format(i)],
-                                                rec["fracsup{}".format(i)],
+                                                rec[f"segid{i}"],
+                                                rec[f"fracsup{i}"],
                                             )
                                         )
 

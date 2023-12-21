@@ -4,7 +4,7 @@ the ModflowLmt class as `flopy.modflow.ModflowLmt`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/index.html?lmt6.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/lmt6.html>`_.
 
 """
 import os
@@ -86,38 +86,21 @@ class ModflowLmt(Package):
         unitnumber=None,
         filenames=None,
     ):
-
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowLmt._defaultunit()
 
-        # set filenames
-        if filenames is None:
-            filenames = [None]
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        # Fill namefile items
-        name = [ModflowLmt._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=self._prepare_filenames(filenames),
         )
 
         self._generate_heading()
-        self.url = "lmt.htm"
+        self.url = "lmt6.html"
         self.output_file_name = output_file_name
         self.output_file_unit = output_file_unit
         self.output_file_header = output_file_header

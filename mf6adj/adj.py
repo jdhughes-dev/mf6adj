@@ -481,11 +481,15 @@ class Mf6Adj(object):
 
         result = np.zeros_like(head)
 
+        #term = (dSC1 / dt) * (sat_old_mod[node] * head_old[node] - sat_mod[node] * head[node]) +
+        # (dSC1 / dt) * bot[node] * (sat_mod[node] - sat_old_mod[node]) +
+        # (dSC1 / (2.0 * dt)) * (top[node] - bot[node]) * ((sat_mod[node]) ** 2 - (sat_old_mod[node]) ** 2)
         for node in range(len(ia) - 1):
             dSC1 = area[node] * (top[node] - bot[node])
-            term = (dSC1 / dt) * (sat_old_mod[node] * head_old[node] - sat_mod[node] * head[node]) + (dSC1 / dt) * bot[
-                node] * (sat_mod[node] - sat_old_mod[node]) + (dSC1 / (2.0 * dt)) * (top[node] - bot[node]) * (
-                               (sat_mod[node]) ** 2 - (sat_old_mod[node]) ** 2)
+            term = ((dSC1 / dt) * (sat_old_mod[node] * head_old[node] - sat_mod[node] * head[node]) +
+                    (dSC1 / dt) * bot[node] * (sat_mod[node] - sat_old_mod[node]) +
+                    (dSC1 / (2.0 * dt)) * (top[node] - bot[node]) * (
+                               (sat_mod[node]) ** 2 - (sat_old_mod[node]) ** 2))
             #
             result[node] = term
         return result
@@ -781,7 +785,7 @@ class Mf6Adj(object):
                         pakname = infodict["packagename"]
                         pert_dict = {"kperkstp": kk, "packagename": pakname, "node": infodict["node"],
                                      "bound": new_bound}
-                        print("...",pakname,ibnd,kk,org,delt)
+                        print("...",pakname,ibnd,kk,org,delt,infodict["node"])
 
                         self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
                         pert_head, _ = self.solve_gwf(verbose=False, _sp_pert_dict=pert_dict,pert_save=True)
@@ -807,13 +811,19 @@ class Mf6Adj(object):
         if nlay > 1:
             address.append(["K33", gwf_name, "NPF"])
 
+        has_sto = False
         if PerfMeas.has_sto_iconvert(self._gwf):
-            address.append(["SS", gwf_name, "STO"])
+            #address.append(["SS", gwf_name, "STO"])
+            has_sto = True
+
+        wbaddr = self._gwf.get_var_address(*address[0])
+        inodes = self._gwf.get_value_ptr(wbaddr).shape[0]
+
         for addr in address:
             print("running perturbations for ", addr)
             pert_results_dict = {pm.name: [] for pm in self._performance_measures}
             wbaddr = self._gwf.get_var_address(*addr)
-            inodes = self._gwf.get_value_ptr(wbaddr).shape[0]
+
             epsilons = []
 
             for inode in range(inodes):
@@ -823,15 +833,6 @@ class Mf6Adj(object):
                 delt = org * pert_mult
                 epsilons.append(delt - pert_arr[inode])
                 pert_arr[inode] = delt
-                # if "K11" in wbaddr.upper():
-                #     wbaddr1 = wbaddr.upper().replace("K11","K22")    
-                #     pert_arr1 = self._gwf.get_value_ptr(wbaddr1)
-                #     pert_arr1 = pert_arr.copy()
-                #     print("K22",pert_arr1)
-                # addr1 = ["IK22OVERK",gwf_name,"NPF"]
-                # wbaddr1 = self._gwf.get_var_address(*addr1)
-                # k22 = self._gwf.get_value_ptr(wbaddr1)
-                # print("ik22 flag",k22)
                 print("...",addr,inode,org,delt)
                 pert_head, _ = self.solve_gwf(verbose=False, _force_k_update=True,pert_save=True)
                 pert_results = {pm.name: (pm.solve_forward(pert_head) - base_results[pm.name]) / epsilons[-1] for pm in
@@ -847,6 +848,60 @@ class Mf6Adj(object):
                 for idx, lab in zip([0, 1, 2], ["k", "i", "j"]):
                     df.loc[:, lab] = [kij[idx] for kij in kijs]
             tag = '_'.join(addr).lower()
+            df.loc[:, "addr"] = tag
+            dfs.append(df)
+
+        if has_sto:
+            import flopy
+            if self._flow_dir != ".":
+                test_dir = self._flow_dir + "_pert_temp"
+            else:
+                test_dir = "pert_temp"
+            if os.path.exists(test_dir):
+                shutil.rmtree(test_dir)
+            #shutil.copy2(self._flow_dir,test_dir)
+            sim = flopy.mf6.MFSimulation.load(sim_ws=self._flow_dir)
+            gwf = sim.get_model()
+            ss = gwf.sto.ss.array.copy().flatten()
+            # this is an attempt to make sure we arent using "layered"
+            gwf.sto.ss = ss
+
+            sim.set_sim_path(test_dir)
+            sim.set_all_data_external()
+            sim.write_simulation()
+            if os.path.exists(os.path.join(self._flow_dir,self._lib_name)):
+                shutil.copy2(os.path.join(self._flow_dir,self._lib_name),os.path.join(test_dir,self._lib_name))
+
+            print("running manual flopy based perturbations for sto ss")
+            pert_results_dict = {pm.name: [] for pm in self._performance_measures}
+            epsilons = []
+
+            for inode in range(inodes):
+                arr_node = nuser[inode]
+                pert_arr = ss.copy()
+                org = ss[arr_node]
+                delt = org * pert_mult
+                epsilons.append(delt - pert_arr[arr_node])
+                print("...ss", inode, arr_node, org, delt)
+                pert_arr[arr_node] = delt
+
+                # reset the ss property
+                gwf.sto.ss = pert_arr
+                gwf.write()
+                self._gwf = self._initialize_gwf(self._lib_name, test_dir)
+                pert_head, _ = self.solve_gwf(verbose=False, _force_k_update=True,pert_save=True)
+                pert_results = {pm.name: (pm.solve_forward(pert_head) - base_results[pm.name]) / epsilons[-1] for pm in
+                                self._performance_measures}
+                for pm, result in pert_results.items():
+                    pert_results_dict[pm].append(result)
+            df = pd.DataFrame(pert_results_dict)
+            df.index = [nuser[inode] for inode in range(inodes)]
+            df.index.name = "node"
+            df.loc[:, "epsilon"] = epsilons
+            if kijs is not None:
+                for idx, lab in zip([0, 1, 2], ["k", "i", "j"]):
+                    df.loc[:, lab] = [kij[idx] for kij in kijs]
+            tag = 'sto_ss'
             df.loc[:, "addr"] = tag
             dfs.append(df)
 

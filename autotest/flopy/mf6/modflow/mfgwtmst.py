@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on August 06, 2021 20:57:00 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ArrayTemplateGenerator
 
@@ -12,7 +12,7 @@ class ModflowGwtmst(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -39,7 +39,11 @@ class ModflowGwtmst(mfpackage.MFPackage):
           FREUNDLICH or LANGMUIR then SP2 is also required in the GRIDDATA
           block.
     porosity : [double]
-        * porosity (double) is the aquifer porosity.
+        * porosity (double) is the mobile domain porosity, defined as the
+          mobile domain pore volume per mobile domain volume. Additional
+          information on porosity within the context of mobile and immobile
+          domain transport simulations is included in the MODFLOW 6
+          Supplemental Technical Information document.
     decay : [double]
         * decay (double) is the rate coefficient for first or zero-order decay
           for the aqueous phase of the mobile domain. A negative value
@@ -62,7 +66,10 @@ class ModflowGwtmst(mfpackage.MFPackage):
     bulk_density : [double]
         * bulk_density (double) is the bulk density of the aquifer in mass per
           length cubed. bulk_density is not required unless the SORPTION
-          keyword is specified.
+          keyword is specified. Bulk density is defined as the mobile domain
+          solid mass per mobile domain volume. Additional information on bulk
+          density is included in the MODFLOW 6 Supplemental Technical
+          Information document.
     distcoef : [double]
         * distcoef (double) is the distribution coefficient for the
           equilibrium-controlled linear sorption isotherm in dimensions of
@@ -97,6 +104,9 @@ class ModflowGwtmst(mfpackage.MFPackage):
     dfn_file_name = "gwt-mst.dfn"
 
     dfn = [
+        [
+            "header",
+        ],
         [
             "block options",
             "name save_flows",
@@ -197,10 +207,10 @@ class ModflowGwtmst(mfpackage.MFPackage):
         sp2=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "mst", filename, pname, loading_package, parent_file
+            model, "mst", filename, pname, loading_package, **kwargs
         )
 
         # set up variables

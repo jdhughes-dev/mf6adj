@@ -4,15 +4,16 @@ the ModflowHfb class as `flopy.modflow.ModflowHfb`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/index.html?hfb6.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/hfb6.html>`_.
 
 """
 import numpy as np
-from ..pakbase import Package
-from .mfparbc import ModflowParBc as mfparbc
 from numpy.lib.recfunctions import stack_arrays
+
+from ..pakbase import Package
 from ..utils.flopy_io import line_parse
 from ..utils.recarray_utils import create_empty_recarray
+from .mfparbc import ModflowParBc as mfparbc
 
 
 class ModflowHfb(Package):
@@ -22,8 +23,8 @@ class ModflowHfb(Package):
     Parameters
     ----------
     model : model object
-        The model object (of type: class:`flopy.modflow.mf.Modflow`) to
-        which this package will be added.
+        The model object (of type: class:`flopy.modflow.mf.Modflow` or
+        `flopy.mfusg.MfUsg`) to which this package will be added.
     nphfb : int
         Number of horizontal-flow barrier parameters. Note that for an HFB
         parameter to have an effect in the simulation, it must be defined
@@ -46,14 +47,18 @@ class ModflowHfb(Package):
         the cells. The hydraulic characteristic is the barrier hydraulic
         conductivity divided by the width of the horizontal-flow barrier.
         (default is None).
-        This gives the form of::
-
+        For a structured model, this gives the form of::
             hfb_data = [
                         [lay, row1, col1, row2, col2, hydchr],
                         [lay, row1, col1, row2, col2, hydchr],
                         [lay, row1, col1, row2, col2, hydchr],
                        ].
-
+        Or for unstructured (mfusg) models::
+            hfb_data = [
+                        [node1, node2, hydchr],
+                        [node1, node2, hydchr],
+                        [node1, node2, hydchr],
+                       ].
     nacthfb : int
         The number of active horizontal-flow barrier parameters
         (default is 0).
@@ -112,38 +117,21 @@ class ModflowHfb(Package):
         unitnumber=None,
         filenames=None,
     ):
-
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowHfb._defaultunit()
 
-        # set filenames
-        if filenames is None:
-            filenames = [None]
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        # Fill namefile items
-        name = [ModflowHfb._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=self._prepare_filenames(filenames),
         )
 
         self._generate_heading()
-        self.url = "hfb6.htm"
+        self.url = "hfb6.html"
 
         self.nphfb = nphfb
         self.mxfb = mxfb
@@ -170,7 +158,9 @@ class ModflowHfb(Package):
             raise Exception("Failed to specify hfb_data.")
 
         self.nhfbnp = len(hfb_data)
-        self.hfb_data = ModflowHfb.get_empty(self.nhfbnp)
+        self.hfb_data = ModflowHfb.get_empty(
+            self.nhfbnp, structured=self.parent.structured
+        )
         for ibnd, t in enumerate(hfb_data):
             self.hfb_data[ibnd] = tuple(t)
 
@@ -197,18 +187,24 @@ class ModflowHfb(Package):
         None
 
         """
+        structured = self.parent.structured
         f_hfb = open(self.fn_path, "w")
         f_hfb.write(f"{self.heading}\n")
         f_hfb.write(f"{self.nphfb:10d}{self.mxfb:10d}{self.nhfbnp:10d}")
         for option in self.options:
-            f_hfb.write("  {}".format(option))
+            f_hfb.write(f"  {option}")
         f_hfb.write("\n")
         for a in self.hfb_data:
-            f_hfb.write(
-                "{:10d}{:10d}{:10d}{:10d}{:10d}{:13.6g}\n".format(
-                    a[0] + 1, a[1] + 1, a[2] + 1, a[3] + 1, a[4] + 1, a[5]
+            if structured:
+                f_hfb.write(
+                    "{:10d}{:10d}{:10d}{:10d}{:10d}{:13.6g}\n".format(
+                        a[0] + 1, a[1] + 1, a[2] + 1, a[3] + 1, a[4] + 1, a[5]
+                    )
                 )
-            )
+            else:
+                f_hfb.write(
+                    "{:10d}{:10d}{:13.6g}\n".format(a[0] + 1, a[1] + 1, a[2])
+                )
         f_hfb.write(f"{self.nacthfb:10d}")
         f_hfb.close()
 
@@ -243,7 +239,13 @@ class ModflowHfb(Package):
                 ]
             )
         else:
-            assert not structured, "is there an unstructured HFB???"
+            dtype = np.dtype(
+                [
+                    ("node1", int),
+                    ("node2", int),
+                    ("hydchr", np.float32),
+                ]
+            )
         return dtype
 
     @staticmethod
@@ -286,6 +288,8 @@ class ModflowHfb(Package):
         if model.verbose:
             print("loading hfb6 package file...")
 
+        structured = model.structured
+
         openfile = not hasattr(f, "read")
         if openfile:
             filename = f
@@ -318,7 +322,7 @@ class ModflowHfb(Package):
                 it += 1
         # data set 2 and 3
         if nphfb > 0:
-            dt = ModflowHfb.get_empty(1).dtype
+            dt = ModflowHfb.get_empty(1, structured=structured).dtype
             pak_parms = mfparbc.load(
                 f,
                 nphfb,
@@ -330,7 +334,7 @@ class ModflowHfb(Package):
         # data set 4
         bnd_output = None
         if nhfbnp > 0:
-            specified = ModflowHfb.get_empty(nhfbnp)
+            specified = ModflowHfb.get_empty(nhfbnp, structured=structured)
             for ibnd in range(nhfbnp):
                 line = f.readline()
                 if "open/close" in line.lower():
@@ -341,11 +345,15 @@ class ModflowHfb(Package):
                 specified[ibnd] = tuple(t[: len(specified.dtype.names)])
 
             # convert indices to zero-based
-            specified["k"] -= 1
-            specified["irow1"] -= 1
-            specified["icol1"] -= 1
-            specified["irow2"] -= 1
-            specified["icol2"] -= 1
+            if structured:
+                specified["k"] -= 1
+                specified["irow1"] -= 1
+                specified["icol1"] -= 1
+                specified["irow2"] -= 1
+                specified["icol2"] -= 1
+            else:
+                specified["node1"] -= 1
+                specified["node2"] -= 1
 
             bnd_output = np.recarray.copy(specified)
 
@@ -361,7 +369,9 @@ class ModflowHfb(Package):
                 iname = "static"
                 par_dict, current_dict = pak_parms.get(pname)
                 data_dict = current_dict[iname]
-                par_current = ModflowHfb.get_empty(par_dict["nlst"])
+                par_current = ModflowHfb.get_empty(
+                    par_dict["nlst"], structured=structured
+                )
 
                 #
                 if model.mfpar.pval is None:
@@ -380,11 +390,15 @@ class ModflowHfb(Package):
                     )
 
                 # convert indices to zero-based
-                par_current["k"] -= 1
-                par_current["irow1"] -= 1
-                par_current["icol1"] -= 1
-                par_current["irow2"] -= 1
-                par_current["icol2"] -= 1
+                if structured:
+                    par_current["k"] -= 1
+                    par_current["irow1"] -= 1
+                    par_current["icol1"] -= 1
+                    par_current["irow2"] -= 1
+                    par_current["icol2"] -= 1
+                else:
+                    par_current["node1"] -= 1
+                    par_current["node2"] -= 1
 
                 for ptype in partype:
                     par_current[ptype] *= parval

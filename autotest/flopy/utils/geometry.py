@@ -3,6 +3,8 @@ Container objects for working with geometric information
 """
 import numpy as np
 
+from ..utils import import_optional_dependency
+
 
 class Shape:
     """
@@ -197,6 +199,11 @@ class Collection(list):
 
         return xmin, ymin, xmax, ymax
 
+    def __reversed__(self):
+        for shp in self:
+            reversed(shp)
+        return self
+
     def plot(self, ax=None, **kwargs):
         """
         Plotting method for collection
@@ -382,12 +389,10 @@ class Polygon(Shape):
 
     @property
     def pyshp_parts(self):
-        from ..export.shapefile_utils import import_shapefile
-
         # exterior ring must be clockwise (negative area)
         # interiors rings must be counter-clockwise (positive area)
 
-        shapefile = import_shapefile()
+        shapefile = import_optional_dependency("shapefile")
 
         exterior = list(self.exterior)
         if shapefile.signed_area(exterior) > 0:
@@ -409,13 +414,23 @@ class Polygon(Shape):
     def patch(self):
         return self.get_patch()
 
+    def __reversed__(self):
+        # method to reverse the sorting on polygon points, patch for
+        # differences in pyshp 2.2.0 vs pyshp < 2.2.0
+        if self.exterior:
+            self.exterior = self.exterior[::-1]
+        if self.interiors:
+            interiors = []
+            for i in self.interiors:
+                interiors.append(i[::-1])
+            self.interiors = interiors
+
+        return self
+
     def get_patch(self, **kwargs):
-        try:
-            from descartes import PolygonPatch
-        except ImportError:
-            print(
-                'This feature requires descartes.\nTry "pip install descartes"'
-            )
+        descartes = import_optional_dependency("descartes")
+        from descartes import PolygonPatch
+
         return PolygonPatch(self.geojson, **kwargs)
 
     def plot(self, ax=None, **kwargs):
@@ -427,10 +442,7 @@ class Polygon(Shape):
         Accepts keyword arguments to descartes.PolygonPatch. Requires the
         descartes package (pip install descartes).
         """
-        try:
-            import matplotlib.pyplot as plt
-        except ImportError:
-            print("This feature requires matplotlib.")
+        import matplotlib.pyplot as plt
 
         if ax is None:
             ax = plt.gca()
@@ -521,11 +533,12 @@ class LineString(Shape):
     def pyshp_parts(self):
         return [self.coords]
 
+    def __reversed__(self):
+        self.coords = self.coords[::-1]
+        return self
+
     def plot(self, ax=None, **kwargs):
-        try:
-            import matplotlib.pyplot as plt
-        except ImportError:
-            print("This feature requires matplotlib.")
+        import matplotlib.pyplot as plt
 
         if ax is None:
             ax = plt.gca()
@@ -620,11 +633,11 @@ class Point(Shape):
     def pyshp_parts(self):
         return self.coords
 
+    def __reversed__(self):
+        return self
+
     def plot(self, ax=None, **kwargs):
-        try:
-            import matplotlib.pyplot as plt
-        except ImportError:
-            print("This feature requires matplotlib.")
+        import matplotlib.pyplot as plt
 
         if ax is None:
             ax = plt.gca()
@@ -814,10 +827,10 @@ def is_clockwise(*geom):
         geom = GeoSpatialUtil(geom, shapetype="Polygon")
         x, y = np.array(geom.points[0]).T
 
-    if not (x[0] == x[-1]) and (y[0] == y[-1]):
+    if not ((x[0] == x[-1]) and (y[0] == y[-1])):
         # close the ring if needed
-        x = np.append(x, x[-1])
-        y = np.append(y, y[-1])
+        x = np.append(x, x[0])
+        y = np.append(y, y[0])
     return np.sum((np.diff(x)) * (y[1:] + y[:-1])) > 0
 
 
@@ -854,7 +867,6 @@ def point_in_polygon(xc, yc, polygon):
     num = len(polygon)
     j = num - 1
     for i in range(num):
-
         tmp = polygon[i][0] + (polygon[j][0] - polygon[i][0]) * (
             yc - polygon[i][1]
         ) / (polygon[j][1] - polygon[i][1])

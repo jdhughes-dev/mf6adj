@@ -2739,11 +2739,16 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
         for k in range(nlay):
             t,b = geo[k],geo[k+1]
             sy.append(ss*(t-b))
-        steady_state = [False]
+        steady_state = [True]
+        transient = [False]
         if len(tdis_pd) > 1:
-            steady_state = [False for _ in range(len(tdis_pd))]
+            steady_state = {kper:False for kper in range(len(tdis_pd))}
             steady_state[0] = True
-        sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=iconvert, steady_state=steady_state,ss=ss,sy=sy)
+            transient = {kper:True for kper in range(len(tdis_pd))}
+            transient[0] = False
+
+        sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=iconvert, steady_state=steady_state,transient=transient,ss=ss,sy=sy)
+
 
     chd_rec = []
     if ncol > 1:
@@ -3142,7 +3147,7 @@ def test_xd_box_1():
     nper = 3
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
-                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=0, newton=True, delrowcol=1.0, full_sat_ghb=False)
+                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=0, newton=True, delrowcol=1.0, full_sat_ghb=True)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -3225,7 +3230,7 @@ def test_xd_box_1():
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
-        #adj._perturbation_test()
+        adj._perturbation_test()
         adj.finalize()
 
 
@@ -3982,11 +3987,11 @@ def freyberg_notional_unstruct_demo():
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    #test_xd_box_1()
+    test_xd_box_1()
 
     #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
-    freyberg_notional_unstruct_demo()
+    #freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()

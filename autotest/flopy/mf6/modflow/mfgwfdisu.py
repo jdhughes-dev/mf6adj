@@ -1,6 +1,6 @@
 # DO NOT MODIFY THIS FILE DIRECTLY.  THIS FILE MUST BE CREATED BY
 # mf6/utils/createpackages.py
-# FILE created on August 06, 2021 20:56:59 UTC
+# FILE created on September 30, 2023 14:44:04 UTC
 from .. import mfpackage
 from ..data.mfdatautil import ArrayTemplateGenerator, ListTemplateGenerator
 
@@ -12,7 +12,7 @@ class ModflowGwfdisu(mfpackage.MFPackage):
     Parameters
     ----------
     model : MFModel
-        Model that this package is a part of.  Package is automatically
+        Model that this package is a part of. Package is automatically
         added to model when it is initialized.
     loading_package : bool
         Do not set this parameter. It is intended for debugging and internal
@@ -206,6 +206,9 @@ class ModflowGwfdisu(mfpackage.MFPackage):
 
     dfn = [
         [
+            "header",
+        ],
+        [
             "block options",
             "name length_units",
             "type string",
@@ -247,6 +250,7 @@ class ModflowGwfdisu(mfpackage.MFPackage):
             "reader urword",
             "optional true",
             "default_value 0.0",
+            "mf6internal voffsettol",
         ],
         [
             "block dimensions",
@@ -352,6 +356,7 @@ class ModflowGwfdisu(mfpackage.MFPackage):
             "block vertices",
             "name vertices",
             "type recarray iv xv yv",
+            "shape (nvert)",
             "reader urword",
             "optional false",
         ],
@@ -387,6 +392,7 @@ class ModflowGwfdisu(mfpackage.MFPackage):
             "block cell2d",
             "name cell2d",
             "type recarray icell2d xc yc ncvert icvert",
+            "shape (nodes)",
             "reader urword",
             "optional false",
         ],
@@ -467,10 +473,10 @@ class ModflowGwfdisu(mfpackage.MFPackage):
         cell2d=None,
         filename=None,
         pname=None,
-        parent_file=None,
+        **kwargs,
     ):
         super().__init__(
-            model, "disu", filename, pname, loading_package, parent_file
+            model, "disu", filename, pname, loading_package, **kwargs
         )
 
         # set up variables

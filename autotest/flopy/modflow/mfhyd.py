@@ -4,10 +4,11 @@ the ModflowHyd class as `flopy.modflow.ModflowHyd`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/hyd.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/hyd.html>`_.
 
 """
 import numpy as np
+import pandas as pd
 
 from ..pakbase import Package
 from ..utils.recarray_utils import create_empty_recarray
@@ -31,7 +32,7 @@ class ModflowHyd(Package):
         is a user-specified value that is output if a value cannot be computed
         at a hydrograph location. For example, the cell in which the hydrograph
         is located may be a no-flow cell. (default is -999.)
-    obsdata : list of lists, numpy array, or numpy recarray (nhyd, 7)
+    obsdata : list of lists, numpy array or recarray, or pandas dataframe (nhyd, 7)
         Each row of obsdata includes data defining pckg (3 character string),
         arr (2 character string), intyp (1 character string) klay (int),
         xl (float), yl (float), hydlbl (14 character string) for each
@@ -120,59 +121,37 @@ class ModflowHyd(Package):
         unitnumber=None,
         filenames=None,
     ):
-        """
-        Package constructor.
-
-        """
-
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowHyd._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
 
         # set ihydun to a default unit number if it isn't specified
         if ihydun is None:
             ihydun = 536
 
         # update external file information with hydmod output
-        fname = filenames[1]
         model.add_output_file(
             ihydun,
-            fname=fname,
+            fname=filenames[1],
             extension="hyd.bin",
-            package=ModflowHyd._ftype(),
+            package=self._ftype(),
         )
 
-        # Fill namefile items
-        name = [ModflowHyd._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
         nrow, ncol, nlay, nper = self.parent.nrow_ncol_nlay_nper
         self._generate_heading()
-        self.url = "hyd.htm"
+        self.url = "hyd.html"
 
         self.nhyd = nhyd
         self.ihydun = ihydun
@@ -180,6 +159,8 @@ class ModflowHyd(Package):
 
         dtype = ModflowHyd.get_default_dtype()
         obs = ModflowHyd.get_empty(nhyd)
+        if isinstance(obsdata, pd.DataFrame):
+            obsdata = obsdata.to_records(index=False)
         if isinstance(obsdata, list):
             if len(obsdata) != nhyd:
                 raise RuntimeError(

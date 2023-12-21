@@ -4,13 +4,14 @@ the ModflowDrn class as `flopy.modflow.ModflowDrn`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/index.html?drn.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/drn.html>`_.
 
 """
 import numpy as np
+
 from ..pakbase import Package
-from ..utils.util_list import MfList
 from ..utils.recarray_utils import create_empty_recarray
+from ..utils.util_list import MfList
 
 
 class ModflowDrn(Package):
@@ -22,12 +23,10 @@ class ModflowDrn(Package):
     model : model object
         The model object (of type :class:`flopy.modflow.mf.Modflow`) to which
         this package will be added.
-    ipakcb : int
-        A flag that is used to determine if cell-by-cell budget data should be
-        saved. If ipakcb is non-zero cell-by-cell budget data will be saved.
-        (default is None).
-    stress_period_data : list of boundaries, recarrays, or dictionary of
-        boundaries.
+    ipakcb : int, optional
+        Toggles whether cell-by-cell budget data should be saved. If None or zero,
+        budget data will not be saved (default is None).
+    stress_period_data : list, recarray, dataframe or dictionary of boundaries.
         Each drain cell is defined through definition of
         layer(int), row(int), column(int), elevation(float),
         conductance(float).
@@ -73,9 +72,9 @@ class ModflowDrn(Package):
         filenames=None the package name will be created using the model name
         and package extension and the cbc output name will be created using
         the model name and .cbc extension (for example, modflowtest.cbc),
-        if ipakcbc is a number greater than zero. If a single string is passed
+        if ipakcb is a number greater than zero. If a single string is passed
         the package will be set to the string and cbc output names will be
-        created using the model name and .cbc extension, if ipakcbc is a
+        created using the model name and .cbc extension, if ipakcb is a
         number greater than zero. To define the names for all package files
         (input and output) the length of the list of strings should be 2.
         Default is None.
@@ -118,28 +117,15 @@ class ModflowDrn(Package):
         filenames=None,
         **kwargs,
     ):
-
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowDrn._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
 
-        # update external file information with cbc output, if necessary
-        if ipakcb is not None:
-            fname = filenames[1]
-            model.add_output_file(
-                ipakcb, fname=fname, package=ModflowDrn._ftype()
-            )
-        else:
-            ipakcb = 0
+        # cbc output file
+        self.set_cbc_output_file(ipakcb, model, filenames[1])
 
         if options is None:
             options = []
@@ -151,28 +137,19 @@ class ModflowDrn(Package):
         if self.is_drt:
             name = ["DRT"]
         else:
-            name = [ModflowDrn._ftype()]
-        units = [unitnumber]
-        extra = [""]
+            name = [self._ftype()]
 
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
             name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
         self._generate_heading()
-        self.url = "drn.htm"
-
-        self.ipakcb = ipakcb
+        self.url = "drn.html"
 
         self.np = 0
 

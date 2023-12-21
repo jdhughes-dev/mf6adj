@@ -4,7 +4,7 @@ the ModflowDe4 class as `flopy.modflow.ModflowDe4`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow-nwt/MODFLOW-NWT-Guide/de4.htm>`_.
+<https://water.usgs.gov/ogw/modflow-nwt/MODFLOW-NWT-Guide/de4.html>`_.
 
 """
 from ..pakbase import Package
@@ -127,38 +127,17 @@ class ModflowDe4(Package):
         unitnumber=None,
         filenames=None,
     ):
-        """
-        Package constructor.
-
-        """
-
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowDe4._defaultunit()
 
-        # set filenames
-        if filenames is None:
-            filenames = [None]
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        # Fill namefile items
-        name = [ModflowDe4._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=self._prepare_filenames(filenames),
         )
 
         # check if a valid model version has been specified
@@ -169,7 +148,7 @@ class ModflowDe4(Package):
             raise Exception(err)
 
         self._generate_heading()
-        self.url = "de4.htm"
+        self.url = "de4.html"
 
         self.itmx = itmx
         self.mxup = mxup

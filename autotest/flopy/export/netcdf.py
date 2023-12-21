@@ -1,13 +1,20 @@
+import copy
+import json
 import os
 import platform
 import socket
-import copy
-import json
-import numpy as np
-from datetime import datetime
 import time
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, Union
+
+import numpy as np
+from packaging import version
+
+from ..utils import import_optional_dependency
+from ..utils.crs import get_authority_crs
+from .longnames import NC_LONG_NAMES
 from .metadata import acdd
-import flopy
 
 # globals
 FILLVALUE = -99999.9
@@ -22,10 +29,6 @@ ITMUNI = {
 PRECISION_STRS = ["f4", "f8", "i4"]
 
 STANDARD_VARS = ["longitude", "latitude", "layer", "elevation", "time"]
-
-path = os.path.split(__file__)[0]
-with open(path + "/longnames.json") as f:
-    NC_LONG_NAMES = json.load(f)
 
 
 class Logger:
@@ -59,7 +62,7 @@ class Logger:
         elif filename:
             self.f = open(filename, "w", 0)  # unbuffered
             self.t = datetime.now()
-            self.log("opening " + str(filename) + " for logging")
+            self.log(f"opening {filename} for logging")
         else:
             self.filename = None
 
@@ -73,21 +76,18 @@ class Logger:
             the thing that happened
 
         """
-        pass
         t = datetime.now()
         if phrase in self.items.keys():
-            s = f"{t} finished: {phrase}, took: {t - self.items[phrase]}\n"
+            t0 = self.items.pop(phrase)
+            s = f"{t} finished: {phrase}, took: {t - t0}\n"
             if self.echo:
-                print(s)
+                print(s, end="")
             if self.filename:
                 self.f.write(s)
-            self.items.pop(phrase)
         else:
-            s = str(t) + " starting: " + str(phrase) + "\n"
+            s = f"{t} starting: {phrase}\n"
             if self.echo:
-                print(
-                    s,
-                )
+                print(s, end="")
             if self.filename:
                 self.f.write(s)
             self.items[phrase] = copy.deepcopy(t)
@@ -102,11 +102,9 @@ class Logger:
             the warning text
 
         """
-        s = str(datetime.now()) + " WARNING: " + message + "\n"
+        s = f"{datetime.now()} WARNING: {message}\n"
         if self.echo:
-            print(
-                s,
-            )
+            print(s, end="")
         if self.filename:
             self.f.write(s)
         return
@@ -118,8 +116,8 @@ class NetCdf:
 
     Parameters
     ----------
-    output_filename : str
-        Name of the .nc file to write
+    output_filename : str or PathLike
+        Path of the .nc file to write
     model : flopy model instance
     time_values : the entries for the time dimension
         if not None, the constructor will initialize
@@ -130,6 +128,10 @@ class NetCdf:
         (default 'down')
     verbose : if True, stdout is verbose.  If str, then a log file
         is written to the verbose file
+    prj : str, optional, default None
+        PROJ4 string
+    logger : Logger, optional, default None
+        Logging object for custom logging configuration
     forgive : what to do if a duplicate variable name is being created.  If
         True, then the newly requested var is skipped.  If False, then
         an exception is raised.
@@ -148,7 +150,7 @@ class NetCdf:
 
     def __init__(
         self,
-        output_filename,
+        output_filename: Union[str, os.PathLike],
         model,
         time_values=None,
         z_positive="up",
@@ -158,8 +160,8 @@ class NetCdf:
         forgive=False,
         **kwargs,
     ):
-
-        assert output_filename.lower().endswith(".nc")
+        output_filename = Path(output_filename)
+        assert output_filename.suffix == ".nc"
         if verbose is None:
             verbose = model.verbose
         if logger is not None:
@@ -169,7 +171,7 @@ class NetCdf:
         self.var_attr_dict = {}
         self.log = self.logger.log
         if os.path.exists(output_filename):
-            self.logger.warn("removing existing nc file: " + output_filename)
+            self.logger.warn(f"removing existing nc file: {output_filename}")
             os.remove(output_filename)
         self.output_filename = output_filename
 
@@ -193,28 +195,19 @@ class NetCdf:
             )
         self.shape = self.model_grid.shape
 
-        try:
-            import dateutil.parser
-        except:
-            print(
-                "python-dateutil is not installed\n"
-                "try pip install python-dateutil"
-            )
-            return
+        parser = import_optional_dependency("dateutil.parser")
 
-        self.start_datetime = self._dt_str(
-            dateutil.parser.parse(self.model_time.start_datetime)
-        )
-        self.logger.warn(f"start datetime:{self.start_datetime!s}")
+        dt = parser.parse(self.model_time.start_datetime)
+        self.start_datetime = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.logger.log(f"start datetime:{self.start_datetime}")
 
-        proj4_str = self.model_grid.proj4
-        if proj4_str is None:
-            proj4_str = "epsg:4326"
-            self.log(
-                "Warning: model has no coordinate reference system specified. "
-                f"Using default proj4 string: {proj4_str}"
+        crs = get_authority_crs(self.model_grid.crs)
+        if crs is None:
+            self.logger.warn(
+                "model has no coordinate reference system specified. "
             )
-        self.proj4_str = proj4_str
+        self.model_crs = crs
+        self.transformer = None
         self.grid_units = self.model_grid.units
         self.z_positive = z_positive
         if self.grid_units is None:
@@ -225,10 +218,49 @@ class NetCdf:
 
         self.time_units = self.model_time.time_units
 
-        # this gives us confidence that every NetCdf instance
-        # has the same attributes
         self.log("initializing attributes")
-        self._initialize_attributes()
+        self.nc_crs_str = "epsg:4326"
+        self.nc_crs_longname = "https://www.opengis.net/def/crs/EPSG/0/4326"
+        self.nc_semi_major = float(6378137.0)
+        self.nc_inverse_flat = float(298.257223563)
+
+        self.global_attributes = {}
+        self.global_attributes["namefile"] = self.model.namefile
+        self.global_attributes["model_ws"] = self.model.model_ws
+        self.global_attributes["exe_name"] = self.model.exe_name
+        self.global_attributes["modflow_version"] = self.model.version
+
+        self.global_attributes["create_hostname"] = socket.gethostname()
+        self.global_attributes["create_platform"] = platform.system()
+        self.global_attributes["create_directory"] = os.getcwd()
+
+        htol, rtol = -999, -999
+        try:
+            htol, rtol = self.model.solver_tols()
+        except Exception as e:
+            self.logger.warn(f"unable to get solver tolerances:{e!s}")
+        self.global_attributes["solver_head_tolerance"] = htol
+        self.global_attributes["solver_flux_tolerance"] = rtol
+        spatial_attribs = {
+            "xll": self.model_grid.xoffset,
+            "yll": self.model_grid.yoffset,
+            "rotation": self.model_grid.angrot,
+            "crs": self.model_grid.crs,
+        }
+        for n, v in spatial_attribs.items():
+            self.global_attributes["flopy_sr_" + n] = v
+        self.global_attributes[
+            "start_datetime"
+        ] = self.model_time.start_datetime
+
+        self.fillvalue = FILLVALUE
+
+        # initialize attributes
+        self.grid_crs = None
+        self.zs = self.model_grid.xyzcellcenters[2].copy()
+        self.ys = None
+        self.xs = None
+        self.nc = None
         self.log("initializing attributes")
 
         self.time_values_arg = time_values
@@ -236,6 +268,14 @@ class NetCdf:
         self.log("initializing file")
         self.initialize_file(time_values=self.time_values_arg)
         self.log("initializing file")
+
+    def __enter__(self):
+        """Enter context with statement, returning with an open dataset."""
+        return self
+
+    def __exit__(self, *exc):
+        """Exit context with statement, write and close dataset."""
+        self.write()
 
     def __add__(self, other):
         new_net = NetCdf.zeros_like(self)
@@ -253,6 +293,7 @@ class NetCdf:
             raise Exception(
                 f"NetCdf.__add__(): unrecognized other:{type(other)}"
             )
+        new_net.nc.sync()
         return new_net
 
     def __sub__(self, other):
@@ -271,6 +312,7 @@ class NetCdf:
             raise Exception(
                 f"NetCdf.__sub__(): unrecognized other:{type(other)}"
             )
+        new_net.nc.sync()
         return new_net
 
     def __mul__(self, other):
@@ -289,6 +331,7 @@ class NetCdf:
             raise Exception(
                 f"NetCdf.__mul__(): unrecognized other:{type(other)}"
             )
+        new_net.nc.sync()
         return new_net
 
     def __div__(self, other):
@@ -312,7 +355,8 @@ class NetCdf:
                 raise Exception(
                     f"NetCdf.__sub__(): unrecognized other:{type(other)}"
                 )
-            return new_net
+        new_net.nc.sync()
+        return new_net
 
     def append(self, other, suffix="_1"):
         assert isinstance(other, NetCdf) or isinstance(other, dict)
@@ -331,7 +375,7 @@ class NetCdf:
                         continue
                 assert (
                     new_vname not in self.nc.variables.keys()
-                ), "var already exists:{0} in {1}".format(
+                ), "var already exists:{} in {}".format(
                     new_vname, ",".join(self.nc.variables.keys())
                 )
                 attrs["max"] = var[:].max()
@@ -367,14 +411,19 @@ class NetCdf:
                     new_var[:] = array
                 except:
                     new_var[:, 0] = array
-
+        self.nc.sync()
         return
 
     def copy(self, output_filename):
         new_net = NetCdf.zeros_like(self, output_filename=output_filename)
         for vname in self.var_attr_dict.keys():
             new_net.nc.variables[vname][:] = self.nc.variables[vname][:]
+        new_net.nc.sync()
         return new_net
+
+    @property
+    def nc_crs(self):
+        return get_authority_crs(self.nc_crs_str)
 
     @classmethod
     def zeros_like(
@@ -416,6 +465,7 @@ class NetCdf:
             if attr not in new_net.nc.ncattrs():
                 global_attrs[attr] = other.nc[attr]
         new_net.add_global_attributes(global_attrs)
+        new_net.nc.sync()
         return new_net
 
     @classmethod
@@ -481,12 +531,8 @@ class NetCdf:
         assert (
             self.nc is not None
         ), "can't call difference() if nc hasn't been populated"
-        try:
-            import netCDF4
-        except Exception as e:
-            mess = f"error import netCDF4: {e!s}"
-            self.logger.warn(mess)
-            raise Exception(mess)
+
+        netCDF4 = import_optional_dependency("netCFD4")
 
         if isinstance(other, str):
             assert os.path.exists(other), f"filename 'other' not found:{other}"
@@ -600,14 +646,7 @@ class NetCdf:
 
             var[:] = d_data
             self.log(f"processing variable {vname}")
-
-    def _dt_str(self, dt):
-        """for datetime to string for year < 1900"""
-        dt_str = (
-            f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}T"
-            f"{dt.hour:02d}:{dt.minute:02d}:{dt.second:02}Z"
-        )
-        return dt_str
+        new_net.nc.sync()
 
     def write(self):
         """write the nc object to disk"""
@@ -622,91 +661,30 @@ class NetCdf:
             try:
                 if self.nc.attributes.get(k) is not None:
                     self.nc.setncattr(k, v)
-            except Exception:
-                self.logger.warn(f"error setting global attribute {k}")
+            except Exception as e:
+                self.logger.warn(f"error setting global attribute {k}: {e!s}")
 
         self.nc.sync()
         self.nc.close()
         self.log("writing nc file")
 
-    def _initialize_attributes(self):
-        """private method to initial the attributes
-        of the NetCdf instance
-        """
-        assert (
-            "nc" not in self.__dict__.keys()
-        ), "NetCdf._initialize_attributes() error: nc attribute already set"
-
-        self.nc_epsg_str = "epsg:4326"
-        self.nc_crs_longname = "http://www.opengis.net/def/crs/EPSG/0/4326"
-        self.nc_semi_major = float(6378137.0)
-        self.nc_inverse_flat = float(298.257223563)
-
-        self.global_attributes = {}
-        self.global_attributes["namefile"] = self.model.namefile
-        self.global_attributes["model_ws"] = self.model.model_ws
-        self.global_attributes["exe_name"] = self.model.exe_name
-        self.global_attributes["modflow_version"] = self.model.version
-
-        self.global_attributes["create_hostname"] = socket.gethostname()
-        self.global_attributes["create_platform"] = platform.system()
-        self.global_attributes["create_directory"] = os.getcwd()
-
-        htol, rtol = -999, -999
-        try:
-            htol, rtol = self.model.solver_tols()
-        except Exception as e:
-            self.logger.warn(f"unable to get solver tolerances:{e!s}")
-        self.global_attributes["solver_head_tolerance"] = htol
-        self.global_attributes["solver_flux_tolerance"] = rtol
-        spatial_attribs = {
-            "xll": self.model_grid.xoffset,
-            "yll": self.model_grid.yoffset,
-            "rotation": self.model_grid.angrot,
-            "proj4_str": self.model_grid.proj4,
-        }
-        for n, v in spatial_attribs.items():
-            self.global_attributes["flopy_sr_" + n] = v
-        self.global_attributes[
-            "start_datetime"
-        ] = self.model_time.start_datetime
-
-        self.fillvalue = FILLVALUE
-
-        # initialize attributes
-        self.grid_crs = None
-        self.zs = None
-        self.ys = None
-        self.xs = None
-        self.nc = None
-
     def initialize_geometry(self):
         """initialize the geometric information
         needed for the netcdf file
         """
-        try:
-            import pyproj
-        except ImportError as e:
-            raise ImportError(
-                "NetCdf error importing pyproj module:\n" + str(e)
-            )
-        from distutils.version import LooseVersion
+        pyproj = import_optional_dependency("pyproj")
+        from ..utils.parse_version import Version
 
         # Check if using newer pyproj version conventions
-        pyproj220 = LooseVersion(pyproj.__version__) >= LooseVersion("2.2.0")
+        if version.parse(pyproj.__version__) < version.parse("2.2"):
+            raise ValueError(
+                "The FloPy NetCDF module requires pyproj >= 2.2.0."
+            )
 
-        proj4_str = self.proj4_str
-        print(f"initialize_geometry::proj4_str = {proj4_str}")
+        print(f"initialize_geometry::")
 
-        self.log(f"building grid crs using proj4 string: {proj4_str}")
-        if pyproj220:
-            self.grid_crs = pyproj.CRS(proj4_str)
-        else:
-            if proj4_str.lower().startswith("epsg:"):
-                proj4_str = "+init=" + proj4_str
-            self.grid_crs = pyproj.Proj(proj4_str, preserve_units=True)
-
-        print(f"initialize_geometry::self.grid_crs = {self.grid_crs}")
+        self.log(f"model crs: {self.model_crs}")
+        print(f"model crs: {self.model_crs}")
 
         vmin, vmax = self.model_grid.botm.min(), self.model_grid.top.max()
         if self.z_positive == "down":
@@ -718,39 +696,28 @@ class NetCdf:
         xs = self.model_grid.xyzcellcenters[0].copy()
 
         # Transform to a known CRS
-        if pyproj220:
-            nc_crs = pyproj.CRS(self.nc_epsg_str)
+        if self.model_crs is not None and self.nc_crs is not None:
             self.transformer = pyproj.Transformer.from_crs(
-                self.grid_crs, nc_crs, always_xy=True
+                self.model_crs, self.nc_crs, always_xy=True
             )
-        else:
-            nc_epsg_str = self.nc_epsg_str
-            if nc_epsg_str.lower().startswith("epsg:"):
-                nc_epsg_str = "+init=" + nc_epsg_str
-            nc_crs = pyproj.Proj(nc_epsg_str)
-            self.transformer = None
 
-        print(f"initialize_geometry::nc_crs = {nc_crs}")
+        print(f"initialize_geometry::nc_crs = {self.nc_crs}")
 
-        if pyproj220:
+        xmin, xmax, ymin, ymax = self.model_grid.extent
+        if self.transformer is not None:
             print(f"transforming coordinates using = {self.transformer}")
 
-        self.log("projecting grid cell center arrays")
-        if pyproj220:
+            self.log("projecting grid cell center arrays")
             self.xs, self.ys = self.transformer.transform(xs, ys)
-        else:
-            self.xs, self.ys = pyproj.transform(self.grid_crs, nc_crs, xs, ys)
 
-        # get transformed bounds and record to check against ScienceBase later
-        xmin, xmax, ymin, ymax = self.model_grid.extent
-        bbox = np.array(
-            [[xmin, ymin], [xmin, ymax], [xmax, ymax], [xmax, ymin]]
-        )
-        if pyproj220:
+            # get transformed bounds and record to check against ScienceBase later
+            bbox = np.array(
+                [[xmin, ymin], [xmin, ymax], [xmax, ymax], [xmax, ymin]]
+            )
             x, y = self.transformer.transform(*bbox.transpose())
+            self.bounds = x.min(), y.min(), x.max(), y.max()
         else:
-            x, y = pyproj.transform(self.grid_crs, nc_crs, *bbox.transpose())
-        self.bounds = x.min(), y.min(), x.max(), y.max()
+            self.bounds = xmin, ymin, xmax, ymax
         self.vbounds = vmin, vmax
 
     def initialize_file(self, time_values=None):
@@ -766,36 +733,32 @@ class NetCdf:
                 self.model.dis.perlen and self.start_datetime
 
         """
+        from ..version import __version__ as version
+
         if self.nc is not None:
             raise Exception("nc file already initialized")
 
-        if self.grid_crs is None:
-            self.log("initializing geometry")
-            self.initialize_geometry()
-            self.log("initializing geometry")
-        try:
-            import netCDF4
-        except Exception as e:
-            self.logger.warn("error importing netCDF module")
-            msg = "NetCdf error importing netCDF4 module:\n" + str(e)
-            raise Exception(msg)
+        self.log("initializing geometry")
+        self.initialize_geometry()
+        self.log("initializing geometry")
+
+        netCDF4 = import_optional_dependency("netCDF4")
 
         # open the file for writing
         try:
             self.nc = netCDF4.Dataset(self.output_filename, "w")
         except Exception as e:
-            msg = f"error creating netcdf dataset:\n{e!s}"
-            raise Exception(msg)
+            raise Exception("error creating netcdf dataset") from e
 
         # write some attributes
         self.log("setting standard attributes")
 
         self.nc.setncattr(
             "Conventions",
-            f"CF-1.6, ACDD-1.3, flopy {flopy.__version__}",
+            f"CF-1.6, ACDD-1.3, flopy {version}",
         )
         self.nc.setncattr(
-            "date_created", datetime.utcnow().strftime("%Y-%m-%dT%H:%M:00Z")
+            "date_created", datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         )
         self.nc.setncattr("geospatial_vertical_positive", str(self.z_positive))
         min_vertical = np.min(self.zs)
@@ -807,8 +770,8 @@ class NetCdf:
         for k, v in self.global_attributes.items():
             try:
                 self.nc.setncattr(k, v)
-            except:
-                self.logger.warn(f"error setting global attribute {k}")
+            except Exception as e:
+                self.logger.warn(f"error setting global attribute {k}: {e!s}")
         self.global_attributes = {}
         self.log("setting standard attributes")
 
@@ -826,7 +789,7 @@ class NetCdf:
         # Metadata variables
         crs = self.nc.createVariable("crs", "i4")
         crs.long_name = self.nc_crs_longname
-        crs.epsg_code = self.nc_epsg_str
+        crs.crs_wkt = self.nc_crs.to_wkt()
         crs.semi_major_axis = self.nc_semi_major
         crs.inverse_flattening = self.nc_inverse_flat
         self.log("setting CRS info")
@@ -928,11 +891,9 @@ class NetCdf:
         )
         y[:] = self.model_grid.xyzcellcenters[1]
 
-        # grid mapping variable
-        crs = flopy.export.shapefile_utils.CRS(
-            prj=self.model_grid.prj, epsg=self.model_grid.epsg
-        )
-        attribs = crs.grid_mapping_attribs
+        # convert pyproj.CRS object to a
+        # Climate and Forecast (CF) Grid Mapping Version 1.8 dict.
+        attribs = self.nc_crs.to_cf()
         if attribs is not None:
             self.log("creating grid mapping variable")
             self.create_variable(
@@ -1002,6 +963,7 @@ class NetCdf:
         exp.existingDataField = "elevation"
         exp._CoordinateTransformType = "vertical"
         exp._CoordinateAxes = "layer"
+        self.nc.sync()
         return
 
     def initialize_group(
@@ -1062,7 +1024,6 @@ class NetCdf:
                         f"{dim} information must be supplied to dimension data"
                     )
                 else:
-
                     self.nc.groups[group].createDimension(
                         dim, len(dimension_data[dim])
                     )
@@ -1129,6 +1090,7 @@ class NetCdf:
                     dimensions=dim_names,
                 )
                 var[:] = np.asarray(dimension_data[dim])
+        self.nc.sync()
 
     @staticmethod
     def normalize_name(name):
@@ -1212,11 +1174,13 @@ class NetCdf:
         for k, v in attributes.items():
             try:
                 var.setncattr(k, v)
-            except:
+            except Exception as e:
                 self.logger.warn(
-                    f"error setting attribute{k} for group {group} variable {name}"
+                    "error setting attribute "
+                    f"{k} for group {group} variable {name}: {e!s}"
                 )
         self.log(f"creating group {group} variable: {name}")
+        self.nc.sync()
 
         return var
 
@@ -1275,10 +1239,10 @@ class NetCdf:
         if name in self.nc.variables.keys():
             raise Exception(f"duplicate variable name: {name}")
 
-        self.log("creating variable: " + str(name))
+        self.log(f"creating variable: {name}")
         assert (
             precision_str in PRECISION_STRS
-        ), "netcdf.create_variable() error: precision string {0} not in {1}".format(
+        ), "netcdf.create_variable() error: precision string {} not in {}".format(
             precision_str, PRECISION_STRS
         )
 
@@ -1310,11 +1274,12 @@ class NetCdf:
         for k, v in attributes.items():
             try:
                 var.setncattr(k, v)
-            except:
+            except Exception as e:
                 self.logger.warn(
-                    f"error setting attribute{k} for variable {name}"
+                    f"error setting attribute{k} for variable {name}: {e!s}"
                 )
-        self.log("creating variable: " + str(name))
+        self.log(f"creating variable: {name}")
+        self.nc.sync()
         return var
 
     def add_global_attributes(self, attr_dict):
@@ -1346,6 +1311,7 @@ class NetCdf:
         self.log("setting global attributes")
         self.nc.setncatts(attr_dict)
         self.log("setting global attributes")
+        self.nc.sync()
 
     def add_sciencebase_metadata(self, id, check=True):
         """Add metadata from ScienceBase using the
@@ -1397,7 +1363,7 @@ class NetCdf:
         assert md.geospatial_vertical_min - self.vbounds[0] < tol
         assert md.geospatial_vertical_max - self.vbounds[1] < tol
 
-    def get_longnames_from_docstrings(self, outfile="longnames.json"):
+    def get_longnames_from_docstrings(self, outfile="longnames.py"):
         """
         This is experimental.
 
@@ -1449,7 +1415,7 @@ class NetCdf:
         attr = [v.split("_")[-1] for v in self.nc.variables]
 
         # parse docstrings to get long names
-        longnames = {}
+        longnames = dict.fromkeys(attr, "")
         for pkg in packages:
             # parse the docstring
             obj = pkg[-1]
@@ -1462,10 +1428,8 @@ class NetCdf:
                     if k in attr:
                         longnames[k] = v.split(". ")[0]
 
-        # add in any variables that weren't found
-        for var in attr:
-            if var not in longnames.keys():
-                longnames[var] = ""
+        longnames_dict = json.dumps(longnames, sort_keys=True, indent=4)
         with open(outfile, "w") as output:
-            json.dump(longnames, output, sort_keys=True, indent=2)
+            output.write("NC_LONG_NAMES = ")
+            output.write(longnames_dict)
         return longnames

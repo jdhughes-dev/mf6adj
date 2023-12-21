@@ -1,4 +1,5 @@
 import numpy as np
+
 from ..utils import flopy_io
 
 
@@ -121,7 +122,7 @@ class OptionBlock:
                                 pass
                             else:
                                 val.append(
-                                    str((object.__getattribute__(self, k)))
+                                    str(object.__getattribute__(self, k))
                                 )
 
                 if "None" in val:

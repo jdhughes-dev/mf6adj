@@ -3,7 +3,7 @@ __author__ = "emorway"
 import numpy as np
 
 from ..pakbase import Package
-from ..utils import Util2d, Util3d, Transient2d
+from ..utils import Transient2d, Util2d
 
 
 class Mt3dUzt(Package):
@@ -146,7 +146,6 @@ class Mt3dUzt(Package):
         filenames=None,
         **kwargs,
     ):
-
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = Mt3dUzt._defaultunit()
@@ -154,45 +153,26 @@ class Mt3dUzt(Package):
             unitnumber = Mt3dUzt._reservedunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                for idx in range(len(filenames), 2):
-                    filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
 
         if icbcuz is not None:
-            fname = filenames[1]
-            extension = "uzcobs.out"
             model.add_output_file(
                 icbcuz,
-                fname=fname,
-                extension=extension,
+                fname=filenames[1],
+                extension="uzcobs.out",
                 binflag=False,
-                package=Mt3dUzt._ftype(),
+                package=self._ftype(),
             )
         else:
             icbcuz = 0
 
-        # Fill namefile items
-        name = [Mt3dUzt._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
         # Set dimensions
@@ -573,7 +553,6 @@ class Mt3dUzt(Package):
 
         # Start of transient data
         for iper in range(nper):
-
             if model.verbose:
                 print(f"   loading UZT data for kper {iper + 1:5d}")
 

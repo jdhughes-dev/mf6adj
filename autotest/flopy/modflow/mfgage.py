@@ -4,12 +4,13 @@ the ModflowGage class as `flopy.modflow.ModflowGage`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/gage.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/gage.html>`_.
 
 """
 import os
 
 import numpy as np
+import pandas as pd
 
 from ..pakbase import Package
 from ..utils import read_fixed_var, write_fixed_var
@@ -27,7 +28,7 @@ class ModflowGage(Package):
         this package will be added.
     numgage : int
         The total number of gages included in the gage file (default is 0).
-    gage_data : list or numpy array
+    gage_data : list or numpy array or recarray or pandas dataframe
         data for dataset 2a and 2b in the gage package. If a list is provided
         then the list includes 2 to 3 entries (LAKE UNIT [OUTTYPE]) for each
         LAK Package entry and 4 entries (GAGESEG GAGERCH UNIT OUTTYPE) for
@@ -88,26 +89,15 @@ class ModflowGage(Package):
         filenames=None,
         **kwargs,
     ):
-        """
-        Package constructor.
-
-        """
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowGage._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None for x in range(numgage + 1)]
-        elif isinstance(filenames, str):
-            filenames = [filenames] + [None for x in range(numgage)]
-        elif isinstance(filenames, list):
-            if len(filenames) < numgage + 1:
-                for idx in range(len(filenames), numgage + 2):
-                    filenames.append(None)
+        filenames = self._prepare_filenames(filenames, numgage + 1)
 
         # process gage output files
-        dtype = ModflowGage.get_default_dtype()
+        dtype = self.get_default_dtype()
         if numgage > 0:
             # check the provided file entries
             if filenames[1] is None:
@@ -143,6 +133,8 @@ class ModflowGage(Package):
                     gage_data = np.core.records.fromarrays(
                         gage_data.transpose(), dtype=dtype
                     )
+            elif isinstance(gage_data, pd.DataFrame):
+                gage_data = gage_data.to_records(index=False)
             elif isinstance(gage_data, list):
                 d = ModflowGage.get_empty(ncells=numgage)
                 for n in range(len(gage_data)):
@@ -172,36 +164,24 @@ class ModflowGage(Package):
 
             # add gage output files to model
             for n in range(numgage):
-                iu = abs(gage_data["unit"][n])
-                fname = files[n]
                 model.add_output_file(
-                    iu,
-                    fname=fname,
+                    abs(gage_data["unit"][n]),
+                    fname=files[n],
                     binflag=False,
-                    package=ModflowGage._ftype(),
+                    package=self._ftype(),
                 )
 
-        # Fill namefile items
-        name = [ModflowGage._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
         # no heading for this format
-        self.url = "gage.htm"
+        self.url = "gage.html"
 
         self.numgage = numgage
         self.files = files
