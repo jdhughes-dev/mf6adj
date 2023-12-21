@@ -479,19 +479,28 @@ class Mf6Adj(object):
         sat_old_mod = sat_old.copy()
         sat_old_mod[iconvert == 0] = 1.0
 
-        result = np.zeros_like(head)
+        height = top - bot
+        #result = np.zeros_like(head)
+        dSC1 = area * height
+        result = ((dSC1 / dt) * (sat_old_mod * head_old - sat_mod * head) +
+                (dSC1 / dt) * bot * (sat_mod - sat_old_mod) +
+                (dSC1 / (2.0 * dt)) * height * (
+                        sat_mod**2 - sat_old_mod**2))
+        # zero out dry cells
+        result[head<=bot] = 0.0
+        result[head_old<=bot] = 0.0
 
         #term = (dSC1 / dt) * (sat_old_mod[node] * head_old[node] - sat_mod[node] * head[node]) +
         # (dSC1 / dt) * bot[node] * (sat_mod[node] - sat_old_mod[node]) +
         # (dSC1 / (2.0 * dt)) * (top[node] - bot[node]) * ((sat_mod[node]) ** 2 - (sat_old_mod[node]) ** 2)
-        for node in range(len(ia) - 1):
-            dSC1 = area[node] * (top[node] - bot[node])
-            term = ((dSC1 / dt) * (sat_old_mod[node] * head_old[node] - sat_mod[node] * head[node]) +
-                    (dSC1 / dt) * bot[node] * (sat_mod[node] - sat_old_mod[node]) +
-                    (dSC1 / (2.0 * dt)) * (top[node] - bot[node]) * (
-                               (sat_mod[node]) ** 2 - (sat_old_mod[node]) ** 2))
-            #
-            result[node] = term
+        #for node in range(len(ia) - 1):
+        #    dSC1 = area[node] * (top[node] - bot[node])
+        #    term = ((dSC1 / dt) * (sat_old_mod[node] * head_old[node] - sat_mod[node] * head[node]) +
+        #            (dSC1 / dt) * bot[node] * (sat_mod[node] - sat_old_mod[node]) +
+        #            (dSC1 / (2.0 * dt)) * (top[node] - bot[node]) * (
+        #                       (sat_mod[node]) ** 2 - (sat_old_mod[node]) ** 2))
+        #    #
+        #    result[node] = term
         return result
 
 

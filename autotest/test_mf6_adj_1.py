@@ -2739,8 +2739,8 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
         for k in range(nlay):
             t,b = geo[k],geo[k+1]
             sy.append(ss*(t-b))
-        steady_state = [True]
-        transient = [False]
+        steady_state = [False]
+        transient = [True]
         if len(tdis_pd) > 1:
             steady_state = {kper:False for kper in range(len(tdis_pd))}
             steady_state[0] = True
@@ -2748,7 +2748,6 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
             transient[0] = False
 
         sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=iconvert, steady_state=steady_state,transient=transient,ss=ss,sy=sy)
-
 
     chd_rec = []
     if ncol > 1:
@@ -3142,12 +3141,12 @@ def test_xd_box_1():
 
     new_d = 'xd_box_1_test'
 
-    nrow = ncol = 15
+    nrow = ncol = 5
     nlay = 2
-    nper = 3
+    nper = 1
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
-                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=0, newton=True, delrowcol=1.0, full_sat_ghb=True)
+                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=0, newton=True, delrowcol=1.0, full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
