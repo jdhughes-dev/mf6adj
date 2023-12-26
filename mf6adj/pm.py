@@ -46,12 +46,16 @@ class PerfMeas(object):
 	
 	"""
 
-    def __init__(self, name, type, entries, is_structured, verbose_level=1):
-        self._name = name.lower().strip()
-        self._type = type.lower().strip()
-        self._entries = entries
+    def __init__(self, pm_name, pm_type, pm_entries, is_structured, verbose_level=1, pm_pak_name=None):
+        self._name = pm_name.lower().strip()
+        self._type = pm_type.lower().strip()
+        self._entries = pm_entries
         self.is_structured = is_structured
         self.verbose_level = int(verbose_level)
+        self._pak_name=pm_pak_name
+        if pm_pak_name is not None and self._type != "flux":
+            raise Exception("something is wrong")
+
 
     @property
     def name(self):
@@ -301,7 +305,8 @@ class PerfMeas(object):
         #print(hdf["gwf_info"].keys())
         nodeuser = hdf["gwf_info"]["nodeuser"][:]
         nodereduced = hdf["gwf_info"]["nodereduced"][:]
-
+        if len(nodeuser) == 1:
+            nodeuser = np.arange(nnodes,dtype=int)
         lamb = np.zeros(nnodes)
 
         grid_shape = None
@@ -356,7 +361,7 @@ class PerfMeas(object):
             if sol_key in adf:
                 raise Exception("solution key '{0}' already in adjoint hdf5 file".format(sol_key))
 
-            dfdh = self._dfdh(kk, hdf[sol_key]["head"])
+            dfdh = self._dfdh(kk, hdf[sol_key])
             data["dfdh"] = dfdh
             iss = hdf[sol_key]["iss"][0]
 
@@ -975,8 +980,19 @@ class PerfMeas(object):
                     dfdh[pfr.inode] = 2.0 * pfr.weight * (head_dict[kk][pfr.inode] - pfr.obsval)
         return dfdh
 
-    def _dfdh(self, kk, head):
+    def _dfdh(self, kk, sol_dataset):
+        head = sol_dataset["head"][:]
         dfdh = np.zeros_like(head)
+        hcof = None
+        nodelist = None
+        nodelist_map = {}
+        if self._type == "flux":
+            pakname = self._pak_name
+            if pakname in sol_dataset:
+                hcof = sol_dataset[pakname]["hcof"][:]
+                nodelist = sol_dataset[pakname]["nodelist"][:]
+                for i,n in enumerate(nodelist):
+                    nodelist_map[n-1] = i
         for pfr in self._entries:
             if pfr.kperkstp == kk:
                 if self._type == "direct":
@@ -984,6 +1000,8 @@ class PerfMeas(object):
                     dfdh[pfr.inode] = pfr.weight
                 elif self._type == "residual":
                     dfdh[pfr.inode] = 2.0 * pfr.weight * (head[pfr.inode] - pfr.obsval)
+                elif self._type == "flux" and hcof is not None:
+                    dfdh[pfr.inode] = hcof[nodelist_map[pfr.inode]]
         return dfdh
 
     @staticmethod

@@ -3130,6 +3130,8 @@ def test_xd_box_1():
     include_id0 = True  # include an idomain = cell
     include_sto = True
 
+    include_ghb_flux_pm = True
+
     clean = True # run the pertbuation process
     run_pert = False # the pertubations
     plot_pert_results = True #plot the pertubation results
@@ -3142,7 +3144,7 @@ def test_xd_box_1():
     new_d = 'xd_box_1_test'
 
     nrow = ncol = 5
-    nlay = 2
+    nlay = 1
     nper = 1
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
@@ -3225,6 +3227,24 @@ def test_xd_box_1():
                 for kper in range(sim.tdis.nper.data):
                     f.write("{0} 1 {1} {2} {3} {4} {5}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
                 f.write("end performance_measure\n\n")
+
+            if include_ghb_flux_pm:
+                ghb = gwf.get_package("ghb_0").stress_period_data.array[0]
+                print(ghb)
+                
+                for k in range(nlay):
+                    pm_name = "ghb_0_k{0}".format(k)
+                    kijs = [g[0] for g in ghb if g[0][0] == k]
+                    #print(kijs)
+                    if len(kijs) > 0:
+                        f.write("begin performance_measure {0} type flux package_name ghb_0\n".format(pm_name))
+                        for kper in range(sim.tdis.nper.data):
+                            for k,i,j in kijs:
+                                f.write("{0} 1 {1} {2} {3}\n".format(kper+1,k+1,i+1,j+1))
+                        f.write("end performance_measure\n\n")
+        
+
+
 
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
         adj.solve_gwf()
@@ -3486,6 +3506,11 @@ def freyberg_structured_demo():
     os.system("mf6")
     os.chdir("..")
 
+    sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
+    gwf = sim.get_model()
+    sfr_data = pd.DataFrame.from_records(gwf.sfr.packagedata.array)
+
+
     lrcs = []
     k_dict = {}
     with open(os.path.join(new_d,"head.obs"),'r') as f:
@@ -3506,12 +3531,25 @@ def freyberg_structured_demo():
     rvals = np.random.random(len(lrcs)) + 36
     with open(os.path.join(new_d,"test.adj"),'w') as f:
 
-        f.write("begin performance_measure pm1 type direct\n")
-        for rval,lrc in zip(rvals,lrcs):
-            for kper in range(25):
-                #f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,lrc,rval))
-                f.write("{0} 1 {1} 1.0\n".format(kper + 1, lrc, rval))
-        f.write("end performance_measure\n\n")
+        # f.write("begin performance_measure pm1 type direct\n")
+        # for rval,lrc in zip(rvals,lrcs):
+        #     for kper in range(sim.tdis.nper.data):
+        #         #f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,lrc,rval))
+        #         f.write("{0} 1 {1} 1.0\n".format(kper + 1, lrc, rval))
+        # f.write("end performance_measure\n\n")
+
+        bnames = sfr_data.boundname.unique()
+        bnames.sort()
+        for bname in bnames:
+            bdf = sfr_data.loc[sfr_data.boundname==bname,:].copy()
+
+            f.write("begin performance_measure {0} type flux package_name sfr_1\n".format(bname))
+            for kper in range(sim.tdis.nper.data):
+                for kij in bdf.cellid.values:
+                    f.write("{0} 1 {1} {2} {3}\n".format(kper+1,kij[0]+1,kij[1]+1,kij[2]+1))
+            f.write("end performance_measure\n\n")
+
+
 
     start = datetime.now()
     os.chdir(new_d)
@@ -3986,9 +4024,9 @@ def freyberg_notional_unstruct_demo():
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    test_xd_box_1()
+    #test_xd_box_1()
 
-    #freyberg_structured_demo()
+    freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()

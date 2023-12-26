@@ -81,7 +81,7 @@ class Mf6Adj(object):
         # self._iss = {}
         # self._sat = {}
         # self._sat_old = {}
-        self._gwf_package_types = ["wel6", "ghb6", "rch6", "rcha6"]
+        self._gwf_package_types = ["wel6","ghb6","riv6","drn6","sfr6"]
 
     def _read_adj_file(self):
         """read the adj input file
@@ -146,16 +146,27 @@ class Mf6Adj(object):
                 # parse a new performance measure block
                 elif line.lower().strip().startswith("begin performance_measure"):
                     raw = line.lower().strip().split()
-                    if len(raw) != 5:
-                        raise Exception(
-                            "wrong number of entries on 'begin performance_measure' line number {0}: '{1}'".format(
-                                count, line))
+                    
                     pm_name = raw[2].strip().lower()
                     if raw[3].strip().lower() != "type":
                         raise Exception("4th entry on line {0} should be 'type', not '{1}'".format(count, raw[3]))
                     pm_type = raw[4].strip().lower()
-                    if pm_type not in ["direct", "residual"]:
-                        raise Exception("unrecognized PM type:'{0}', should be 'direct' or 'residual'")
+                    if pm_type not in ["direct", "residual","flux"]:
+                        raise Exception("unrecognized PM type:'{0}', should be 'direct', 'residual', or 'flux'")
+                    pm_pakname = None
+                    if pm_type in ["direct","residual"] and len(raw) != 5:
+                        raise Exception(
+                            "wrong number of entries on 'begin performance_measure' line number {0}: '{1}'".format(
+                                count, line))
+                    elif pm_type == "flux":
+                        if len(raw) != 7:
+                            raise Exception(
+                                "wrong number of entries on 'begin performance_measure' line number {0}: '{1}'".format(
+                                    count, line))
+                        if raw[5].lower().strip() != "package_name":
+                            raise Exception("the 6th entry flux performance line number {0} should be 'package_name', not '{1}'".format(count,raw[5]))
+                        pm_pakname = raw[6].lower().strip()
+
                     pm_entries = []
                     while True:
                         line2 = f.readline()
@@ -274,7 +285,7 @@ class Mf6Adj(object):
                     if pm_name in [pm._name for pm in self._performance_measures]:
                         raise Exception("PM {0} multiply defined".format(pm_name))
                     self._performance_measures.append(
-                        PerfMeas(pm_name, pm_type, pm_entries, self.is_structured, self.verbose_level))
+                        PerfMeas(pm_name, pm_type, pm_entries, self.is_structured, self.verbose_level, pm_pakname))
 
                 else:
                     raise Exception("unrecognized adj file input on line {0}: '{1}'".format(count, line))
@@ -697,7 +708,7 @@ class Mf6Adj(object):
                                     sp_package_data[package_type][kperkstp].append(
                                         {"node": nodelist[i], "bound": bound[i],
                                          "hcof": hcof[i], "rhs": rhs[i], "packagename": tag})
-                            data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound}
+                            data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound,"hcof":hcof,"rhs":rhs}
             attr_dict = {"ctime": ctime, "dt": dt1, "kper": kper, "kstp": kstp,"is_newton":is_newton,"has_sto":has_sto}
             PerfMeas.write_group_to_hdf(fhd, group_name="solution_kper:{0:05d}_kstp:{1:05d}".format(kper, kstp), data_dict=data_dict,
                                      attr_dict=attr_dict)
