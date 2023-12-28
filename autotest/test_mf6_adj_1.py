@@ -139,8 +139,9 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     ghb = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_spd)
 
     if nrow > 1 and ncol > 1:
-        wel_rec = [(nlay - 1, int(nrow / 2), int(ncol / 2), q)]
-        wel = flopy.mf6.ModflowGwfwel(gwf, stress_period_data={kper:wel_rec for kper in range(nper)})
+        #wel_rec = [(nlay - 1, int(nrow / 2), int(ncol / 2), q)]
+        wspd ={kper:[(nlay - 1, int(nrow / 2), int(ncol / 2), q*(kper+1))] for kper in range(nper)}
+        wel = flopy.mf6.ModflowGwfwel(gwf, stress_period_data=wspd)
 
     flopy.mf6.ModflowGwfrcha(gwf, recharge=0.0001)
 
@@ -399,22 +400,45 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
     sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
     gwf = sim.get_model()
     id = gwf.dis.idomain.array
-    nlay, nrow, ncol = gwf.dis.nlay.data, gwf.dis.nrow.data, gwf.dis.ncol.data
+    #nlay, nrow, ncol = gwf.dis.nlay.data, gwf.dis.nrow.data, gwf.dis.ncol.data
 
-    pm_files = [os.path.join(new_d,f) for f in os.listdir(new_d) if f.startswith("pm-") and f.endswith(".dat") and "comp_sens" in f]
-    if nlay == 1:
-        pm_files = [f for f in pm_files if "k33" not in f]
-    assert len(pm_files) > 0
+    adj_summary_files = [os.path.join(new_d,f) for f in os.listdir(new_d) if f.startswith("adjoint_summary") and f.endswith(".csv")]
+
+    #if nlay == 1:
+    #    pm_files = [f for f in pm_files if "k33" not in f]
+    assert len(adj_summary_files) > 0
 
     # temp filter
-    pm_files = [f for f in pm_files if "ghb" not in f and "wel" not in f]
-    pm_files.sort()
-    pert_files = [f.replace("pm-","pert-") for f in pm_files]
+    #pm_files = [f for f in pm_files if "ghb" not in f and "wel" not in f]
+    #pm_files.sort()
+    #pert_files = [f.replace("pm-","pert-") for f in pm_files]
+    pert_summary = pd.read_csv(os.path.join(new_d,"pert_results.csv"),index_col=0)
+
     if plot_compare:
         from matplotlib.backends.backend_pdf import PdfPages
         pdf = PdfPages(os.path.join(new_d,"compare.pdf"))
 
-    for pm_file,pert_file in zip(pm_files,pert_files):
+    for pm_name in pert_summary.columns:
+        if pm_name in ["epsilon","k","i","j","addr"]:
+            continue
+    #for pm_file,pert_file in zip(pm_files,pert_files):
+        adj_file = [f for f in adj_summary_files if pm_name in f]
+        if len(adj_file) != 1:
+            print(pm_name,adj_file)
+            raise Exception()
+        adj_file = adj_file[0]
+        print(adj_file,pm_name)
+        adj = pd.read_csv(adj_file,index_col=0)
+        for col in adj.columns:
+            #try to find the values in addr
+            pertdf = pert_summary.loc[pert_summary.addr.str.contains(col),pm_name]
+            adjdf = adj.loc[pertdf.index.values,col]
+            print(pm_name,col,pertdf.shape[0],adjdf.shape[0])
+            dif = pertdf.values - adjdf.values
+            print(dif)
+
+
+        continue
         k = int(pm_file.split(".")[0].split("_")[-1][1:])
         pm_arr = np.atleast_2d(np.loadtxt(pm_file))
         pm_arr[id[k,:,:]==0] = 0
@@ -497,7 +521,7 @@ def test_xd_box_1():
     include_id0 = True  # include an idomain = cell
     include_sto = True
 
-    include_ghb_flux_pm = True
+    include_ghb_flux_pm = False
 
     clean = True # run the pertbuation process
     run_pert = False # the pertubations
@@ -511,8 +535,8 @@ def test_xd_box_1():
     new_d = 'xd_box_1_test'
 
     nrow = ncol = 5
-    nlay = 3
-    nper = 3
+    nlay = 2
+    nper = 2
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
                                  nlay=nlay,q=-0.1, icelltype=1, iconvert=1, newton=True, delrowcol=1.0, full_sat_ghb=False)
@@ -554,26 +578,6 @@ def test_xd_box_1():
         sys.path.append(os.path.join("..",".."))
 
         print('calculating mf6adj sensitivity')
-        # with open("test.adj",'w') as f:
-        #     f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
-        #     for kper in range(sim.tdis.nper.data):
-        #         for p_kij in pm_locs:
-        #             k,i,j = p_kij
-        #             if id[k,i,j] <= 0:
-        #                 continue
-        #             # just looking at one pm location for now...
-        #             #if p_kij != (0,0,2):
-        #             #    continue
-        #             pm_name = "direct_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
-        #             f.write("begin performance_measure {0} type direct\n".format(pm_name))
-        #             f.write("{0} 1 {1} {2} {3} {4} \n".format(kper+1,k+1,i+1,j+1,weight))
-        #             f.write("end performance_measure\n\n")
-        #
-        #             pm_name = "phi_kper{0:03d}_pk{1:03d}_pi{2:03d}_pj{3:03d}".format(kper,k,i,j)
-        #             f.write("begin performance_measure {0} type residual\n".format(pm_name))
-        #             # just use top as the obs val....
-        #             f.write("{0} 1 {1} {2} {3} {4} {5}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
-        #             f.write("end performance_measure\n\n")
 
         with open("test.adj",'w') as f:
             f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
@@ -606,15 +610,6 @@ def test_xd_box_1():
                                 f.write("{0} 1 {1} {2} {3} ghb_0 direct 1.0 -1.0e+30\n".format(kper+1,k+1,i+1,j+1))
                         f.write("end performance_measure\n\n")
 
-                        pm_name = "ghb_0_k{0}_residual".format(k)
-                        f.write("begin performance_measure {0}\n".format(pm_name))
-                        for kper in range(sim.tdis.nper.data):
-                            for k, i, j in kijs:
-                                f.write("{0} 1 {1} {2} {3} ghb_0 residual 1.0 123456.7\n".format(kper + 1, k + 1, i + 1,
-                                                                                               j + 1))
-                        f.write("end performance_measure\n\n")
-
-
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
@@ -641,10 +636,10 @@ def test_xd_box_1():
 
         os.chdir(bd)
 
-    if run_pert:
-        run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
+    #if run_pert:
+    #    run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 
-    #xd_box_compare(new_d,plot_compare)
+    xd_box_compare(new_d,plot_compare)
 
 
 def test_xd_box_unstruct_1():
@@ -1397,10 +1392,10 @@ def freyberg_notional_unstruct_demo():
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    #test_xd_box_1()
+    test_xd_box_1()
 
     #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
-    freyberg_quadtree_demo()
+    #freyberg_quadtree_demo()
 

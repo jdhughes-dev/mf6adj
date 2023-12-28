@@ -911,4 +911,7 @@ class Mf6Adj(object):
             dfs.append(df)
 
         df = pd.concat(dfs)
+        df.index = df.index.values + 1
+        df.index.name = "node"
+        df.sort_index(inplace=True)
         df.to_csv("pert_results.csv")

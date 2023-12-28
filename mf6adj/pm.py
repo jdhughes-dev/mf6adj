@@ -91,8 +91,6 @@ class PerfMeas(object):
                                     elif pfr.pm_form == "residual":
                                         result += (pfr.weight * (kk_d["simval"] - pfr.obsval)) ** 2
 
-                #raise Exception()
-                pass
         return result
 
     # def solve_adjoint_old(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict,
@@ -284,7 +282,7 @@ class PerfMeas(object):
                             format(hdf5_forward_solution_fname, self._name, str(e)))
         if hdf5_adjoint_solution_fname is None:
             pth = os.path.split(hdf5_forward_solution_fname)[0]
-            hdf5_adjoint_solution_fname = os.path.join(pth, "adj_{0}_".format(self._name) + hdf5_forward_solution_fname)
+            hdf5_adjoint_solution_fname = os.path.join(pth, "adjoint_solution_{0}_".format(self._name) + hdf5_forward_solution_fname)
 
         if os.path.exists(hdf5_adjoint_solution_fname):
             print("WARNING: removing existing adjoint solution file '{0}'".format(hdf5_adjoint_solution_fname))
@@ -418,11 +416,14 @@ class PerfMeas(object):
             comp_k33_sens += k33_sens
 
             if has_sto:
-                ss_sens = lamb * hdf[sol_key]["dresdss_h"][:]
+                if iss == 0:
+                    ss_sens = lamb * hdf[sol_key]["dresdss_h"][:]
+                else:
+                    ss_sens = np.zeros_like(lamb)
                 data["ss"] = ss_sens
                 comp_ss_sens += ss_sens
 
-            data["welq"] = lamb
+            data["wel"] = lamb
             comp_welq_sens += lamb
 
             #if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
@@ -465,7 +466,7 @@ class PerfMeas(object):
 
         if has_sto:
             data["ss"] = comp_ss_sens
-        data["welq"] = comp_welq_sens
+        data["wel"] = comp_welq_sens
         if "ghb6" in gwf_package_dict:
             data["ghbhead"] = comp_ghb_head_sens
             data["ghbcond"] = comp_ghb_cond_sens
@@ -474,11 +475,12 @@ class PerfMeas(object):
         adf.close()
         hdf.close()
 
-        df = pd.DataFrame({"k11": comp_k_sens, "k33": comp_k33_sens, "welq": comp_welq_sens, "rch": comp_rch_sens},
-                          index=nodeuser)
+        df = pd.DataFrame({"k11": comp_k_sens, "k33": comp_k33_sens, "wel": comp_welq_sens, "rch": comp_rch_sens},
+                          index=nodeuser+1)
         if has_sto:
             df["ss"] = comp_ss_sens
-        df.to_csv("{0}_adj_summary.csv".format(self._name))
+        df.index.name = "node"
+        df.to_csv("adjoint_summary_{0}.csv".format(self._name))
         return df
 
     @staticmethod
