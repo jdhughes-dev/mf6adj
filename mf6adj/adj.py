@@ -803,14 +803,21 @@ class Mf6Adj(object):
                         names.append(pakname+"_item{0}".format(ibnd))
             df = pd.DataFrame(pert_results_dict)
             df.loc[:, "node"] = nodes
-            df.loc[:, "epsilon"] = epsilons
+
+            #df.loc[:, "epsilon"] = epsilons
             df.loc[:,"addr"] = names
             df.index = df.pop("node")
             if kijs is not None:
                 for idx, lab in zip([0, 1, 2], ["k", "i", "j"]):
                     df.loc[:, lab] = df.index.map(lambda x: kijs[x - 1][idx])
-            dfs.append(df)
+            col_dict = {col:df.loc[:,col].to_dict() for col in df.columns}
+            gdf = df.groupby(df.index).sum()
 
+            for col in df.columns:
+                if col in pert_results_dict:
+                    continue
+                gdf.loc[:,col] = gdf.index.map(lambda x: col_dict[col][x])
+            dfs.append(gdf)
         # property perturbations
         address = [["K11", gwf_name, "NPF"]]
         if nlay > 1:

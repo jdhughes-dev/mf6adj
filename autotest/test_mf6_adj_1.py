@@ -78,7 +78,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     tdis = flopy.mf6.ModflowTdis(sim, pname="tdis", time_units="DAYS", nper=len(tdis_pd), perioddata=tdis_pd)
 
     ims = flopy.mf6.ModflowIms(sim, pname="ims", complexity="SIMPLE", linear_acceleration="BICGSTAB",
-                               inner_dvclose=1e-6, outer_dvclose=1e-6, outer_maximum=1000, inner_maximum=1000)
+                               inner_dvclose=1e-8, outer_dvclose=1e-8, outer_maximum=1000, inner_maximum=1000)
 
     model_nam_file = f"{name}.nam"
     newtonoptions = []
@@ -413,7 +413,9 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
     #pm_files.sort()
     #pert_files = [f.replace("pm-","pert-") for f in pm_files]
     pert_summary = pd.read_csv(os.path.join(new_d,"pert_results.csv"),index_col=0)
-
+    for col in ["k","i","j"]:
+        if col in pert_summary:
+            pert_summary[col] = pert_summary[col].astype(int)
     if plot_compare:
         from matplotlib.backends.backend_pdf import PdfPages
         pdf = PdfPages(os.path.join(new_d,"compare.pdf"))
@@ -421,72 +423,90 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
     for pm_name in pert_summary.columns:
         if pm_name in ["epsilon","k","i","j","addr"]:
             continue
-    #for pm_file,pert_file in zip(pm_files,pert_files):
         adj_file = [f for f in adj_summary_files if pm_name in f]
         if len(adj_file) != 1:
             print(pm_name,adj_file)
             raise Exception()
         adj_file = adj_file[0]
-        print(adj_file,pm_name)
+        #print(adj_file,pm_name)
         adj = pd.read_csv(adj_file,index_col=0)
         for col in adj.columns:
             #try to find the values in addr
-            pertdf = pert_summary.loc[pert_summary.addr.str.contains(col),pm_name]
+            pertdf = pert_summary.loc[pert_summary.addr.str.contains(col),:]
             adjdf = adj.loc[pertdf.index.values,col]
-            print(pm_name,col,pertdf.shape[0],adjdf.shape[0])
-            dif = pertdf.values - adjdf.values
-            print(dif)
+
+            dif = pertdf.loc[:,pm_name].values - adjdf.values
+            print(pm_name, col, pertdf.shape[0], adjdf.shape[0])
+            if dif.shape[0] == 0:
+                print("...no values to compare")
+                continue
+            abs_max_dif_percent = 100. * np.abs(dif)/max(np.abs(pertdf[pm_name].values).max(),np.abs(adjdf.values).max())
+
+            print("...min vals:",pertdf[pm_name].values.min(),adjdf.values.min())
+            print("...max vals:",pertdf[pm_name].values.max(), adjdf.values.max())
+            print("...dif vals",dif.min(),dif.max(),np.abs(dif).min(),np.abs(dif).max())
+            print("...abs max % dif:",np.nanmax(abs_max_dif_percent))
+            #if not np.isinf(np.nanmax(abs_max_dif_percent)):
+            #    assert np.nanmax(abs_max_dif_percent) < 10.0 #?
+            if plot_compare and "i" in pertdf.columns and "j" in pertdf.columns:
+                kvals =pertdf.k.unique()
+                kvals.sort()
+                pertdf.loc[:,"dif"] = dif
+                pertdf.loc[:,"absdif"] = abs_max_dif_percent
+                for k in kvals:
+                    kpertdf = pertdf.loc[pertdf.k==k,:]
+                    kadjdf = adjdf.loc[kpertdf.index]
+
+                    adj_arr = np.zeros((gwf.dis.nrow.data,gwf.dis.ncol.data)) - 1e30
+                    pert_arr = np.zeros_like(adj_arr) - 1e30
+                    adj_arr[kpertdf.i,kpertdf.j] = kadjdf.values
+                    pert_arr[kpertdf.i, kpertdf.j] = kpertdf[pm_name].values
+                    dif_arr = np.zeros_like(adj_arr) - 1.0e30
+                    dif_arr[kpertdf.i, kpertdf.j] = kpertdf.dif.values
+
+                    abs_arr = np.zeros_like(adj_arr) - 1.0e30
+                    abs_arr[kpertdf.i, kpertdf.j] = kpertdf.absdif.values
+
+                    for arr in [adj_arr,pert_arr,dif_arr,abs_arr]:
+                        arr[arr==-1e+30] = np.nan
+
+                    fig,axes = plt.subplots(1,4,figsize=(35,4))
+
+                    absd = np.abs(dif_arr)
+                    absp = np.abs(abs_arr)
+
+                    absd[absd<plt_zero_thres] = 0
+                    #pert_arr[absd==0] = np.nan
+                    #pm_arr[absd==0] = np.nan
+                    dif_arr[absd==0] = np.nan
+                    abs_arr[absd==0] = np.nan
+                    mx = max(np.nanmax(pert_arr),np.nanmax(adj_arr))
+                    mn = min(np.nanmin(pert_arr), np.nanmin(adj_arr))
+                    cb = axes[0].imshow(pert_arr,vmax=mx,vmin=mn)
+                    plt.colorbar(cb,ax=axes[0])
+                    axes[0].set_title(pm_name+" "+col+" pert k:"+str(k),loc="left")
 
 
-        continue
-        k = int(pm_file.split(".")[0].split("_")[-1][1:])
-        pm_arr = np.atleast_2d(np.loadtxt(pm_file))
-        pm_arr[id[k,:,:]==0] = 0
-        pert_arr = np.atleast_2d(np.loadtxt(pert_file))
-        pm_arr[id[k, :, :] == 0] = 0
-        d = pm_arr - pert_arr
-        demon = pert_arr.copy()
-        demon[demon==0] = 1e-10
-        p = 100 * np.abs(d) / np.nanmax(np.abs(pert_arr))
-        # todo checks for closeness...
+                    cb = axes[1].imshow(adj_arr, vmax=mx, vmin=mn)
+                    plt.colorbar(cb, ax=axes[1])
+                    axes[1].set_title(pm_name+" "+col+" adj k:"+str(k),loc="left")
+                    mx = np.nanmax(absd)
 
-        print(pert_file,np.nanmax(np.abs(d)),np.nanmax(np.abs(p)))
-        if plot_compare:
-            fig,axes = plt.subplots(1,4,figsize=(35,4))
-            absd = np.abs(d)
-            absp = np.abs(p)
-
-            absd[absd<plt_zero_thres] = 0
-            #pert_arr[absd==0] = np.nan
-            #pm_arr[absd==0] = np.nan
-            d[absd==0] = np.nan
-            p[absd==0] = np.nan
-            mx = max(np.nanmax(pert_arr),np.nanmax(pm_arr))
-            mn = min(np.nanmin(pert_arr), np.nanmin(pm_arr))
-            cb = axes[0].imshow(pert_arr,vmax=mx,vmin=mn)
-            plt.colorbar(cb,ax=axes[0])
-            axes[0].set_title(pert_file,loc="left")
-
-
-            cb = axes[1].imshow(pm_arr, vmax=mx, vmin=mn)
-            plt.colorbar(cb, ax=axes[1])
-            axes[1].set_title(pm_file,loc="left")
-            mx = np.nanmax(absd)
-            cb = axes[2].imshow(d,vmin=-mx,vmax=mx,cmap="coolwarm")
-            plt.colorbar(cb,ax=axes[2])
-            axes[2].set_title("pert - pm, not showing abs(diff) <= {0}".format(plt_zero_thres),loc="left")
-            mx = np.nanmax(absp)
-            cb = axes[3].imshow(p)
-            plt.colorbar(cb, ax=axes[3])
-            axes[3].set_title("percent diff pert - pm",loc="left")
-            if np.any(id==0):
-                idp = id[k,:,:].copy().astype(float)
-                idp[idp!=0] = np.nan
-                axes[0].imshow(idp,cmap="magma")
-                axes[1].imshow(idp, cmap="magma")
-            plt.tight_layout()
-            pdf.savefig()
-            plt.close(fig)
+                    cb = axes[2].imshow(dif_arr,vmin=-mx,vmax=mx,cmap="coolwarm")
+                    plt.colorbar(cb,ax=axes[2])
+                    axes[2].set_title("pert - adj, not showing abs(diff) <= {0}".format(plt_zero_thres),loc="left")
+                    mx = np.nanmax(absp)
+                    cb = axes[3].imshow(abs_arr,vmin=-mx,vmax=mx,cmap="coolwarm")
+                    plt.colorbar(cb, ax=axes[3])
+                    axes[3].set_title("percent diff pert - pm",loc="left")
+                    if np.any(id==0):
+                        idp = id[k,:,:].copy().astype(float)
+                        idp[idp!=0] = np.nan
+                        axes[0].imshow(idp,cmap="magma")
+                        axes[1].imshow(idp, cmap="magma")
+                    plt.tight_layout()
+                    pdf.savefig()
+                    plt.close(fig)
     if plot_compare:
         pdf.close()
 
@@ -530,13 +550,11 @@ def test_xd_box_1():
     run_adj = True
     plot_adj_results = False # plot adj result
 
-    plot_compare = True
-
+    plot_compare = False
     new_d = 'xd_box_1_test'
-
-    nrow = ncol = 5
+    nrow = ncol = 15
     nlay = 2
-    nper = 2
+    nper = 3
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
                                  nlay=nlay,q=-0.1, icelltype=1, iconvert=1, newton=True, delrowcol=1.0, full_sat_ghb=False)
@@ -549,7 +567,7 @@ def test_xd_box_1():
     nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
     obsval = 1.0
 
-    pert_mult = 1.01
+    pert_mult = 1.001
     weight = 1.0
 
     p_kijs = []
@@ -613,7 +631,7 @@ def test_xd_box_1():
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
-        adj._perturbation_test()
+        adj._perturbation_test(pert_mult=pert_mult)
         adj.finalize()
 
 
@@ -640,6 +658,7 @@ def test_xd_box_1():
     #    run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 
     xd_box_compare(new_d,plot_compare)
+    return new_d
 
 
 def test_xd_box_unstruct_1():
@@ -658,13 +677,13 @@ def test_xd_box_unstruct_1():
     #plot_compare = True
 
     new_d = 'xd_box_1_unstruct_test'
-    nrow = ncol = 15
+    nrow = ncol = 5
     nlay = 2
-    nper = 3
+    nper = 2
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper, include_sto=include_sto, include_id0=include_id0, nrow=nrow,
                                  ncol=ncol,
-                                 nlay=nlay, q=-0.1, icelltype=1, iconvert=0, newton=True, delrowcol=1.0,
+                                 nlay=nlay, q=-0.1, icelltype=1, iconvert=1, newton=True, delrowcol=1.0,
                                  full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
@@ -673,7 +692,7 @@ def test_xd_box_unstruct_1():
     obsval = 1.0
     shutil.copy2(gg_bin,os.path.join(new_d,os.path.split(gg_bin)[1]))
 
-    pert_mult = 1.01
+    pert_mult = 1.0001
     weight = 1.0
     xcc, ycc = np.atleast_2d(gwf.modelgrid.xcellcenters),np.atleast_2d(gwf.modelgrid.ycellcenters)
 
@@ -822,6 +841,7 @@ def test_xd_box_unstruct_1():
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name, verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
+        adj._perturbation_test(pert_mult=pert_mult)
         adj.finalize()
 
         if plot_adj_results:
@@ -842,8 +862,7 @@ def test_xd_box_unstruct_1():
 
 
         os.chdir(bd)
-
-
+    xd_box_compare(new_d,False)
 
 def freyberg_structured_demo():
     
@@ -1391,8 +1410,9 @@ def freyberg_notional_unstruct_demo():
                     print("...", key, pkey, k + 1)
 
 if __name__ == "__main__":
-    #test_xd_box_unstruct_1()
-    test_xd_box_1()
+    test_xd_box_unstruct_1()
+    new_d = test_xd_box_1()
+    xd_box_compare(new_d,True)
 
     #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
