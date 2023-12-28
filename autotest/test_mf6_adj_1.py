@@ -973,8 +973,8 @@ def freyberg_quadtree_demo():
 
     org_d = "freyberg_quadtree"
     new_d = "freyberg_quadtree_test"
-    prep_run = False
-    run_adj = False
+    prep_run = True
+    run_adj = True
 
     if prep_run:
         if os.path.exists(new_d):
@@ -987,10 +987,10 @@ def freyberg_quadtree_demo():
         shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
         shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
 
-        os.chdir(new_d)
-        os.system("mf6")
-        os.chdir("..")
-
+        #os.chdir(new_d)
+        #os.system("mf6")
+        #os.chdir("..")
+        pyemu.os_utils.run("mf6",cwd=new_d)
 
     if run_adj:
         df = pd.read_csv(os.path.join(new_d,"freyberg6.obs_continuous_heads.csv.txt"),header=None,names=["site","otype","layer","node"])
@@ -1206,9 +1206,10 @@ def freyberg_notional_unstruct_demo():
     shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
     # shutil.copytree(os.path.join('mf6adj'), os.path.join(new_d, 'mf6adj'))
 
-    os.chdir(new_d)
-    os.system("mf6")
-    os.chdir("..")
+    #os.chdir(new_d)
+    #os.system("mf6")
+    #os.chdir("..")
+    pyemu.os_utils.run("mf6",cwd=new_d)
 
     sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
     gwf = sim.get_model()
@@ -1395,11 +1396,11 @@ def freyberg_notional_unstruct_demo():
                     print("...", key, pkey, k + 1)
 
 if __name__ == "__main__":
-    test_xd_box_unstruct_1()
-    test_xd_box_1()
+    #test_xd_box_unstruct_1()
+    #test_xd_box_1()
 
-    freyberg_structured_demo()
-    freyberg_structured_highres_demo()
-    freyberg_notional_unstruct_demo()
+    #freyberg_structured_demo()
+    #freyberg_structured_highres_demo()
+    #freyberg_notional_unstruct_demo()
     freyberg_quadtree_demo()
 
