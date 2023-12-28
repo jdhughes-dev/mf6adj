@@ -22,25 +22,25 @@ if "linux" in platform.platform().lower():
     mf6_bin = os.path.join("..", "bin", "linux", "mf6")
     local_lib_name = "./libmf6.so"
     local_mf6_bin = "./mf6"
-    gg_bin = "gridgen"
+    gg_bin = os.path.join("..", "bin", "linux", "gridgen")
 elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower() and "arm" not in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "mac", "libmf6.dylib")
     mf6_bin = os.path.join("..", "bin", "mac", "mf6")
     local_lib_name = "./libmf6.dylib"
     local_mf6_bin = "./mf6"
-    gg_bin = "gridgen"
+    gg_bin = os.path.join("..", "bin", "mac", "gridgen")
 elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower() and "arm" in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "mac", "libmf6_arm.dylib")
     mf6_bin = os.path.join("..", "bin", "mac", "mf6")
     local_lib_name = "./libmf6_arm.dylib"
     local_mf6_bin = "./mf6"
-    gg_bin = "gridgen"
+    gg_bin = os.path.join("..", "bin", "mac", "gridgen")
 else:
     lib_name = os.path.join("..", "bin", "win", "libmf6.dll")
     mf6_bin = os.path.join("..", "bin", "win", "mf6.exe")
     local_lib_name = "libmf6.dll"
     local_mf6_bin = "mf6.exe"
-    gg_bin = "gridgen.exe"
+    gg_bin = os.path.join("..", "bin", "win", "gridgen.exe")
 
 
 #some plotting functions
@@ -3144,11 +3144,11 @@ def test_xd_box_1():
     new_d = 'xd_box_1_test'
 
     nrow = ncol = 5
-    nlay = 1
-    nper = 1
+    nlay = 3
+    nper = 3
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
-                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=0, newton=True, delrowcol=1.0, full_sat_ghb=False)
+                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=1, newton=True, delrowcol=1.0, full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -3215,35 +3215,37 @@ def test_xd_box_1():
                 if id[k, i, j] <= 0:
                     continue
                 pm_name = "direct_pk{1:03d}_pi{2:03d}_pj{3:03d}".format("0", k, i, j)
-                f.write("begin performance_measure {0} type direct\n".format(pm_name))
+                f.write("begin performance_measure {0}\n".format(pm_name))
                 for kper in range(sim.tdis.nper.data):
-                    f.write("{0} 1 {1} {2} {3} {4} \n".format(kper+1,k+1,i+1,j+1,weight))
+                    f.write("{0} 1 {1} {2} {3} head direct {4} -1e+30\n".format(kper + 1, k + 1, i + 1, j + 1, weight))
                 f.write("end performance_measure\n\n")
 
-
                 pm_name = "phi_pk{1:03d}_pi{2:03d}_pj{3:03d}".format("0",k,i,j)
-
-                f.write("begin performance_measure {0} type residual\n".format(pm_name))
+                f.write("begin performance_measure {0}\n".format(pm_name))
                 for kper in range(sim.tdis.nper.data):
-                    f.write("{0} 1 {1} {2} {3} {4} {5}\n".format(kper+1,k+1,i+1,j+1,obsval,weight))
+                    f.write("{0} 1 {1} {2} {3} head residual {4} {5}\n".format(kper+1,k+1,i+1,j+1,weight,obsval))
                 f.write("end performance_measure\n\n")
 
             if include_ghb_flux_pm:
                 ghb = gwf.get_package("ghb_0").stress_period_data.array[0]
-                print(ghb)
-                
                 for k in range(nlay):
-                    pm_name = "ghb_0_k{0}".format(k)
                     kijs = [g[0] for g in ghb if g[0][0] == k]
                     #print(kijs)
                     if len(kijs) > 0:
-                        f.write("begin performance_measure {0} type flux package_name ghb_0\n".format(pm_name))
+                        pm_name = "ghb_0_k{0}_direct".format(k)
+                        f.write("begin performance_measure {0}\n".format(pm_name))
                         for kper in range(sim.tdis.nper.data):
                             for k,i,j in kijs:
-                                f.write("{0} 1 {1} {2} {3}\n".format(kper+1,k+1,i+1,j+1))
+                                f.write("{0} 1 {1} {2} {3} ghb_0 direct 1.0 -1.0e+30\n".format(kper+1,k+1,i+1,j+1))
                         f.write("end performance_measure\n\n")
-        
 
+                        pm_name = "ghb_0_k{0}_residual".format(k)
+                        f.write("begin performance_measure {0}\n".format(pm_name))
+                        for kper in range(sim.tdis.nper.data):
+                            for k, i, j in kijs:
+                                f.write("{0} 1 {1} {2} {3} ghb_0 residual 1.0 123456.7\n".format(kper + 1, k + 1, i + 1,
+                                                                                               j + 1))
+                        f.write("end performance_measure\n\n")
 
 
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
@@ -3280,7 +3282,6 @@ def test_xd_box_1():
 
 def test_xd_box_unstruct_1():
 
-
     # workflow flags
     include_id0 = True  # include an idomain = cell - has to be false for unstructured...
     include_sto = True
@@ -3308,13 +3309,14 @@ def test_xd_box_unstruct_1():
 
     gwf = sim.get_model()
     obsval = 1.0
+    shutil.copy2(gg_bin,os.path.join(new_d,os.path.split(gg_bin)[1]))
 
     pert_mult = 1.01
     weight = 1.0
     xcc, ycc = np.atleast_2d(gwf.modelgrid.xcellcenters),np.atleast_2d(gwf.modelgrid.ycellcenters)
 
     from flopy.utils.gridgen import Gridgen
-    g = Gridgen(gwf.dis, model_ws=new_d, exe_name=gg_bin)
+    g = Gridgen(gwf.dis, model_ws=new_d, exe_name=os.path.join(new_d,os.path.split(gg_bin)[1]))
     g.build(verbose=True)
     gridprops = g.get_gridprops_disv()
     idomain = gwf.dis.idomain.array.copy()
@@ -3444,15 +3446,15 @@ def test_xd_box_unstruct_1():
             for p_kinode in pm_locs:
                 k, inode = p_kinode
                 pm_name = "direct_pk{0:03d}_pinode{1:03d}".format(k, inode)
-                f.write("begin performance_measure {0} type direct\n".format(pm_name))
+                f.write("begin performance_measure {0}\n".format(pm_name))
                 for kper in range(sim.tdis.nper.data):
-                    f.write("{0} 1 {1} {2} {3} \n".format(kper+1,k+1,inode+1,weight))
+                    f.write("{0} 1 {1} {2} head direct {3} -1.0e+30\n".format(kper+1,k+1,inode+1,weight))
                 f.write("end performance_measure\n\n")
 
                 pm_name = "phi_pk{0:03d}_pinode{1:03d}".format(k, inode)
-                f.write("begin performance_measure {0} type residual\n".format(pm_name))
+                f.write("begin performance_measure {0}\n".format(pm_name))
                 for kper in range(sim.tdis.nper.data):
-                    f.write("{0} 1 {1} {2} {3} {4}\n".format(kper+1,k+1,inode+1,obsval,weight))
+                    f.write("{0} 1 {1} {2} head direct {3} {4}\n".format(kper+1,k+1,inode+1,weight,obsval))
                 f.write("end performance_measure\n\n")
 
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name, verbose_level=1)
@@ -3502,9 +3504,10 @@ def freyberg_structured_demo():
     shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
     #shutil.copytree(os.path.join('mf6adj'), os.path.join(new_d, 'mf6adj'))
 
-    os.chdir(new_d)
-    os.system("mf6")
-    os.chdir("..")
+    #os.chdir(new_d)
+    #os.system("mf6")
+    #os.chdir("..")
+    pyemu.os_utils.run("mf6",cwd=new_d)
 
     sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
     gwf = sim.get_model()
@@ -3531,22 +3534,22 @@ def freyberg_structured_demo():
     rvals = np.random.random(len(lrcs)) + 36
     with open(os.path.join(new_d,"test.adj"),'w') as f:
 
-        # f.write("begin performance_measure pm1 type direct\n")
-        # for rval,lrc in zip(rvals,lrcs):
-        #     for kper in range(sim.tdis.nper.data):
-        #         #f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,lrc,rval))
-        #         f.write("{0} 1 {1} 1.0\n".format(kper + 1, lrc, rval))
-        # f.write("end performance_measure\n\n")
+        f.write("begin performance_measure pm1\n")
+        for rval,lrc in zip(rvals,lrcs):
+            for kper in range(sim.tdis.nper.data):
+                #f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,lrc,rval))
+                f.write("{0} 1 {1} head direct 1.0 -1.0e+30\n".format(kper + 1, lrc, rval))
+        f.write("end performance_measure\n\n")
 
         bnames = sfr_data.boundname.unique()
         bnames.sort()
         for bname in bnames:
             bdf = sfr_data.loc[sfr_data.boundname==bname,:].copy()
 
-            f.write("begin performance_measure {0} type flux package_name sfr_1\n".format(bname))
+            f.write("begin performance_measure {0}\n".format(bname))
             for kper in range(sim.tdis.nper.data):
                 for kij in bdf.cellid.values:
-                    f.write("{0} 1 {1} {2} {3}\n".format(kper+1,kij[0]+1,kij[1]+1,kij[2]+1))
+                    f.write("{0} 1 {1} {2} {3} sfr_1 direct 1.0 -1.0e+30\n".format(kper+1,kij[0]+1,kij[1]+1,kij[2]+1))
             f.write("end performance_measure\n\n")
 
 
@@ -3725,10 +3728,10 @@ def freyberg_structured_highres_demo():
     shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
     # shutil.copytree(os.path.join('mf6adj'), os.path.join(new_d, 'mf6adj'))
 
-    os.chdir(new_d)
-    os.system("mf6")
-    os.chdir("..")
-
+    #os.chdir(new_d)
+    #os.system("mf6")
+    #os.chdir("..")
+    pyemu.os_utils.run("mf6",cwd=new_d)
     # lrcs = []
     # k_dict = {}
     # with open(os.path.join(new_d, "head.obs"), 'r') as f:
@@ -3755,11 +3758,11 @@ def freyberg_structured_highres_demo():
     rvals = np.random.random(df.shape[0]) + 36
     with open(os.path.join(new_d, "test.adj"), 'w') as f:
 
-        f.write("begin performance_measure pm1 type direct\n")
+        f.write("begin performance_measure pm1\n")
         for rval, lay, row,col in zip(rvals, df.layer, df.row,df.col):
             for kper in range(25):
                 #f.write("{0} 1 {1} {2} {3} 1.0  {4}\n".format(kper + 1, lay, row, col, rval))
-                f.write("{0} 1 {1} {2} {3} 1.0\n".format(kper + 1, lay, row, col, rval))
+                f.write("{0} 1 {1} {2} {3} head direct 1.0 -1.0e+30\n".format(kper + 1, lay, row, col, rval))
         f.write("end performance_measure\n\n")
 
     # np.random.seed(11111)
@@ -3829,6 +3832,7 @@ def freyberg_notional_unstruct_demo():
     shutil.copytree(org_d, new_d)
     shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
     shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
+    shutil.copy2(gg_bin, os.path.join(new_d, os.path.split(gg_bin)[1]))
     shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
     shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
     shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
@@ -3845,7 +3849,7 @@ def freyberg_notional_unstruct_demo():
     xcc, ycc = np.atleast_2d(gwf.modelgrid.xcellcenters), np.atleast_2d(gwf.modelgrid.ycellcenters)
 
     from flopy.utils.gridgen import Gridgen
-    g = Gridgen(gwf.dis, model_ws=new_d, exe_name=gg_bin)
+    g = Gridgen(gwf.dis, model_ws=new_d, exe_name=os.path.join(new_d,os.path.split(gg_bin)[1]))
     g.build(verbose=True)
     gridprops = g.get_gridprops_disv()
     idomain = gwf.dis.idomain.array.copy()
@@ -3954,7 +3958,7 @@ def freyberg_notional_unstruct_demo():
 
     pyemu.os_utils.run("mf6",cwd=new_d)
 
-    lrcs = []
+    laynode = []
     k_dict = {}
     with open(os.path.join(new_d, "head.obs"), 'r') as f:
         f.readline()
@@ -3962,7 +3966,8 @@ def freyberg_notional_unstruct_demo():
             if line.strip().lower().startswith("end"):
                 break
             raw = line.strip().split()
-            lrcs.append(" ".join(raw[2:]))
+            laynode.append(" ".join(raw[2:]))
+
             k = int(raw[2]) - 1
             inode = int(raw[3]) - 1
             if k not in k_dict:
@@ -3970,14 +3975,14 @@ def freyberg_notional_unstruct_demo():
             k_dict[k].append([inode])
 
     np.random.seed(11111)
-    rvals = np.random.random(len(lrcs)) + 36
+    rvals = np.random.random(len(laynode)) + 36
     with open(os.path.join(new_d, "test.adj"), 'w') as f:
 
-        f.write("begin performance_measure pm1 type direct\n")
-        for rval, lrc in zip(rvals, lrcs):
+        f.write("begin performance_measure pm1\n")
+        for rval, ln in zip(rvals, laynode):
             for kper in range(25):
                 # f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,lrc,rval))
-                f.write("{0} 1 {1} 1.0\n".format(kper + 1, lrc, rval))
+                f.write("{0} 1 {1} head direct 1.0 {2}\n".format(kper + 1, ln, rval))
         f.write("end performance_measure\n\n")
 
     start = datetime.now()
@@ -4026,9 +4031,9 @@ if __name__ == "__main__":
     #test_xd_box_unstruct_1()
     #test_xd_box_1()
 
-    freyberg_structured_demo()
+    #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
-    #freyberg_notional_unstruct_demo()
+    freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()
     #basic_freyberg()
     #twod_ss_hetero_head_at_point()

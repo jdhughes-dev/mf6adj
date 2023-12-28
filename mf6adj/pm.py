@@ -10,7 +10,7 @@ import flopy
 
 
 class PerfMeasRecord(object):
-    def __init__(self, kper, kstp, inode, k=None, i=None, j=None, weight=None, obsval=None):
+    def __init__(self, kper, kstp, inode, pm_type, pm_form, weight, obsval, k=None, i=None, j=None, ):
         self._kper = int(kper)
         self._kstp = int(kstp)
         self.kperkstp = (self._kper, self._kstp)
@@ -24,14 +24,19 @@ class PerfMeasRecord(object):
         self._j = None
         if j is not None:
             self._j = int(j)
-        self.weight = 1.0
-        if weight is not None:
-            self.weight = float(weight)
-        self.obsval = None
-        if obsval is not None:
-            self.obsval = float(obsval)
+        self.weight = float(weight)
+        self.obsval = float(obsval)
+        self.pm_type = pm_type.lower().strip()
+        self.pm_form = pm_form.lower().strip()
+        if self.pm_form not in ["direct","residual"]:
+            raise Exception("PerfMeasRecord.pm_form must be 'direct' or 'residual', not '{0}'".format(self.pm_form))
     def __repr__(self):
-        return "{0}, {1}, {2}".format(self.kperkstp,self.inode, self._k)
+        s = "kperkstp:{0}, inode:{1}, k:{2}, type:{3}, form:{4}".format(self.kperkstp,self.inode, self._k,self.pm_tpye,self.pm_form)
+        if self._i is not None:
+            s += ", i:{0}".format(self._i)
+        if self._j is not None:
+            s += ", j:{0}".format(self._j)
+        return s
 
 
 class PerfMeas(object):
@@ -46,15 +51,11 @@ class PerfMeas(object):
 	
 	"""
 
-    def __init__(self, pm_name, pm_type, pm_entries, is_structured, verbose_level=1, pm_pak_name=None):
+    def __init__(self, pm_name, pm_entries, is_structured, verbose_level=1):
         self._name = pm_name.lower().strip()
-        self._type = pm_type.lower().strip()
         self._entries = pm_entries
         self.is_structured = is_structured
         self.verbose_level = int(verbose_level)
-        self._pak_name=pm_pak_name
-        if pm_pak_name is not None and self._type != "flux":
-            raise Exception("something is wrong")
 
 
     @property
@@ -68,14 +69,30 @@ class PerfMeas(object):
             return False
         return True
 
-    def solve_forward(self, head_dict):
+    def solve_forward(self, head_dict,sp_package_dict):
         """for testing only"""
         result = 0.0
         for pfr in self._entries:
-            if self._type == "direct":
-                result += pfr.weight * head_dict[pfr.kperkstp][pfr.inode]
-            elif self._type == "residual":
-                result += (pfr.weight * (head_dict[pfr.kperkstp][pfr.inode] - pfr.obsval)) ** 2
+            if pfr.pm_type == "head":
+                if pfr.pm_form == "direct":
+                    result += pfr.weight * head_dict[pfr.kperkstp][pfr.inode]
+                elif pfr.pm_form == "residual":
+                    result += (pfr.weight * (head_dict[pfr.kperkstp][pfr.inode] - pfr.obsval)) ** 2
+                else:
+                    raise Exception("something is wrong")
+            else:
+                for gwf_ptype, bnd_d in sp_package_dict.items():
+                    for kk,kk_list in bnd_d.items():
+                        for kk_d in kk_list:
+                            if kk == pfr.kperkstp:
+                                if kk_d["packagename"] == pfr.pm_type:
+                                    if pfr.pm_form == "direct":
+                                        result += pfr.weight * kk_d["simval"]
+                                    elif pfr.pm_form == "residual":
+                                        result += (pfr.weight * (kk_d["simval"] - pfr.obsval)) ** 2
+
+                #raise Exception()
+                pass
         return result
 
     # def solve_adjoint_old(self, kperkstp, iss, deltat_dict, amat_dict, head_dict, head_old_dict,
@@ -968,40 +985,32 @@ class PerfMeas(object):
         drhsdh = -1. * storage * area * (top - bot) / dt
         return drhsdh
 
-    def _dfdh_old(self, kk, gwf_name, gwf, head_dict):
-        nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
-        dfdh = np.zeros(nnodes)
-        for pfr in self._entries:
-            if pfr.kperkstp == kk:
-                if self._type == "direct":
-                    # dfdh[pfr.nnode] = -1. * pfr.weight / deltat_dict[kk]
-                    dfdh[pfr.inode] = pfr.weight
-                elif self._type == "residual":
-                    dfdh[pfr.inode] = 2.0 * pfr.weight * (head_dict[kk][pfr.inode] - pfr.obsval)
-        return dfdh
-
     def _dfdh(self, kk, sol_dataset):
         head = sol_dataset["head"][:]
         dfdh = np.zeros_like(head)
-        hcof = None
-        nodelist = None
-        nodelist_map = {}
-        if self._type == "flux":
-            pakname = self._pak_name
-            if pakname in sol_dataset:
-                hcof = sol_dataset[pakname]["hcof"][:]
-                nodelist = sol_dataset[pakname]["nodelist"][:]
-                for i,n in enumerate(nodelist):
-                    nodelist_map[n-1] = i
+        #hcof = None
+        #nodelist = None
+        #nodelist_map = {}
+        #if self._type == "flux":
+        #    pakname = self._pak_name
+        #    if pakname in sol_dataset:
+        #        hcof = sol_dataset[pakname]["hcof"][:]
+        #        nodelist = sol_dataset[pakname]["nodelist"][:]
+        #        for i,n in enumerate(nodelist):
+        #            nodelist_map[n-1] = i
         for pfr in self._entries:
             if pfr.kperkstp == kk:
-                if self._type == "direct":
+                if pfr.pm_type == "head":
+                    if pfr.pm_form == "direct":
                     # dfdh[pfr.nnode] = -1. * pfr.weight / deltat_dict[kk]
-                    dfdh[pfr.inode] = pfr.weight
-                elif self._type == "residual":
-                    dfdh[pfr.inode] = 2.0 * pfr.weight * (head[pfr.inode] - pfr.obsval)
-                elif self._type == "flux" and hcof is not None:
-                    dfdh[pfr.inode] = hcof[nodelist_map[pfr.inode]]
+                        dfdh[pfr.inode] = pfr.weight
+                    elif pfr.pm_form == "residual":
+                        dfdh[pfr.inode] = 2.0 * pfr.weight * (head[pfr.inode] - pfr.obsval)
+                else:
+                    hcof = sol_dataset[pfr.pm_type]["hcof"][:]
+                    inodelist = sol_dataset[pfr.pm_type]["nodelist"][:] - 1
+                    idx = np.where(inodelist == pfr.inode)[0][0]
+                    dfdh[pfr.inode] = hcof[idx]
         return dfdh
 
     @staticmethod

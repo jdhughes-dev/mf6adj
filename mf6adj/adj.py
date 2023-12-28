@@ -146,26 +146,15 @@ class Mf6Adj(object):
                 # parse a new performance measure block
                 elif line.lower().strip().startswith("begin performance_measure"):
                     raw = line.lower().strip().split()
-                    
+                    if len(raw) != 3:
+                        raise Exception("'begin' line {0} has wrong number of items, should be 3, not {1}".format(count,len(raw)))
+
                     pm_name = raw[2].strip().lower()
-                    if raw[3].strip().lower() != "type":
-                        raise Exception("4th entry on line {0} should be 'type', not '{1}'".format(count, raw[3]))
-                    pm_type = raw[4].strip().lower()
-                    if pm_type not in ["direct", "residual","flux"]:
-                        raise Exception("unrecognized PM type:'{0}', should be 'direct', 'residual', or 'flux'")
-                    pm_pakname = None
-                    if pm_type in ["direct","residual"] and len(raw) != 5:
-                        raise Exception(
-                            "wrong number of entries on 'begin performance_measure' line number {0}: '{1}'".format(
-                                count, line))
-                    elif pm_type == "flux":
-                        if len(raw) != 7:
-                            raise Exception(
-                                "wrong number of entries on 'begin performance_measure' line number {0}: '{1}'".format(
-                                    count, line))
-                        if raw[5].lower().strip() != "package_name":
-                            raise Exception("the 6th entry flux performance line number {0} should be 'package_name', not '{1}'".format(count,raw[5]))
-                        pm_pakname = raw[6].lower().strip()
+                    #pm_type = raw[4].strip().lower()
+                    #if pm_type not in ["direct", "residual","flux"]:
+                    #    raise Exception("unrecognized PM type:'{0}', should be 'direct', 'residual', or 'flux'")
+                    #pm_pakname = None
+
 
                     pm_entries = []
                     while True:
@@ -182,85 +171,73 @@ class Mf6Adj(object):
                             break
 
                         raw = line2.lower().strip().split()
+                        if self.is_structured and len(raw) != 9:
+                            print("parsed line",raw)
+                            raise Exception("performance measure entry on line {0} has the wrong number of items, found {1}, should have 8".format(count,len(raw)))
+                        elif not self.is_structured and len(raw) != 8:
+                            print("parsed line", raw)
+                            raise Exception(
+                                "performance measure entry on line {0} has the wrong number of items, found {1}, should have 9".format(
+                                    count, len(raw)))
                         kper = int(raw[0]) - 1
                         kstp = int(raw[1]) - 1
                         # todo: check limits of kper, kstp
-
+                        i,j = None,None
                         if self.is_structured:
-                            if len(raw) < 5:
-                                raise Exception(
-                                    "performance measure {0} line {1} has too few entries, need at least 5".format(
-                                        pm_name, line2))
-                            weight = None
-                            if pm_type == "direct":
-                                if len(raw) < 6:
-                                    raise Exception(
-                                        "direct performance measure {0} line {1} has wrong number of entries, should be 6".format(
-                                            pm_name, line2))
-                                weight = float(raw[5])
-                            obsval = None
-                            if pm_type == "residual":
-                                if len(raw) < 7:
-                                    raise Exception(
-                                        "residual performance measure {0} line {1} has wrong number of entries, should be 7".format(
-                                            pm_name, line2))
-                                #todo: wrap these in try-except
-                                weight = float(raw[5])
-                                obsval = float(raw[6])
-
                             kij = []
                             for i in range(3):
                                 try:
                                     kij.append(int(raw[i + 2]) - 1)
                                 except:
                                     raise Exception("error casting k-i-j info on line {0}: '{1}'".format(count, line2))
-
+                            k,i,j = kij[0],kij[1],kij[2]
                             # convert to node number
-                            n = PerfMeas.get_node(self._shape,[kij])[0]
+                            inode = PerfMeas.get_node(self._shape,[kij])[0]
                             # if there is a reduced node scheme
                             if len(nuser) > 1:
-                                nn = np.where(nuser == n)[0]
+                                nn = np.where(nuser == inode)[0]
                                 if nn.shape[0] != 1:
                                     print(n, nn)
                                     if self.is_structured:
                                         print(kij)
                                     raise Exception("node num {0} not in reduced node num".format(n))
 
-                                pm_entries.append(
-                                    PerfMeasRecord(kper, kstp, nn[0], k=kij[0], i=kij[1], j=kij[2], weight=weight,
-                                                   obsval=obsval))
-                            else:
-                                pm_entries.append(
-                                    PerfMeasRecord(kper, kstp, n, k=kij[0], i=kij[1], j=kij[2], weight=weight,
-                                                   obsval=obsval))
+                                #pm_entries.append(
+                                #    PerfMeasRecord(kper, kstp, nn[0], k=kij[0], i=kij[1], j=kij[2], weight=weight,
+                                #                   obsval=obsval))
+                                inode = nn[0]
+                            #else:
+                            #    pm_entries.append(
+                            #        PerfMeasRecord(kper, kstp, n, k=kij[0], i=kij[1], j=kij[2], weight=weight,
+                            #                       obsval=obsval))
                         else:
                             # raise NotImplementedError("only structured grids currently supported")
-                            if len(raw) < 5:
-                                raise Exception(
-                                    "performance measure {0} line {1} has too few entries, need at least 5".format(
-                                        pm_name, line2))
-                            weight = None
-                            if pm_type == "direct":
-                                if len(raw) < 5:
-                                    raise Exception(
-                                        "direct performance measure {0} line {1} has wrong number of entries, should be 5".format(
-                                            pm_name, line2))
-                                weight = float(raw[4])
-                            obsval = None
-                            if pm_type == "residual":
-                                if len(raw) < 6:
-                                    raise Exception(
-                                        "residual performance measure {0} line {1} has wrong number of entries, should be 6".format(
-                                            pm_name, line2))
-                                #todo: wrap these in try-except
-                                weight = float(raw[4])
-                                obsval = float(raw[5])
+                            #if len(raw) < 5:
+                            #    raise Exception(
+                            #        "performance measure {0} line {1} has too few entries, need at least 5".format(
+                            #            pm_name, line2))
+                            #weight = None
+                            #if pm_type == "direct":
+                            #    if len(raw) < 5:
+                            #        raise Exception(
+                            #            "direct performance measure {0} line {1} has wrong number of entries, should be 5".format(
+                            #                pm_name, line2))
+                            #    weight = float(raw[4])
+                            #obsval = None
+                            #if pm_type == "residual":
+                            #    if len(raw) < 6:
+                            #        raise Exception(
+                            #            "residual performance measure {0} line {1} has wrong number of entries, should be 6".format(
+                            #                pm_name, line2))
+                            #    #todo: wrap these in try-except
+                            #    weight = float(raw[4])
+                            #    obsval = float(raw[5])
 
                             try:
                                 lay = int(raw[2])
                             except:
                                 raise Exception("error casting layer info info on line {0}: '{1}'".format(count, line2))
-
+                            k = lay - 1
                             try:
                                 node = int(raw[3])
                             except:
@@ -273,19 +250,24 @@ class Mf6Adj(object):
                                 nn = np.where(nuser == inode)[0]
                                 if nn.shape[0] != 1:
                                     raise Exception("node num {0} not in reduced node num".format(n))
-                                nn = nn[0]
-                                pm_entries.append(PerfMeasRecord(kper, kstp, nn, k=lay-1, weight=weight, obsval=obsval))
-                            else:
-                                pm_entries.append(
-                                    PerfMeasRecord(kper, kstp, inode, k=lay-1, weight=weight, obsval=obsval))
-
+                                #nn = nn[0]
+                                #pm_entries.append(PerfMeasRecord(kper, kstp, nn, k=lay-1, weight=weight, obsval=obsval))
+                                inode = nn[0]
+                            #else:
+                            #    pm_entries.append(
+                            #        PerfMeasRecord(kper, kstp, inode, k=lay-1, weight=weight, obsval=obsval))
+                        obsval = float(raw[-1])
+                        weight = float(raw[-2])
+                        pm_form = raw[-3].strip().lower()
+                        pm_type = raw[-4].strip().lower()
+                        pm_entries.append(PerfMeasRecord(kper,kstp,inode,pm_type,pm_form,weight,obsval,k,i,j))
                     if len(pm_entries) == 0:
                         raise Exception("no entries found for PM {0}".format(pm_name))
 
                     if pm_name in [pm._name for pm in self._performance_measures]:
                         raise Exception("PM {0} multiply defined".format(pm_name))
                     self._performance_measures.append(
-                        PerfMeas(pm_name, pm_type, pm_entries, self.is_structured, self.verbose_level, pm_pakname))
+                        PerfMeas(pm_name, pm_entries, self.is_structured, self.verbose_level))
 
                 else:
                     raise Exception("unrecognized adj file input on line {0}: '{1}'".format(count, line))
@@ -702,13 +684,16 @@ class Mf6Adj(object):
                             hcof = self._gwf.get_value(
                                 self._gwf.get_var_address("HCOF", self._gwf_name, tag.upper()))
                             rhs = self._gwf.get_value(self._gwf.get_var_address("RHS", self._gwf_name, tag.upper()))
+
+                            simvals = self._gwf.get_value(self._gwf.get_var_address("SIMVALS", self._gwf_name, tag.upper()))
+
                             if pert_save:
                                 for i in range(nbound):
                                     # note bound is an array!
                                     sp_package_data[package_type][kperkstp].append(
                                         {"node": nodelist[i], "bound": bound[i],
-                                         "hcof": hcof[i], "rhs": rhs[i], "packagename": tag})
-                            data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound,"hcof":hcof,"rhs":rhs}
+                                         "hcof": hcof[i], "rhs": rhs[i], "packagename": tag,"simval":simvals[i]})
+                            data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound,"hcof":hcof,"rhs":rhs,"simvals":simvals}
             attr_dict = {"ctime": ctime, "dt": dt1, "kper": kper, "kstp": kstp,"is_newton":is_newton,"has_sto":has_sto}
             PerfMeas.write_group_to_hdf(fhd, group_name="solution_kper:{0:05d}_kstp:{1:05d}".format(kper, kstp), data_dict=data_dict,
                                      attr_dict=attr_dict)
@@ -765,7 +750,7 @@ class Mf6Adj(object):
         gwf_name = self._gwf_name.upper()
 
         org_head, org_sp_package_data = self.solve_gwf(pert_save=True)
-        base_results = {pm.name: pm.solve_forward(org_head) for pm in self._performance_measures}
+        base_results = {pm.name: pm.solve_forward(org_head,org_sp_package_data) for pm in self._performance_measures}
         assert len(base_results) == len(self._performance_measures)
 
         addr = ["NODEUSER", gwf_name, "DIS"]
@@ -808,8 +793,8 @@ class Mf6Adj(object):
                         print("...",pakname,ibnd,kk,org,delt,infodict["node"])
 
                         self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
-                        pert_head, _ = self.solve_gwf(verbose=False, _sp_pert_dict=pert_dict,pert_save=True)
-                        pert_results = {pm.name: (pm.solve_forward(pert_head) - base_results[pm.name]) / epsilons[-1]
+                        pert_head, pert_sp_dict = self.solve_gwf(verbose=False, _sp_pert_dict=pert_dict,pert_save=True)
+                        pert_results = {pm.name: (pm.solve_forward(pert_head,pert_sp_dict) - base_results[pm.name]) / epsilons[-1]
                                         for pm in self._performance_measures}
                         for pm, result in pert_results.items():
                             pert_results_dict[pm].append(result)
@@ -854,8 +839,8 @@ class Mf6Adj(object):
                 epsilons.append(delt - pert_arr[inode])
                 pert_arr[inode] = delt
                 print("...",addr,inode,org,delt)
-                pert_head, _ = self.solve_gwf(verbose=False, _force_k_update=True,pert_save=True)
-                pert_results = {pm.name: (pm.solve_forward(pert_head) - base_results[pm.name]) / epsilons[-1] for pm in
+                pert_head, pert_sp_dict = self.solve_gwf(verbose=False, _force_k_update=True,pert_save=True)
+                pert_results = {pm.name: (pm.solve_forward(pert_head,pert_sp_dict) - base_results[pm.name]) / epsilons[-1] for pm in
                                 self._performance_measures}
                 for pm, result in pert_results.items():
                     pert_results_dict[pm].append(result)
@@ -909,8 +894,8 @@ class Mf6Adj(object):
                 gwf.sto.ss = pert_arr
                 gwf.write()
                 self._gwf = self._initialize_gwf(self._lib_name, test_dir)
-                pert_head, _ = self.solve_gwf(verbose=False, _force_k_update=True,pert_save=True)
-                pert_results = {pm.name: (pm.solve_forward(pert_head) - base_results[pm.name]) / epsilons[-1] for pm in
+                pert_head, pert_sp_dict = self.solve_gwf(verbose=False, _force_k_update=True,pert_save=True)
+                pert_results = {pm.name: (pm.solve_forward(pert_head,pert_sp_dict) - base_results[pm.name]) / epsilons[-1] for pm in
                                 self._performance_measures}
                 for pm, result in pert_results.items():
                     pert_results_dict[pm].append(result)
