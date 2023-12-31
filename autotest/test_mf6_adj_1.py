@@ -89,6 +89,10 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     idm = np.ones((nlay, nrow, ncol))
     if ncol > 1 and nrow > 1 and include_id0:
         idm[0, 0, 1] = 0  # just to have one in active cell...
+    if ncol > 5 and nrow > 5 and include_id0:
+        idm[0, 1, 1] = 0
+        idm[0, 3, 3] = 0
+
     dis = flopy.mf6.ModflowGwfdis(gwf, nlay=nlay, nrow=nrow, ncol=ncol, delr=delrowcol, delc=delrowcol, top=top, botm=botm,
                                   idomain=idm)
     id = dis.idomain.array.copy()
@@ -558,10 +562,10 @@ def test_xd_box_1():
 
     """
     # workflow flags
-    include_id0 = False  # include an idomain = cell
+    include_id0 = True  # include an idomain = cell
     include_sto = True
 
-    include_ghb_flux_pm = False
+    include_ghb_flux_pm = True
 
     clean = True # run the pertbuation process
     run_pert = False # the pertubations
@@ -572,13 +576,13 @@ def test_xd_box_1():
 
     plot_compare = False
     new_d = 'xd_box_1_test'
-    nrow = ncol = 3
+    nrow = ncol = 9
     nlay = 2
     nper = 2
     delrowcol = 3.0
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
-                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=1, newton=True, delrowcol=delrowcol, full_sat_ghb=False)
+                                 nlay=nlay,q=-0.5, icelltype=1, iconvert=0, newton=True, delrowcol=delrowcol, full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
