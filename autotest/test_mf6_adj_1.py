@@ -442,13 +442,22 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
             if pertdf.shape[0] == 0:
                 print("...WARNING: no values to compare for pm {0} and parameter {1}".format(pm_name,col))
                 continue
-            print(pm_name,col)
+            #print(pm_name,col)
             adjdf = adj.loc[pertdf.index.values,col].copy()
 
             dif = pertdf.loc[:,pm_name].values - adjdf.values
-            print(pm_name, col, pertdf.shape[0], adjdf.shape[0])
+            #print(pm_name, col, pertdf.shape[0], adjdf.shape[0])
 
-            abs_max_dif_percent = 100. * np.abs(dif)/max(np.abs(pertdf[pm_name].values).max(),np.abs(adjdf.values).max())
+            demon = (pertdf[pm_name].max() - pertdf[pm_name].min())
+
+            #print(pm_name,col,demon,pertdf[pm_name].max(),pertdf[pm_name].min())
+            if demon < 0.0:
+                raise Exception()
+            elif demon == 0:
+                pertdf[pm_name].max()
+                #demon = plt_zero_thres
+            #abs_max_dif_percent = 100. * np.abs(dif)/max(np.abs(pertdf[pm_name].values).max(),np.abs(adjdf.values).max())
+            abs_max_dif_percent = 100. * np.abs(dif) / demon
 
             print("...min vals:",pertdf[pm_name].values.min(),adjdf.values.min())
             print("...max vals:",pertdf[pm_name].values.max(), adjdf.values.max())
@@ -566,12 +575,12 @@ def test_xd_box_1():
     nrow = ncol = 3
     nlay = 2
     nper = 2
+    delrowcol = 3.0
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
-                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=1, newton=True, delrowcol=1.0, full_sat_ghb=False)
+                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=1, newton=True, delrowcol=delrowcol, full_sat_ghb=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
-
 
     gwf = sim.get_model()
     id = gwf.dis.idomain.array

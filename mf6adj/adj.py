@@ -493,17 +493,6 @@ class Mf6Adj(object):
         result[head<=bot] = 0.0
         result[head_old<=bot] = 0.0
 
-        #term = (dSC1 / dt) * (sat_old_mod[node] * head_old[node] - sat_mod[node] * head[node]) +
-        # (dSC1 / dt) * bot[node] * (sat_mod[node] - sat_old_mod[node]) +
-        # (dSC1 / (2.0 * dt)) * (top[node] - bot[node]) * ((sat_mod[node]) ** 2 - (sat_old_mod[node]) ** 2)
-        #for node in range(len(ia) - 1):
-        #    dSC1 = area[node] * (top[node] - bot[node])
-        #    term = ((dSC1 / dt) * (sat_old_mod[node] * head_old[node] - sat_mod[node] * head[node]) +
-        #            (dSC1 / dt) * bot[node] * (sat_mod[node] - sat_old_mod[node]) +
-        #            (dSC1 / (2.0 * dt)) * (top[node] - bot[node]) * (
-        #                       (sat_mod[node]) ** 2 - (sat_old_mod[node]) ** 2))
-        #    #
-        #    result[node] = term
         return result
 
 
@@ -773,10 +762,15 @@ class Mf6Adj(object):
         if len(nuser) == 1:
             nuser = np.arange(org_head[list(org_head.keys())[0]].shape[0], dtype=int)
 
+        addr = ["NODES", gwf_name, "DIS"]
+        wbaddr = self._gwf.get_var_address(*addr)
+        nodes = self._gwf.get_value(wbaddr)[0]
+
         kijs = None
         if self.is_structured:
             #kijs = self._structured_mg.get_lrc(list(nuser))
             kijs = PerfMeas.get_lrc(self._shape,list(nuser))
+            kijs = {n:kij for n,kij in zip(nuser,kijs)}
         addr = ["NLAY", gwf_name, "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
         nlay = self._gwf.get_value(wbaddr)[0]
@@ -794,8 +788,8 @@ class Mf6Adj(object):
             print("running perturbations for ", paktype)
             for kk, infolist in pdict.items():
                 for infodict in infolist:
-                    if infodict["node"] == 0:
-                        continue
+                    #if nuser[infodict["node"]] == 0:
+                    #    continue
                     bnd_items = infodict["bound"].shape[0]
                     for ibnd in range(bnd_items):
                         new_bound = infodict["bound"].copy()
@@ -815,7 +809,10 @@ class Mf6Adj(object):
                         for pm, result in pert_results.items():
                             pert_results_dict[pm].append(result)
                         bound_idx.append(ibnd)
-                        nodes.append(nuser[infodict["node"]])
+                        #if paktype == "rch6":
+                        nodes.append(infodict["node"])
+                        #else:
+                        #    nodes.append(nuser[infodict["node"]])
                         names.append(pakname+"_item{0}".format(ibnd))
             df = pd.DataFrame(pert_results_dict)
             df.loc[:, "node"] = nodes
@@ -823,10 +820,13 @@ class Mf6Adj(object):
             #df.loc[:, "epsilon"] = epsilons
             df.loc[:,"addr"] = names
             df.index = df.pop("node") - 1
+            df = df.loc[df.index != -1,:]
+            #if paktype == "rch6":
+            df.index = df.index.map(lambda x: nuser[x])
 
             if kijs is not None:
                 for idx, lab in zip([0, 1, 2], ["k", "i", "j"]):
-                    df.loc[:, lab] = df.index.map(lambda x: kijs[x - 1][idx])
+                    df.loc[:, lab] = df.index.map(lambda x: kijs[x][idx])
             col_dict = {col:df.loc[:,col].to_dict() for col in df.columns}
             gdf = df.groupby(["node","addr"]).sum()
             gdf["node"] = gdf.index.get_level_values(0)
@@ -879,7 +879,7 @@ class Mf6Adj(object):
             df.loc[:, "epsilon"] = epsilons
             if kijs is not None:
                 for idx, lab in zip([0, 1, 2], ["k", "i", "j"]):
-                    df.loc[:, lab] = [kij[idx] for kij in kijs]
+                    df.loc[:, lab] = df.index.map(lambda x: kijs[x][idx])
             tag = '_'.join(addr).lower()
             df.loc[:, "addr"] = tag
             dfs.append(df)
@@ -933,7 +933,7 @@ class Mf6Adj(object):
             df.loc[:, "epsilon"] = epsilons
             if kijs is not None:
                 for idx, lab in zip([0, 1, 2], ["k", "i", "j"]):
-                    df.loc[:, lab] = [kij[idx] for kij in kijs]
+                    df.loc[:, lab] = df.index.map(lambda x: kijs[x][idx])
             tag = 'sto_ss'
             df.loc[:, "addr"] = tag
             dfs.append(df)
