@@ -354,18 +354,18 @@ class PerfMeas(object):
         if has_sto:
             comp_ss_sens = np.zeros(nnodes)
 
-        comp_welq_sens = None
+        comp_welq_sens = np.zeros(nnodes)
         comp_ghb_head_sens = None
         comp_ghb_cond_sens = None
-        comp_rch_sens = None
+        comp_rch_sens = np.zeros((nnodes))
 
-        if "wel6" in gwf_package_dict:
-            comp_welq_sens = np.zeros(nnodes)
+        #if "wel6" in gwf_package_dict:
+        #    comp_welq_sens = np.zeros(nnodes)
         if "ghb6" in gwf_package_dict:
             comp_ghb_head_sens = np.zeros(nnodes)
             comp_ghb_cond_sens = np.zeros(nnodes)
-        if "rch6" in gwf_package_dict or "rcha6" in gwf_package_dict:
-            comp_rch_sens = np.zeros((nnodes))
+        #if "rch6" in gwf_package_dict or "rcha6" in gwf_package_dict:
+        #    comp_rch_sens = np.zeros((nnodes))
 
         for itime, kk in enumerate(kperkstp[::-1]):
             data = {}
@@ -467,7 +467,7 @@ class PerfMeas(object):
         if has_sto:
             data["ss"] = comp_ss_sens
         data["wel"] = comp_welq_sens
-        if "ghb6" in gwf_package_dict:
+        if comp_ghb_head_sens is not None:
             data["ghbhead"] = comp_ghb_head_sens
             data["ghbcond"] = comp_ghb_cond_sens
         data["rch"] = comp_rch_sens
@@ -477,8 +477,13 @@ class PerfMeas(object):
 
         df = pd.DataFrame({"k11": comp_k_sens, "k33": comp_k33_sens, "wel": comp_welq_sens, "rch": comp_rch_sens},
                           index=nodeuser+1)
+        if comp_ghb_head_sens is not None:
+            df.loc[:,"ghb_head"] = comp_ghb_head_sens
+            df.loc[:,"ghb_cond"] = comp_ghb_cond_sens
         if has_sto:
             df["ss"] = comp_ss_sens
+
+
         df.index.name = "node"
         df.to_csv("adjoint_summary_{0}.csv".format(self._name))
         return df

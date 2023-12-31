@@ -81,7 +81,7 @@ class Mf6Adj(object):
         # self._iss = {}
         # self._sat = {}
         # self._sat_old = {}
-        self._gwf_package_types = ["wel6","ghb6","riv6","drn6","sfr6"]
+        self._gwf_package_types = ["wel6","ghb6","riv6","drn6","sfr6","rch6","recha6"]
 
     def _read_adj_file(self):
         """read the adj input file
@@ -144,8 +144,11 @@ class Mf6Adj(object):
                             raise Exception("unrecognized option line:"+line2.strip())
 
                 # parse a new performance measure block
+
                 elif line.lower().strip().startswith("begin performance_measure"):
+
                     raw = line.lower().strip().split()
+
                     if len(raw) != 3:
                         raise Exception("'begin' line {0} has wrong number of items, should be 3, not {1}".format(count,len(raw)))
 
@@ -155,10 +158,11 @@ class Mf6Adj(object):
                     #    raise Exception("unrecognized PM type:'{0}', should be 'direct', 'residual', or 'flux'")
                     #pm_pakname = None
 
-
                     pm_entries = []
+                    pm_line = 0
                     while True:
                         line2 = f.readline()
+                        pm_line += 1
                         count += 1
                         if line2 == "":
                             raise EOFError("EOF while reading performance_measure block '{0}'".format(line))
@@ -169,6 +173,12 @@ class Mf6Adj(object):
                                 "a new begin block found while parsing performance_measure block '{0}'".format(line))
                         elif line2.lower().strip().startswith("end performance_measure"):
                             break
+                        elif line2.lower().strip().startswith("open"):
+                            fname = line2.split()[1]
+                            if not os.path.exists(fname):
+                                raise Exception("external file '{0}' found".format(fname))
+                            #df = pd.read_csv()
+                            raise NotImplementedError()
 
                         raw = line2.lower().strip().split()
                         if self.is_structured and len(raw) != 9:
@@ -580,7 +590,10 @@ class Mf6Adj(object):
                     bnd_ptr = self._gwf.get_value_ptr(wbaddr)
                     wbaddr = self._gwf.get_var_address("NODELIST", self._gwf_name, _sp_pert_dict["packagename"].upper())
                     nodelist = self._gwf.get_value_ptr(wbaddr)
-                    idx = np.where(nodelist == _sp_pert_dict["node"])
+                    idx = np.where(nodelist == _sp_pert_dict["node"])[0]
+                    if idx.shape[0] == 0:
+                        print(nodelist)
+                        raise Exception("sp pert dict node not found :"+str(_sp_pert_dict))
                     bnd_ptr[idx] = _sp_pert_dict["bound"]
 
             self._gwf.prepare_solve(1)
@@ -690,6 +703,7 @@ class Mf6Adj(object):
                             if pert_save:
                                 for i in range(nbound):
                                     # note bound is an array!
+
                                     sp_package_data[package_type][kperkstp].append(
                                         {"node": nodelist[i], "bound": bound[i],
                                          "hcof": hcof[i], "rhs": rhs[i], "packagename": tag,"simval":simvals[i]})
@@ -757,7 +771,7 @@ class Mf6Adj(object):
         wbaddr = self._gwf.get_var_address(*addr)
         nuser = self._gwf.get_value(wbaddr) - 1
         if len(nuser) == 1:
-            nuser = np.arange(head_dict[head_dict.keys()[0]].shape[0], dtype=int)
+            nuser = np.arange(org_head[list(org_head.keys())[0]].shape[0], dtype=int)
 
         kijs = None
         if self.is_structured:
@@ -780,6 +794,8 @@ class Mf6Adj(object):
             print("running perturbations for ", paktype)
             for kk, infolist in pdict.items():
                 for infodict in infolist:
+                    if infodict["node"] == 0:
+                        continue
                     bnd_items = infodict["bound"].shape[0]
                     for ibnd in range(bnd_items):
                         new_bound = infodict["bound"].copy()
@@ -799,22 +815,27 @@ class Mf6Adj(object):
                         for pm, result in pert_results.items():
                             pert_results_dict[pm].append(result)
                         bound_idx.append(ibnd)
-                        nodes.append(infodict["node"])
+                        nodes.append(nuser[infodict["node"]])
                         names.append(pakname+"_item{0}".format(ibnd))
             df = pd.DataFrame(pert_results_dict)
             df.loc[:, "node"] = nodes
 
             #df.loc[:, "epsilon"] = epsilons
             df.loc[:,"addr"] = names
-            df.index = df.pop("node")
+            df.index = df.pop("node") - 1
+
             if kijs is not None:
                 for idx, lab in zip([0, 1, 2], ["k", "i", "j"]):
                     df.loc[:, lab] = df.index.map(lambda x: kijs[x - 1][idx])
             col_dict = {col:df.loc[:,col].to_dict() for col in df.columns}
-            gdf = df.groupby(df.index).sum()
-
+            gdf = df.groupby(["node","addr"]).sum()
+            gdf["node"] = gdf.index.get_level_values(0)
+            gdf["addr"] = gdf.index.get_level_values(1)
+            gdf.index = gdf.pop("node")
             for col in df.columns:
                 if col in pert_results_dict:
+                    continue
+                if col in ["addr","node"]:
                     continue
                 gdf.loc[:,col] = gdf.index.map(lambda x: col_dict[col][x])
             dfs.append(gdf)

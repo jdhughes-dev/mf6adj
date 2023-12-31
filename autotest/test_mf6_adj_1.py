@@ -143,7 +143,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
         wspd ={kper:[(nlay - 1, int(nrow / 2), int(ncol / 2), q*(kper+1))] for kper in range(nper)}
         wel = flopy.mf6.ModflowGwfwel(gwf, stress_period_data=wspd)
 
-    flopy.mf6.ModflowGwfrcha(gwf, recharge=0.0001)
+    #flopy.mf6.ModflowGwfrcha(gwf, recharge=0.0001)
 
     headfile = f"{name}.hds"
     head_filerecord = [headfile]
@@ -158,6 +158,8 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
 
     npf = flopy.mf6.ModflowGwfnpf(gwf, icelltype=icelltype, k=hk, k33=k33)
 
+    rech = {kper:np.zeros((nrow,ncol))+0.0000001 for kper in range(nper)}
+    rch = flopy.mf6.ModflowGwfrcha(gwf,recharge=rech)
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
@@ -420,9 +422,11 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
         from matplotlib.backends.backend_pdf import PdfPages
         pdf = PdfPages(os.path.join(new_d,"compare.pdf"))
 
-    for pm_name in pert_summary.columns:
-        if pm_name in ["epsilon","k","i","j","addr"]:
-            continue
+    skip = ["epsilon","k","i","j","addr"]
+    pm_names = [c for c in pert_summary.columns if c not in skip]
+    pm_names.sort()
+
+    for pm_name in pm_names:
         adj_file = [f for f in adj_summary_files if pm_name in f]
         if len(adj_file) != 1:
             print(pm_name,adj_file)
@@ -430,16 +434,20 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
         adj_file = adj_file[0]
         #print(adj_file,pm_name)
         adj = pd.read_csv(adj_file,index_col=0)
-        for col in adj.columns:
+        adj_cols = adj.columns.tolist()
+        adj_cols.sort()
+        for col in adj_cols:
             #try to find the values in addr
-            pertdf = pert_summary.loc[pert_summary.addr.str.contains(col),:]
-            adjdf = adj.loc[pertdf.index.values,col]
+            pertdf = pert_summary.loc[pert_summary.addr.str.contains(col),:].copy()
+            if pertdf.shape[0] == 0:
+                print("...WARNING: no values to compare for pm {0} and parameter {1}".format(pm_name,col))
+                continue
+            print(pm_name,col)
+            adjdf = adj.loc[pertdf.index.values,col].copy()
 
             dif = pertdf.loc[:,pm_name].values - adjdf.values
             print(pm_name, col, pertdf.shape[0], adjdf.shape[0])
-            if dif.shape[0] == 0:
-                print("...no values to compare")
-                continue
+
             abs_max_dif_percent = 100. * np.abs(dif)/max(np.abs(pertdf[pm_name].values).max(),np.abs(adjdf.values).max())
 
             print("...min vals:",pertdf[pm_name].values.min(),adjdf.values.min())
@@ -470,7 +478,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
                     for arr in [adj_arr,pert_arr,dif_arr,abs_arr]:
                         arr[arr==-1e+30] = np.nan
 
-                    fig,axes = plt.subplots(1,4,figsize=(35,4))
+                    fig,axes = plt.subplots(1,4,figsize=(12,2))
 
                     absd = np.abs(dif_arr)
                     absp = np.abs(abs_arr)
@@ -504,6 +512,9 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
                         idp[idp!=0] = np.nan
                         axes[0].imshow(idp,cmap="magma")
                         axes[1].imshow(idp, cmap="magma")
+                    for ax in axes.flatten():
+                        ax.set_xticks([])
+                        ax.set_yticks([])
                     plt.tight_layout()
                     pdf.savefig()
                     plt.close(fig)
@@ -538,7 +549,7 @@ def test_xd_box_1():
 
     """
     # workflow flags
-    include_id0 = True  # include an idomain = cell
+    include_id0 = False  # include an idomain = cell
     include_sto = True
 
     include_ghb_flux_pm = False
@@ -552,9 +563,9 @@ def test_xd_box_1():
 
     plot_compare = False
     new_d = 'xd_box_1_test'
-    nrow = ncol = 15
+    nrow = ncol = 3
     nlay = 2
-    nper = 3
+    nper = 2
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
                                  nlay=nlay,q=-0.1, icelltype=1, iconvert=1, newton=True, delrowcol=1.0, full_sat_ghb=False)
@@ -633,7 +644,6 @@ def test_xd_box_1():
         adj.solve_adjoint()
         adj._perturbation_test(pert_mult=pert_mult)
         adj.finalize()
-
 
         if plot_adj_results:
             afiles_to_plot = [f for f in os.listdir(".") if (f.startswith("pm-direct") or f.startswith("pm-phi")) and f.endswith(".dat")]
@@ -1410,7 +1420,7 @@ def freyberg_notional_unstruct_demo():
                     print("...", key, pkey, k + 1)
 
 if __name__ == "__main__":
-    test_xd_box_unstruct_1()
+    #test_xd_box_unstruct_1()
     new_d = test_xd_box_1()
     xd_box_compare(new_d,True)
 
