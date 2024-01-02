@@ -46,7 +46,7 @@ else:
 def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
                      nlay=1,nrow=10,ncol=10,delrowcol=1.0,icelltype=0,iconvert=0,newton=False,
                      top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6",
-                       full_sat_bnd=True,use_riv=False):
+                       full_sat_bnd=True,alt_bnd=None):
 
     tdis_pd = [(sp_len, 1, 1.0) for _ in range(nper)]
     if botm is None:
@@ -77,7 +77,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
 
     tdis = flopy.mf6.ModflowTdis(sim, pname="tdis", time_units="DAYS", nper=len(tdis_pd), perioddata=tdis_pd)
 
-    ims = flopy.mf6.ModflowIms(sim, pname="ims", complexity="SIMPLE", linear_acceleration="BICGSTAB",
+    ims = flopy.mf6.ModflowIms(sim, pname="ims", complexity="COMPLEX", linear_acceleration="BICGSTAB",
                                inner_dvclose=1e-15, outer_dvclose=1e-15, outer_maximum=1000, inner_maximum=1000)
 
     model_nam_file = f"{name}.nam"
@@ -122,22 +122,39 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
 
         sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=iconvert, steady_state=steady_state,transient=transient,ss=ss,sy=sy)
 
-    riv_rec = []
+    alt_rec = []
     if ncol > 1:
-        riv_stage = top
+        stage = top
         if not full_sat_bnd:
-            riv_stage = (top-botm[0])/4.0
+            stage = (top-botm[0])/4.0
 
         for k in [nlay-1]:
             for i in range(nrow):
-                riv_rec.append(((k, i, 0), riv_stage,1000.0,botm[0]))
+                if alt_bnd == "riv":
+                    alt_rec.append(((k, i, 0), stage,1000.0,botm[0]))
+                elif alt_bnd == "drn":
+                    alt_rec.append(((k, i, 0), stage, 1000.0))
+                #elif alt_bnd == "chd":
+                #    alt_rec.append(((k, i, 0), stage))
+                elif alt_bnd is None:
+                    alt_rec.append(((k, i, 0), stage, 1000.0))
+                else:
+                    raise Exception()
 
         #chd = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=chd_rec)
-        if use_riv:
-            riv = flopy.mf6.ModflowGwfriv(gwf,stress_period_data={kper:riv_rec for kper in range(nper)})
+        if alt_bnd == "riv":
+            _ = flopy.mf6.ModflowGwfriv(gwf,stress_period_data={kper:alt_rec for kper in range(nper)})
+        elif alt_bnd == "drn":
+            _ = flopy.mf6.ModflowGwfdrn(gwf, stress_period_data={kper: alt_rec for kper in range(nper)})
+        #elif alt_bnd == "chd":
+        #    _ = flopy.mf6.ModflowGwfchd(gwf, stress_period_data={kper: alt_rec for kper in range(nper)})
+        elif alt_bnd is None:
+            pass
+        else:
+            raise Exception()
 
-    if not use_riv:
-        ghb_rec = riv_rec
+    if alt_bnd is None:
+        ghb_rec = alt_rec
     else:
         ghb_rec = []
     ghb_stage = top+1
@@ -588,13 +605,13 @@ def test_xd_box_1():
     nrow = ncol = 5
     nlay = 2
     nper = 2
-    delrowcol = 100
+    delrowcol = 1
 
-    botm = [-10,-100]
+    botm = None#[-10,-100,-150]
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
-                                 nlay=nlay,q=-100, icelltype=1, iconvert=1, newton=True, delrowcol=delrowcol,
-                                 full_sat_bnd=False,botm=botm,use_riv=True)
+                                 nlay=nlay,q=-1, icelltype=1, iconvert=1, newton=True, delrowcol=delrowcol,
+                                 full_sat_bnd=False,botm=botm,alt_bnd="drn")
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -718,7 +735,7 @@ def test_xd_box_unstruct_1():
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper, include_sto=include_sto, include_id0=include_id0, nrow=nrow,
                                  ncol=ncol,
-                                 nlay=nlay, q=-10, icelltype=1, iconvert=0, newton=True, delrowcol=100.0,
+                                 nlay=nlay, q=-1, icelltype=1, iconvert=0, newton=True, delrowcol=100.0,
                                  full_sat_bnd=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
@@ -1445,10 +1462,10 @@ def freyberg_notional_unstruct_demo():
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    #new_d = test_xd_box_1()
-    #xd_box_compare(new_d,True)
+    new_d = test_xd_box_1()
+    xd_box_compare(new_d,True)
 
-    freyberg_structured_demo()
+    #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()

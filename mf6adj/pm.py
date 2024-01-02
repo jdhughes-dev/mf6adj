@@ -264,9 +264,12 @@ class PerfMeas(object):
                                        "node": hdf[sol_key][pname]["nodelist"][:]}
                         sens_level, sens_cond = self.lam_drhs_dbnd(lamb, head, sp_bnd_dict)
                         comp_bnd_results[pname+"_"+bnd_dict[ptype][0]] = sens_level
-                        comp_bnd_results[pname+"_"+bnd_dict[ptype][1]] = sens_cond
-                        data[pname+"_"+bnd_dict[ptype][0]] = sens_level
-                        data[pname+"_"+bnd_dict[ptype][1]] = sens_level
+                        data[pname + "_" + bnd_dict[ptype][0]] = sens_level
+                        if len(bnd_dict[ptype]) > 1:
+                            comp_bnd_results[pname+"_"+bnd_dict[ptype][1]] = sens_cond
+                            data[pname + "_" + bnd_dict[ptype][1]] = sens_cond
+
+
                         #print()
 
             data["lambda"] = lamb
