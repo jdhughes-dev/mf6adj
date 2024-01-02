@@ -63,6 +63,14 @@ class PerfMeas(object):
         return str(self._name)
 
     @staticmethod
+    def get_mf6_bound_dict():
+        #d = {"wel6":{0:"q"},"ghb6":{0:"bhead",1:"cond"},"rch6":{0:"recharge"},
+        #     "drn6":{0:"elev",1:"cond"},"riv6":{0:"stage",1:"cond"}}
+        d = {"ghb6":{0:"bhead",1:"cond"},
+             "drn6":{0:"elev",1:"cond"},"riv6":{0:"stage",1:"cond"}}
+        return d
+
+    @staticmethod
     def has_sto_iconvert(gwf):
         names = [n for n in list(gwf.get_input_var_names()) if "STO" in n and "ICONVERT" in n]
         if len(names) == 0:
@@ -169,7 +177,6 @@ class PerfMeas(object):
 
         comp_k33_sens = np.zeros(nnodes)
         comp_k_sens = np.zeros(nnodes)
-
         comp_ss_sens = None
 
         # has_sto = PerfMeas.has_sto_iconvert(gwf)
@@ -178,13 +185,16 @@ class PerfMeas(object):
             comp_ss_sens = np.zeros(nnodes)
 
         comp_welq_sens = np.zeros(nnodes)
-        comp_ghb_head_sens = None
-        comp_ghb_cond_sens = None
         comp_rch_sens = np.zeros((nnodes))
 
-        if "ghb6" in gwf_package_dict:
-            comp_ghb_head_sens = np.zeros(nnodes)
-            comp_ghb_cond_sens = np.zeros(nnodes)
+        bnd_dict = PerfMeas.get_mf6_bound_dict()
+        comp_bnd_results = {}
+        for ptype,pnames in gwf_package_dict.items():
+            if ptype in bnd_dict:
+                for pname in pnames:
+                    for idx,aname in bnd_dict[ptype].items():
+                        comp_bnd_results[pname+"_"+aname] = np.zeros(nnodes)
+
 
         for itime, kk in enumerate(kperkstp[::-1]):
             data = {}
@@ -242,33 +252,22 @@ class PerfMeas(object):
                 data["ss"] = ss_sens
                 comp_ss_sens += ss_sens
 
-            data["wel"] = lamb
+            data["wel6_q"] = lamb
             comp_welq_sens += lamb
+            comp_rch_sens += lamb
+            data["rch6_recharge"] = lamb
 
-            #if "ghb6" in gwf_package_dict and kk in gwf_package_dict["ghb6"]:
-            # look for ghb packages
-            ghb_keys = []
-            for key in hdf[sol_key]:
-                dset = hdf[sol_key][key]
-                ptype = dset.attrs.get("ptype",None)
-                if ptype is not None and ptype.lower() == "ghb6":
-                    ghb_keys.append(key)
-
-            #if "ghb" in hdf[sol_key]:
-            for ghb_key in ghb_keys:
-
-                #print(hdf[sol_key]["ghb"].keys())
-                sp_ghb_dict = {"bound":hdf[sol_key][ghb_key]["bound"][:],
-                               "node":hdf[sol_key][ghb_key]["nodelist"][:]}
-                sens_ghb_head, sens_ghb_cond = self.lam_drhs_dghb(lamb, head, sp_ghb_dict)
-                data[ghb_key+ "_" + sol_key] = sens_ghb_head
-                data[ghb_key + "_" + sol_key] = sens_ghb_cond
-                comp_ghb_head_sens += sens_ghb_head
-                comp_ghb_cond_sens += sens_ghb_cond
-
-            sens_rch = lamb
-            comp_rch_sens += sens_rch
-            data["rech"] = sens_rch
+            for ptype,pnames in gwf_package_dict.items():
+                if ptype in bnd_dict:
+                    for pname in pnames:
+                        sp_bnd_dict = {"bound": hdf[sol_key][pname]["bound"][:],
+                                       "node": hdf[sol_key][pname]["nodelist"][:]}
+                        sens_level, sens_cond = self.lam_drhs_dbnd(lamb, head, sp_bnd_dict)
+                        comp_bnd_results[pname+"_"+bnd_dict[ptype][0]] = sens_level
+                        comp_bnd_results[pname+"_"+bnd_dict[ptype][1]] = sens_cond
+                        data[pname+"_"+bnd_dict[ptype][0]] = sens_level
+                        data[pname+"_"+bnd_dict[ptype][1]] = sens_level
+                        #print()
 
             data["lambda"] = lamb
             data["head"] = hdf[sol_key]["head"][:]
@@ -285,23 +284,23 @@ class PerfMeas(object):
 
         if has_sto:
             data["ss"] = comp_ss_sens
-        data["wel"] = comp_welq_sens
-        if comp_ghb_head_sens is not None:
-            data["ghbhead"] = comp_ghb_head_sens
-            data["ghbcond"] = comp_ghb_cond_sens
-        data["rch"] = comp_rch_sens
+        data["wel6_q"] = comp_welq_sens
+        data["rch6_recharge"] = comp_rch_sens
+
+        for name,vals in comp_bnd_results.items():
+            data[name] = vals
+
         PerfMeas.write_group_to_hdf(adf, "composite", data, nodeuser=nodeuser, grid_shape=grid_shape,nodereduced=nodereduced)
         adf.close()
         hdf.close()
 
-        df = pd.DataFrame({"k11": comp_k_sens, "k33": comp_k33_sens, "wel": comp_welq_sens, "rch": comp_rch_sens},
+        df = pd.DataFrame({"k11": comp_k_sens, "k33": comp_k33_sens, "wel6_q": comp_welq_sens, "rch6_recharge": comp_rch_sens},
                           index=nodeuser+1)
-        if comp_ghb_head_sens is not None:
-            df.loc[:,"ghb_head"] = comp_ghb_head_sens
-            df.loc[:,"ghb_cond"] = comp_ghb_cond_sens
+
+        for name,vals in comp_bnd_results.items():
+            df[name] = vals
         if has_sto:
             df["ss"] = comp_ss_sens
-
 
         df.index.name = "node"
         df.to_csv("adjoint_summary_{0}.csv".format(self._name))
@@ -346,14 +345,7 @@ class PerfMeas(object):
                         #print("WARNING: unknown dtype, setting as attribute for group {2}: {0} {1}".format(k,type(v), tag))
                         subgrp.attrs[k] = v
                         #print()
-                # if "nodelist" in item:
-                #     iitem = item["nodelist"]
-                #     dset = grp.create_dataset(tag, iitem.shape, dtype=iitem.dtype, data=iitem)
-                # elif "bound" in item:
-                #     iitem = item["bound"]
-                #     dset = grp.create_dataset(tag, iitem.shape, dtype=iitem.dtype, data=iitem)
-                # else:
-                #     print("Mf6Adj._write_group_to_hdf(): unused data_dict item {0}".format(tag))
+
             else:
                 raise Exception("unrecognized data_dict entry: {0},type:{1}".format(tag, type(item)))
         if nodeuser is not None:
@@ -469,7 +461,7 @@ class PerfMeas(object):
             result[node] = sum2
         return result, result33
 
-    def lam_drhs_dghb(self, lamb, head, sp_dict):
+    def lam_drhs_dbnd(self, lamb, head, sp_dict):
         result_head = np.zeros_like(lamb)
         result_cond = np.zeros_like(lamb)
 

@@ -46,7 +46,7 @@ else:
 def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
                      nlay=1,nrow=10,ncol=10,delrowcol=1.0,icelltype=0,iconvert=0,newton=False,
                      top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6",
-                       full_sat_ghb=True):
+                       full_sat_bnd=True,use_riv=False):
 
     tdis_pd = [(sp_len, 1, 1.0) for _ in range(nper)]
     if botm is None:
@@ -78,7 +78,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     tdis = flopy.mf6.ModflowTdis(sim, pname="tdis", time_units="DAYS", nper=len(tdis_pd), perioddata=tdis_pd)
 
     ims = flopy.mf6.ModflowIms(sim, pname="ims", complexity="SIMPLE", linear_acceleration="BICGSTAB",
-                               inner_dvclose=1e-8, outer_dvclose=1e-8, outer_maximum=1000, inner_maximum=1000)
+                               inner_dvclose=1e-15, outer_dvclose=1e-15, outer_maximum=1000, inner_maximum=1000)
 
     model_nam_file = f"{name}.nam"
     newtonoptions = []
@@ -88,10 +88,12 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
 
     idm = np.ones((nlay, nrow, ncol))
     if ncol > 1 and nrow > 1 and include_id0:
-        idm[0, 0, 1] = 0  # just to have one in active cell...
+        for k in range(nlay):
+            idm[k, 0, 1] = 0  # just to have one in active cell...
     if ncol > 5 and nrow > 5 and include_id0:
-        idm[0, 1, 1] = 0
-        idm[0, 3, 3] = 0
+        for k in range(nlay):
+            idm[0, 1, 1] = 0
+            idm[0, 3, 3] = 0
 
     dis = flopy.mf6.ModflowGwfdis(gwf, nlay=nlay, nrow=nrow, ncol=ncol, delr=delrowcol, delc=delrowcol, top=top, botm=botm,
                                   idomain=idm)
@@ -120,21 +122,26 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
 
         sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=iconvert, steady_state=steady_state,transient=transient,ss=ss,sy=sy)
 
-    chd_rec = []
+    riv_rec = []
     if ncol > 1:
-        chd_stage = top
-        if not full_sat_ghb:
-            chd_stage = (top-botm[0])/4.0
+        riv_stage = top
+        if not full_sat_bnd:
+            riv_stage = (top-botm[0])/4.0
 
         for k in [nlay-1]:
             for i in range(nrow):
-                chd_rec.append(((k, i, 0), chd_stage,1000.0))
+                riv_rec.append(((k, i, 0), riv_stage,1000.0,botm[0]))
 
         #chd = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=chd_rec)
+        if use_riv:
+            riv = flopy.mf6.ModflowGwfriv(gwf,stress_period_data={kper:riv_rec for kper in range(nper)})
 
-    ghb_rec = chd_rec
+    if not use_riv:
+        ghb_rec = riv_rec
+    else:
+        ghb_rec = []
     ghb_stage = top+1
-    if not full_sat_ghb:
+    if not full_sat_bnd:
         ghb_stage = 3.*top/4.
     for k in [0]:
         for i in range(nrow):
@@ -450,7 +457,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
             adjdf = adj.loc[pertdf.index.values,col].copy()
 
             dif = pertdf.loc[:,pm_name].values - adjdf.values
-            #print(pm_name, col, pertdf.shape[0], adjdf.shape[0])
+            print(pm_name, col, pertdf.shape[0], adjdf.shape[0])
 
             demon = (pertdf[pm_name].max() - pertdf[pm_name].min())
 
@@ -461,6 +468,8 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
                 pertdf[pm_name].max()
                 #demon = plt_zero_thres
             #abs_max_dif_percent = 100. * np.abs(dif)/max(np.abs(pertdf[pm_name].values).max(),np.abs(adjdf.values).max())
+            if demon == 0:
+                demon = 1.0
             abs_max_dif_percent = 100. * np.abs(dif) / demon
 
             print("...min vals:",pertdf[pm_name].values.min(),adjdf.values.min())
@@ -496,7 +505,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
                     absd = np.abs(dif_arr)
                     absp = np.abs(abs_arr)
 
-                    absd[absd<plt_zero_thres] = 0
+                    #absd[absd<plt_zero_thres] = 0
                     #pert_arr[absd==0] = np.nan
                     #pm_arr[absd==0] = np.nan
                     dif_arr[absd==0] = np.nan
@@ -519,7 +528,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
                     mx = np.nanmax(absp)
                     cb = axes[3].imshow(abs_arr,vmin=-mx,vmax=mx,cmap="coolwarm")
                     plt.colorbar(cb, ax=axes[3])
-                    axes[3].set_title("percent diff pert - pm",loc="left")
+                    axes[3].set_title("percent diff pert - adj, max:{0:4.2g}".format(np.nanmax(abs_arr)),loc="left")
                     if np.any(id==0):
                         idp = id[k,:,:].copy().astype(float)
                         idp[idp!=0] = np.nan
@@ -576,13 +585,16 @@ def test_xd_box_1():
 
     plot_compare = False
     new_d = 'xd_box_1_test'
-    nrow = ncol = 9
+    nrow = ncol = 5
     nlay = 2
     nper = 2
-    delrowcol = 3.0
+    delrowcol = 100
+
+    botm = [-10,-100]
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
-                                 nlay=nlay,q=-0.5, icelltype=1, iconvert=0, newton=True, delrowcol=delrowcol, full_sat_ghb=False)
+                                 nlay=nlay,q=-100, icelltype=1, iconvert=1, newton=True, delrowcol=delrowcol,
+                                 full_sat_bnd=False,botm=botm,use_riv=True)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -706,8 +718,8 @@ def test_xd_box_unstruct_1():
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper, include_sto=include_sto, include_id0=include_id0, nrow=nrow,
                                  ncol=ncol,
-                                 nlay=nlay, q=-0.1, icelltype=1, iconvert=1, newton=True, delrowcol=1.0,
-                                 full_sat_ghb=False)
+                                 nlay=nlay, q=-10, icelltype=1, iconvert=0, newton=True, delrowcol=100.0,
+                                 full_sat_bnd=False)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -968,7 +980,7 @@ def freyberg_structured_demo():
     duration = (datetime.now() - start).total_seconds()
     print("took:",duration)
 
-    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adj_pm")]
+    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_pm1")]
     print(result_hdf)
     assert len(result_hdf) == 1
     result_hdf = result_hdf[0]
@@ -1054,7 +1066,7 @@ def freyberg_quadtree_demo():
         duration = (datetime.now() - start).total_seconds()
         print("took:", duration)
 
-    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adj_pm")]
+    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_pm")]
 
     result_hdf.sort()
     print(result_hdf)
@@ -1189,7 +1201,7 @@ def freyberg_structured_highres_demo():
     duration = (datetime.now() - start).total_seconds()
     print("took:", duration)
 
-    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adj_pm")]
+    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_pm1")]
     print(result_hdf)
     assert len(result_hdf) == 1
     result_hdf = result_hdf[0]
@@ -1250,7 +1262,7 @@ def freyberg_notional_unstruct_demo():
 
     sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
     gwf = sim.get_model()
-
+    nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
     xcc, ycc = np.atleast_2d(gwf.modelgrid.xcellcenters), np.atleast_2d(gwf.modelgrid.ycellcenters)
 
     from flopy.utils.gridgen import Gridgen
@@ -1262,7 +1274,6 @@ def freyberg_notional_unstruct_demo():
     disv_idomain = []
     for k in range(gwf.dis.nlay.data):
         disv_idomain.append(idomain[k].flatten())
-    nrow,ncol = gwf.dis.nrow.data,gwf.dis.ncol.data
     gwf.remove_package("dis")
     disv = flopy.mf6.ModflowGwfdisv(gwf, idomain=disv_idomain, **gridprops)
 
@@ -1400,7 +1411,7 @@ def freyberg_notional_unstruct_demo():
     duration = (datetime.now() - start).total_seconds()
     print("took:", duration)
 
-    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adj_pm")]
+    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_pm")]
     print(result_hdf)
     assert len(result_hdf) == 1
     result_hdf = result_hdf[0]
@@ -1417,10 +1428,10 @@ def freyberg_notional_unstruct_demo():
                 continue
 
             grp = hdf[key]
-            plot_keys = [i for i in grp.keys() if len(grp[i].shape) == 3]
+            plot_keys = [i for i in grp.keys() if len(grp[i]) == nlay*nrow*ncol]
             for pkey in plot_keys:
 
-                arr = grp[pkey][:]
+                arr = grp[pkey][:].reshape((nlay,nrow,ncol))
                 for k, karr in enumerate(arr):
                     karr[idomain < 1] = np.nan
                     fig, ax = plt.subplots(1, 1, figsize=(6, 5))
@@ -1434,10 +1445,10 @@ def freyberg_notional_unstruct_demo():
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    new_d = test_xd_box_1()
-    xd_box_compare(new_d,True)
+    #new_d = test_xd_box_1()
+    #xd_box_compare(new_d,True)
 
-    #freyberg_structured_demo()
+    freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()

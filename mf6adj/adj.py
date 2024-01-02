@@ -778,6 +778,7 @@ class Mf6Adj(object):
         dfs = []
 
         # boundary condition perturbations
+        bnd_dict = PerfMeas.get_mf6_bound_dict()
 
         for paktype, pdict in org_sp_package_data.items():
             epsilons = []
@@ -791,7 +792,7 @@ class Mf6Adj(object):
                     #if nuser[infodict["node"]] == 0:
                     #    continue
                     bnd_items = infodict["bound"].shape[0]
-                    for ibnd in range(bnd_items):
+                    for ibnd in range(min(bnd_items,2)):
                         new_bound = infodict["bound"].copy()
                         org = new_bound[ibnd]
                         delt = org * pert_mult
@@ -813,10 +814,15 @@ class Mf6Adj(object):
                         nodes.append(infodict["node"])
                         #else:
                         #    nodes.append(nuser[infodict["node"]])
-                        names.append(pakname+"_item{0}".format(ibnd))
+                        if paktype == "wel6":
+                            names.append("wel6_q")
+                        elif paktype == "rch6":
+                            names.append("rch6_recharge")
+                        else:
+                            names.append(pakname+"_"+bnd_dict[paktype][ibnd].format(ibnd))
             df = pd.DataFrame(pert_results_dict)
             df.loc[:, "node"] = nodes
-
+            df.loc[:,"epsilon"] = epsilons
             #df.loc[:, "epsilon"] = epsilons
             df.loc[:,"addr"] = names
             df.index = df.pop("node") - 1
