@@ -44,7 +44,7 @@ else:
 
 
 def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
-                     nlay=1,nrow=10,ncol=10,delrowcol=1.0,icelltype=0,iconvert=0,newton=False,
+                     nlay=1,nrow=10,ncol=10,delr=1.0,delc=1.0,icelltype=0,iconvert=0,newton=False,
                      top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6",
                        full_sat_bnd=True,alt_bnd=None):
 
@@ -78,7 +78,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     tdis = flopy.mf6.ModflowTdis(sim, pname="tdis", time_units="DAYS", nper=len(tdis_pd), perioddata=tdis_pd)
 
     ims = flopy.mf6.ModflowIms(sim, pname="ims", complexity="COMPLEX", linear_acceleration="BICGSTAB",
-                               inner_dvclose=1e-15, outer_dvclose=1e-15, outer_maximum=1000, inner_maximum=1000)
+                               inner_dvclose=1e-8, outer_dvclose=1e-8, outer_maximum=1000, inner_maximum=1000)
 
     model_nam_file = f"{name}.nam"
     newtonoptions = []
@@ -95,7 +95,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
             idm[0, 1, 1] = 0
             idm[0, 3, 3] = 0
 
-    dis = flopy.mf6.ModflowGwfdis(gwf, nlay=nlay, nrow=nrow, ncol=ncol, delr=delrowcol, delc=delrowcol, top=top, botm=botm,
+    dis = flopy.mf6.ModflowGwfdis(gwf, nlay=nlay, nrow=nrow, ncol=ncol, delr=delr, delc=delc, top=top, botm=botm,
                                   idomain=idm)
     id = dis.idomain.array.copy()
     # ### Create the initial conditions (`IC`) Package
@@ -126,7 +126,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     if ncol > 1:
         stage = top
         if not full_sat_bnd:
-            stage = (top-botm[0])/4.0
+            stage = botm[0] + ((top-botm[0])/4.0)
 
         for k in [nlay-1]:
             for i in range(nrow):
@@ -159,7 +159,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
         ghb_rec = []
     ghb_stage = top+1
     if not full_sat_bnd:
-        ghb_stage = 3.*top/4.
+        ghb_stage = botm[0] +  (3.*(top-botm[0])/4.)
     for k in [0]:
         for i in range(nrow):
             ghb_rec.append(((k, i, ncol - 1), ghb_stage, 1000.0))
@@ -453,7 +453,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
     skip = ["epsilon","k","i","j","addr"]
     pm_names = [c for c in pert_summary.columns if c not in skip]
     pm_names.sort()
-
+    results_dict = {}
     for pm_name in pm_names:
         adj_file = [f for f in adj_summary_files if pm_name in f]
         if len(adj_file) != 1:
@@ -464,6 +464,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
         adj = pd.read_csv(adj_file,index_col=0)
         adj_cols = adj.columns.tolist()
         adj_cols.sort()
+
         for col in adj_cols:
             #try to find the values in addr
             pertdf = pert_summary.loc[pert_summary.addr.str.contains(col),:].copy()
@@ -493,6 +494,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
             print("...max vals:",pertdf[pm_name].values.max(), adjdf.values.max())
             print("...dif vals",dif.min(),dif.max(),np.abs(dif).min(),np.abs(dif).max())
             print("...abs max % dif:",np.nanmax(abs_max_dif_percent))
+            results_dict[(pm_name,col)] =np.nanmax(abs_max_dif_percent)
             #if not np.isinf(np.nanmax(abs_max_dif_percent)):
             #    assert np.nanmax(abs_max_dif_percent) < 10.0 #?
             if plot_compare and "i" in pertdf.columns and "j" in pertdf.columns:
@@ -525,8 +527,8 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
                     #absd[absd<plt_zero_thres] = 0
                     #pert_arr[absd==0] = np.nan
                     #pm_arr[absd==0] = np.nan
-                    dif_arr[absd==0] = np.nan
-                    abs_arr[absd==0] = np.nan
+                    dif_arr[absd<plt_zero_thres] = np.nan
+                    abs_arr[absd<plt_zero_thres] = np.nan
                     mx = max(np.nanmax(pert_arr),np.nanmax(adj_arr))
                     mn = min(np.nanmin(pert_arr), np.nanmin(adj_arr))
                     cb = axes[0].imshow(pert_arr,vmax=mx,vmin=mn)
@@ -557,8 +559,37 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
                     plt.tight_layout()
                     pdf.savefig()
                     plt.close(fig)
+
+    df = pd.Series(results_dict).reset_index()
+    df = df.pivot(columns="level_0",index="level_1",values=0)
+    df.sort_index(inplace=True)
+    cols = df.columns.values
+    cols.sort()
+    df = df.loc[:,cols]
+    print(df)
+
     if plot_compare:
         pdf.close()
+        fig,ax = plt.subplots(1,1,figsize=[d for d in df.shape])
+        mx = np.log10(df.values).max()
+        cb = ax.imshow(np.log10(df.values),vmax=mx,vmin=0,cmap="plasma",alpha=0.5)
+        for i,row in enumerate(df.index):
+            for j,col in enumerate(df.columns):
+                v = df.loc[row,col]
+                if v < 1.0:
+                    pass
+                else:
+                    ax.text(j,i,"{0:5.0f}%".format(v),va="center",ha="center")
+        plt.colorbar(cb,ax=ax,label="log_10 percent abs diff")
+        ax.set_xticks(np.arange(df.shape[1]))
+        ax.set_xticklabels(df.columns.values,rotation=90)
+        ax.set_yticks(np.arange(df.shape[0]))
+        ax.set_yticklabels(df.index.values)
+        plt.tight_layout()
+        plt.savefig(os.path.join(new_d,"abs_percent_dif_results.pdf"))
+        plt.close(fig)
+
+    return df
 
 
 def test_xd_box_1():
@@ -588,30 +619,30 @@ def test_xd_box_1():
 
     """
     # workflow flags
-    include_id0 = True  # include an idomain = cell
+    include_id0 = True  # include idomain = 0 cells
     include_sto = True
 
-    include_ghb_flux_pm = True
+    include_ghb_flux_pm = False
 
-    clean = True # run the pertbuation process
-    run_pert = False # the pertubations
-    plot_pert_results = True #plot the pertubation results
+    clean = True
 
     run_adj = True
     plot_adj_results = False # plot adj result
 
     plot_compare = False
     new_d = 'xd_box_1_test'
-    nrow = ncol = 5
+    nrow = 11
+    ncol = 11
     nlay = 2
-    nper = 2
-    delrowcol = 1
+    nper = 1
+    delr = 1
+    delc = 1
 
-    botm = None#[-10,-100,-150]
+    botm = None#[-10,-100]
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
-                                 nlay=nlay,q=-1, icelltype=1, iconvert=1, newton=True, delrowcol=delrowcol,
-                                 full_sat_bnd=False,botm=botm,alt_bnd="drn")
+                                 nlay=nlay,q=-1, icelltype=1, iconvert=1, newton=True, delr=delr, delc=delc,
+                                 full_sat_bnd=False,botm=botm,alt_bnd="riv")
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -634,9 +665,9 @@ def test_xd_box_1():
     pm_locs = []
     for k in [0, int(nlay / 2), nlay-1]:
         for i in [0, int(nrow / 2), nrow-1]:
-            for j in [0, int(ncol / 2), ncol-1]:
-                    pm_locs.append((k, i, j))
-            break
+            #for j in [0, int(ncol / 2), ncol-1]:
+                pm_locs.append((k, i, i))
+
     pm_locs = list(set(pm_locs))
     pm_locs.sort()
 

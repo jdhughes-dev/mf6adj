@@ -5,8 +5,6 @@ import scipy.sparse as sparse
 from scipy.sparse.linalg import spsolve
 import pandas as pd
 import h5py
-import modflowapi
-import flopy
 
 
 class PerfMeasRecord(object):
@@ -263,10 +261,10 @@ class PerfMeas(object):
                         sp_bnd_dict = {"bound": hdf[sol_key][pname]["bound"][:],
                                        "node": hdf[sol_key][pname]["nodelist"][:]}
                         sens_level, sens_cond = self.lam_drhs_dbnd(lamb, head, sp_bnd_dict)
-                        comp_bnd_results[pname+"_"+bnd_dict[ptype][0]] = sens_level
+                        comp_bnd_results[pname+"_"+bnd_dict[ptype][0]] += sens_level
                         data[pname + "_" + bnd_dict[ptype][0]] = sens_level
                         if len(bnd_dict[ptype]) > 1:
-                            comp_bnd_results[pname+"_"+bnd_dict[ptype][1]] = sens_cond
+                            comp_bnd_results[pname+"_"+bnd_dict[ptype][1]] += sens_cond
                             data[pname + "_" + bnd_dict[ptype][1]] = sens_cond
 
 
