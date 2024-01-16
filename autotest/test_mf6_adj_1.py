@@ -45,7 +45,7 @@ else:
 
 def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
                      nlay=1,nrow=10,ncol=10,delr=1.0,delc=1.0,icelltype=0,iconvert=0,newton=False,
-                     top=1,botm=None,include_sto=True,include_id0=True,name = "freyberg6",
+                     top=1,botm=None,include_sto=True,include_id0=True,name = "xdbox",
                        full_sat_bnd=True,alt_bnd=None):
 
     tdis_pd = [(sp_len, 1, 1.0) for _ in range(nper)]
@@ -166,10 +166,21 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
     ghb_spd = {kper:ghb_rec for kper in range(nper)}
     ghb = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_spd)
 
-    if nrow > 1 and ncol > 1:
+    #if nrow > 1 and ncol > 1:
         #wel_rec = [(nlay - 1, int(nrow / 2), int(ncol / 2), q)]
-        wspd ={kper:[(nlay - 1, int(nrow / 2), int(ncol / 2), q*(kper+1))] for kper in range(nper)}
-        wel = flopy.mf6.ModflowGwfwel(gwf, stress_period_data=wspd)
+   #     wspd ={kper:[(nlay - 1, int(nrow / 2), int(ncol / 2), q*(kper+1))] for kper in range(nper)}
+    wspd = {}
+    for kper in range(nper):
+        wel_rec = []
+        for k in range(nlay):
+            for i in range(nrow):
+                for j in range(ncol):
+                    if idm[k,i,j] <= 0:
+                        continue
+                    wel_rec.append([(k,i,j),q*(kper+1)])
+        wspd[kper] = wel_rec
+    wel = flopy.mf6.ModflowGwfwel(gwf, stress_period_data=wspd)
+
 
     #flopy.mf6.ModflowGwfrcha(gwf, recharge=0.0001)
 
@@ -209,7 +220,7 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
 
 
 def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.01,
-                    name = "freyberg6",obsval=1.0,pm_locs=None):
+                    name = "xdbox",obsval=1.0,pm_locs=None):
     import modflowapi
     # # now run with API
     bd = os.getcwd()
@@ -426,7 +437,7 @@ def run_xd_box_pert(new_d,p_kijs,plot_pert_results=True,weight=1.0,pert_mult=1.0
     os.chdir(bd)
 
 
-def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
+def xd_box_compare(new_d, plot_compare=False, dif_thres=1e-6):
     sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
     gwf = sim.get_model()
     id = gwf.dis.idomain.array
@@ -488,11 +499,15 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
             #abs_max_dif_percent = 100. * np.abs(dif)/max(np.abs(pertdf[pm_name].values).max(),np.abs(adjdf.values).max())
             if demon == 0:
                 demon = 1.0
-            abs_max_dif_percent = 100. * np.abs(dif) / demon
+            absdif = np.abs(dif)
+            abs_max_dif_percent = 100. * absdif / demon
+            if np.nanmax(absdif) <= dif_thres:
+                abs_max_dif_percent = 0.0
 
             print("...min vals:",pertdf[pm_name].values.min(),adjdf.values.min())
             print("...max vals:",pertdf[pm_name].values.max(), adjdf.values.max())
             print("...dif vals",dif.min(),dif.max(),np.abs(dif).min(),np.abs(dif).max())
+            print("...abs dif max:",np.nanmax(absdif))
             print("...abs max % dif:",np.nanmax(abs_max_dif_percent))
             results_dict[(pm_name,col)] =np.nanmax(abs_max_dif_percent)
             #if not np.isinf(np.nanmax(abs_max_dif_percent)):
@@ -527,8 +542,8 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
                     #absd[absd<plt_zero_thres] = 0
                     #pert_arr[absd==0] = np.nan
                     #pm_arr[absd==0] = np.nan
-                    dif_arr[absd<plt_zero_thres] = np.nan
-                    abs_arr[absd<plt_zero_thres] = np.nan
+                    dif_arr[absd < dif_thres] = np.nan
+                    abs_arr[absd < dif_thres] = np.nan
                     mx = max(np.nanmax(pert_arr),np.nanmax(adj_arr))
                     mn = min(np.nanmin(pert_arr), np.nanmin(adj_arr))
                     cb = axes[0].imshow(pert_arr,vmax=mx,vmin=mn)
@@ -543,7 +558,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
 
                     cb = axes[2].imshow(dif_arr,vmin=-mx,vmax=mx,cmap="coolwarm")
                     plt.colorbar(cb,ax=axes[2])
-                    axes[2].set_title("pert - adj, not showing abs(diff) <= {0}".format(plt_zero_thres),loc="left")
+                    axes[2].set_title("pert - adj, not showing abs(diff) <= {0}".format(dif_thres), loc="left")
                     mx = np.nanmax(absp)
                     cb = axes[3].imshow(abs_arr,vmin=-mx,vmax=mx,cmap="coolwarm")
                     plt.colorbar(cb, ax=axes[3])
@@ -570,7 +585,7 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
 
     if plot_compare:
         pdf.close()
-        fig,ax = plt.subplots(1,1,figsize=[d for d in df.shape])
+        fig,ax = plt.subplots(1,1,figsize=[d for d in df.shape[::-1]])
         mx = np.log10(df.values).max()
         cb = ax.imshow(np.log10(df.values),vmax=mx,vmin=0,cmap="plasma",alpha=0.5)
         for i,row in enumerate(df.index):
@@ -579,12 +594,12 @@ def xd_box_compare(new_d,plot_compare=False,plt_zero_thres=1e-6):
                 if v < 1.0:
                     pass
                 else:
-                    ax.text(j,i,"{0:5.0f}%".format(v),va="center",ha="center")
+                    ax.text(j,i,"{0:5.0f}%".format(v),va="center",ha="center",fontsize=8)
         plt.colorbar(cb,ax=ax,label="log_10 percent abs diff")
         ax.set_xticks(np.arange(df.shape[1]))
-        ax.set_xticklabels(df.columns.values,rotation=90)
+        ax.set_xticklabels(df.columns.values,rotation=90,fontsize=8)
         ax.set_yticks(np.arange(df.shape[0]))
-        ax.set_yticklabels(df.index.values)
+        ax.set_yticklabels(df.index.values,fontsize=8)
         plt.tight_layout()
         plt.savefig(os.path.join(new_d,"abs_percent_dif_results.pdf"))
         plt.close(fig)
@@ -631,18 +646,18 @@ def test_xd_box_1():
 
     plot_compare = False
     new_d = 'xd_box_1_test'
-    nrow = 11
-    ncol = 11
+    nrow = 7
+    ncol = 7
     nlay = 2
-    nper = 1
-    delr = 1
-    delc = 1
-
-    botm = None#[-10,-100]
+    nper = 5
+    sp_len = 10000
+    delr = 1.0
+    delc = 1.0
+    botm = [-10,-100]
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
-                                 nlay=nlay,q=-1, icelltype=1, iconvert=1, newton=True, delr=delr, delc=delc,
-                                 full_sat_bnd=False,botm=botm,alt_bnd="riv")
+                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=1, newton=True, delr=delr, delc=delc,
+                                 full_sat_bnd=False,botm=botm,alt_bnd="riv",sp_len=sp_len)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -651,7 +666,7 @@ def test_xd_box_1():
     nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
     obsval = 1.0
 
-    pert_mult = 1.001
+    pert_mult = 1.01
     weight = 1.0
 
     p_kijs = []
@@ -663,10 +678,10 @@ def test_xd_box_1():
                 p_kijs.append((k, i, j))
 
     pm_locs = []
-    for k in [0, int(nlay / 2), nlay-1]:
-        for i in [0, int(nrow / 2), nrow-1]:
+    for k in range(nlay):#[0, int(nlay / 2), nlay-1]:
+        for i in range(nrow):#[0, int(nrow / 2), nrow-1]:
             #for j in [0, int(ncol / 2), ncol-1]:
-                pm_locs.append((k, i, i))
+            pm_locs.append((k, i, i))
 
     pm_locs = list(set(pm_locs))
     pm_locs.sort()
@@ -763,11 +778,12 @@ def test_xd_box_unstruct_1():
     nrow = ncol = 5
     nlay = 2
     nper = 2
+    name = "xdbox"
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper, include_sto=include_sto, include_id0=include_id0, nrow=nrow,
                                  ncol=ncol,
-                                 nlay=nlay, q=-1, icelltype=1, iconvert=0, newton=True, delrowcol=100.0,
-                                 full_sat_bnd=False)
+                                 nlay=nlay, q=-1, icelltype=1, iconvert=0, newton=True, delr=100.0, delc=100,
+                                 full_sat_bnd=False,name=name)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -795,7 +811,7 @@ def test_xd_box_unstruct_1():
 
     wel = gwf.get_package("wel")
     if wel is not None:
-        f_wel = open(os.path.join(new_d, "freyberg6_disv.wel"), 'w')
+        f_wel = open(os.path.join(new_d, "{0}_disv.wel".format(name)), 'w')
         f_wel.write("begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n")
 
         f_wel.write(
@@ -823,7 +839,7 @@ def test_xd_box_unstruct_1():
 
     ghb = gwf.get_package("ghb")
     if ghb is not None:
-        f_ghb = open(os.path.join(new_d, "freyberg6_disv.ghb"), 'w')
+        f_ghb = open(os.path.join(new_d, "{0}_disv.ghb".format(name)), 'w')
         f_ghb.write("begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n")
 
         f_ghb.write(
@@ -848,18 +864,18 @@ def test_xd_box_unstruct_1():
         f_ghb.close()
 
     # now hack the nam file
-    nam_file = os.path.join(new_d,"freyberg6.nam")
+    nam_file = os.path.join(new_d,"{0}.nam".format(name))
     lines = open(nam_file,'r').readlines()
 
 
     with open(nam_file,'w') as f:
         for line in lines:
             if "dis" in line.lower():
-                line = "DISV6 freyberg6.disv disv\n"
+                line = "DISV6 {0}.disv disv\n".format(name)
             elif "ghb" in line.lower():
-                line = "GHB6 freyberg6_disv.ghb ghb\n"
+                line = "GHB6 {0}_disv.ghb ghb\n".format(name)
             elif "wel" in line.lower():
-                line = "WEL6 freyberg6_disv.wel wel\n"
+                line = "WEL6 {0}_disv.wel wel\n".format(name)
             f.write(line)
 
     pyemu.os_utils.run("mf6",cwd=new_d)

@@ -483,6 +483,7 @@ class Mf6Adj(object):
         sat_old_mod[iconvert == 0] = 1.0
 
         height = top - bot
+
         #result = np.zeros_like(head)
         dSC1 = area * height
         result = ((dSC1 / dt) * (sat_old_mod * head_old - sat_mod * head) +
