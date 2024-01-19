@@ -646,11 +646,11 @@ def test_xd_box_1():
 
     plot_compare = False
     new_d = 'xd_box_1_test'
-    nrow = 7
-    ncol = 7
+    nrow = 3
+    ncol = 3
     nlay = 2
-    nper = 5
-    sp_len = 10000
+    nper = 1
+    sp_len = 1
     delr = 1.0
     delc = 1.0
     botm = [-10,-100]

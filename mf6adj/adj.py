@@ -909,6 +909,9 @@ class Mf6Adj(object):
             sim.set_sim_path(test_dir)
             sim.set_all_data_external()
             sim.write_simulation()
+            ss_arr_name = os.path.join(test_dir,"{0}.sto_ss.txt".format(gwf.name))
+            if not os.path.exists(ss_arr_name):
+                raise Exception("couldnt find ss_arr_name '{0}' needed for BS super hack")
             if os.path.exists(os.path.join(self._flow_dir,self._lib_name)):
                 shutil.copy2(os.path.join(self._flow_dir,self._lib_name),os.path.join(test_dir,self._lib_name))
 
@@ -926,8 +929,10 @@ class Mf6Adj(object):
                 pert_arr[arr_node] = delt
 
                 # reset the ss property
-                gwf.sto.ss = pert_arr
-                gwf.write()
+                #gwf.sto.ss = pert_arr
+                #gwf.write()
+                np.savetxt(ss_arr_name,pert_arr.flatten(),fmt="%15.6E")
+
                 self._gwf = self._initialize_gwf(self._lib_name, test_dir)
                 pert_head, pert_sp_dict = self.solve_gwf(verbose=False, _force_k_update=True,pert_save=True)
                 pert_results = {pm.name: (pm.solve_forward(pert_head,pert_sp_dict) - base_results[pm.name]) / epsilons[-1] for pm in
