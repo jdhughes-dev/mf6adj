@@ -1068,8 +1068,11 @@ def freyberg_structured_demo():
                 for k,karr in enumerate(arr):
                     karr[idomain < 1] = np.nan
                     fig, ax = plt.subplots(1, 1, figsize=(6, 5))
-                    cb = ax.imshow(karr)
-                    plt.colorbar(cb,ax=ax)
+                    mx = np.nanmax(np.abs(karr))
+                    cb = ax.imshow(karr, cmap="gist_stern")# vmax=mx, vmin=-mx, cmap="seismic")
+                    plt.colorbar(cb, ax=ax, label="composite sensitivity")
+                    #cb = ax.imshow(karr)
+                    #plt.colorbar(cb,ax=ax)
                     ax.set_title(key+", "+pkey+", layer:{0}".format(k+1),loc="left")
                     plt.tight_layout()
                     pdf.savefig()
@@ -1289,8 +1292,9 @@ def freyberg_structured_highres_demo():
                 for k, karr in enumerate(arr):
                     karr[idomain < 1] = np.nan
                     fig, ax = plt.subplots(1, 1, figsize=(6, 5))
-                    cb = ax.imshow(karr)
-                    plt.colorbar(cb, ax=ax)
+                    mx = np.nanmax(np.abs(karr))
+                    cb = ax.imshow(karr,vmax=mx,vmin=-mx,cmap="bwr")
+                    plt.colorbar(cb, ax=ax,label="composite sensitivity")
                     ax.set_title(key + ", " + pkey + ", layer:{0}".format(k + 1), loc="left")
                     plt.tight_layout()
                     pdf.savefig()
@@ -1509,11 +1513,11 @@ def freyberg_notional_unstruct_demo():
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    new_d = test_xd_box_1()
-    xd_box_compare(new_d,True)
+    #new_d = test_xd_box_1()
+    #xd_box_compare(new_d,True)
 
-    #freyberg_structured_demo()
-    #freyberg_structured_highres_demo()
+    freyberg_structured_demo()
+    freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()
 
