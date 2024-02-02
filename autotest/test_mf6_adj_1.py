@@ -649,7 +649,7 @@ def test_xd_box_1():
     nrow = 3
     ncol = 3
     nlay = 2
-    nper = 1
+    nper = 5
     sp_len = 1
     delr = 1.0
     delc = 1.0
@@ -1517,7 +1517,7 @@ if __name__ == "__main__":
     #xd_box_compare(new_d,True)
 
     freyberg_structured_demo()
-    freyberg_structured_highres_demo()
+    #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()
 

@@ -660,10 +660,11 @@ class Mf6Adj(object):
                 dresdss_h = Mf6Adj.dresdss_h(self._gwf_name,self._gwf,head,head_old,dt1,sat,sat_old)
                 data_dict["dresdss_h"] = dresdss_h
 
-                if iss == 0 : #has storage and this kper is transient
-                    drhsdh = Mf6Adj.drhsdh(self._gwf_name,self._gwf,dt1)
-                    data_dict["drhsdh"] = drhsdh
-
+                #if iss == 0 : #has storage and this kper is transient
+                drhsdh = Mf6Adj.drhsdh(self._gwf_name,self._gwf,dt1)
+                data_dict["drhsdh"] = drhsdh
+            else:
+                data_dict["drhsdh"] = np.zeros_like(sat_old)
 
             for package_type in self._gwf_package_types:
                 if package_type in self._gwf_package_dict:

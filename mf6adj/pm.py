@@ -207,7 +207,7 @@ class PerfMeas(object):
             data["dfdh"] = dfdh
             iss = hdf[sol_key]["iss"][0]
 
-            if iss == 0:  # transient
+            if itime != 0:  # transient
                 # if False:
                 # get the derv of RHS WRT head
                 drhsdh = hdf[sol_key]["drhsdh"][:]
