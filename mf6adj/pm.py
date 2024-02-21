@@ -471,10 +471,14 @@ class PerfMeas(object):
             n = node - 1
             # the second item in bound should be cond
             result_head[n] = lamb[n] * bound[1]
+            # Add the direct effect
+            result_head[n] += bound[1]
             # the first item in bound should be head
             lam_drhs_dcond = lamb[n] * bound[0]
             lam_dadcond_h = -1.0 * lamb[n] * head[n]
             result_cond[n] = lam_drhs_dcond + lam_dadcond_h
+            # Add the direct effect
+            result_cond[n] += bound[0] - head[n]
 
         return result_head, result_cond
 

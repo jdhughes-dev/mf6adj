@@ -637,7 +637,7 @@ def test_xd_box_1():
     include_id0 = True  # include idomain = 0 cells
     include_sto = True
 
-    include_ghb_flux_pm = False
+    include_ghb_flux_pm = True
 
     clean = True
 
@@ -646,17 +646,17 @@ def test_xd_box_1():
 
     plot_compare = False
     new_d = 'xd_box_1_test'
-    nrow = 3
-    ncol = 3
-    nlay = 2
-    nper = 5
-    sp_len = 1
-    delr = 1.0
-    delc = 1.0
-    botm = [-10,-100]
+    nrow = 11
+    ncol = 11
+    nlay = 3
+    nper = 2
+    sp_len = 10
+    delr = 10.0
+    delc = 10.0
+    botm = [-10,-100,-1000]
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
-                                 nlay=nlay,q=-0.1, icelltype=1, iconvert=1, newton=True, delr=delr, delc=delc,
+                                 nlay=nlay,q=-3, icelltype=1, iconvert=1, newton=True, delr=delr, delc=delc,
                                  full_sat_bnd=False,botm=botm,alt_bnd="riv",sp_len=sp_len)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
@@ -1513,10 +1513,10 @@ def freyberg_notional_unstruct_demo():
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    #new_d = test_xd_box_1()
-    #xd_box_compare(new_d,True)
+    new_d = test_xd_box_1()
+    xd_box_compare(new_d,True)
 
-    freyberg_structured_demo()
+    #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()
