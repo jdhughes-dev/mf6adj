@@ -649,7 +649,7 @@ def test_xd_box_1():
     nrow = 11
     ncol = 11
     nlay = 3
-    nper = 2
+    nper = 3
     sp_len = 10
     delr = 10.0
     delc = 10.0
@@ -714,6 +714,7 @@ def test_xd_box_1():
                     f.write("{0} 1 {1} {2} {3} head residual {4} {5}\n".format(kper+1,k+1,i+1,j+1,weight,obsval))
                 f.write("end performance_measure\n\n")
 
+
             if include_ghb_flux_pm:
                 ghb = gwf.get_package("ghb_0").stress_period_data.array[0]
                 for k in range(nlay):
@@ -725,6 +726,7 @@ def test_xd_box_1():
                         for kper in range(sim.tdis.nper.data):
                             for k,i,j in kijs:
                                 f.write("{0} 1 {1} {2} {3} ghb_0 direct 1.0 -1.0e+30\n".format(kper+1,k+1,i+1,j+1))
+
                         f.write("end performance_measure\n\n")
 
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)

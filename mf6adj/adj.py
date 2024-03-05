@@ -273,7 +273,20 @@ class Mf6Adj(object):
                         pm_entries.append(PerfMeasRecord(kper,kstp,inode,pm_type,pm_form,weight,obsval,k,i,j))
                     if len(pm_entries) == 0:
                         raise Exception("no entries found for PM {0}".format(pm_name))
-
+                    pm_types = set([entry.pm_type for entry in pm_entries])
+                    if len(pm_types) > 1:
+                        raise Exception("performance measure"+\
+                                        "{0} has mixed 'pm_types' ({1}), this is not supported".\
+                                        format(pm_name,str(pm_types)))
+                    pm_forms = set([entry.pm_form for entry in pm_entries])
+                    if len(pm_forms) > 1:
+                        raise Exception("performance measure" + \
+                                        "{0} has mixed 'pm_forms' ({1}), this is not supported". \
+                                        format(pm_name, str(pm_forms)))
+                    if list(pm_types)[0] != "head" and list(pm_forms)[0] != "direct":
+                        raise Exception("performance measure" + pm_name +\
+                                        " has a flux 'pm_form' and is a " +\
+                                        "residual 'pm_type', this is not supported")
                     if pm_name in [pm._name for pm in self._performance_measures]:
                         raise Exception("PM {0} multiply defined".format(pm_name))
                     self._performance_measures.append(
@@ -749,12 +762,16 @@ class Mf6Adj(object):
         self._gwf = None
 
     def _perturbation_test(self, pert_mult=1.01):
-        """run the pertubation testing - this is for dev and testing only"""
+        """run the perturbation testing - this is for dev and testing only"""
 
         self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
         gwf_name = self._gwf_name.upper()
 
         org_head, org_sp_package_data = self.solve_gwf(pert_save=True)
+        tot = 0
+        for d in org_sp_package_data["ghb6"][(0,0)]:
+            print(d)
+            tot += d["simval"]
         base_results = {pm.name: pm.solve_forward(org_head,org_sp_package_data) for pm in self._performance_measures}
         assert len(base_results) == len(self._performance_measures)
 

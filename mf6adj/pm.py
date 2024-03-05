@@ -89,9 +89,10 @@ class PerfMeas(object):
             else:
                 for gwf_ptype, bnd_d in sp_package_dict.items():
                     for kk,kk_list in bnd_d.items():
-                        for kk_d in kk_list:
-                            if kk == pfr.kperkstp:
-                                if kk_d["packagename"] == pfr.pm_type:
+                        if kk == pfr.kperkstp:
+                            for kk_d in kk_list:
+                                if kk_d["node"] == pfr.inode + 1 and kk_d["packagename"] == pfr.pm_type:
+
                                     if pfr.pm_form == "direct":
                                         result += pfr.weight * kk_d["simval"]
                                     elif pfr.pm_form == "residual":
@@ -182,6 +183,12 @@ class PerfMeas(object):
         if has_sto:
             comp_ss_sens = np.zeros(nnodes)
 
+        has_flux_pm = False
+        for entry in self._entries:
+            if entry.pm_type != "head":
+                has_flux_pm = True
+                break
+
         comp_welq_sens = np.zeros(nnodes)
         comp_rch_sens = np.zeros((nnodes))
 
@@ -260,7 +267,7 @@ class PerfMeas(object):
                     for pname in pnames:
                         sp_bnd_dict = {"bound": hdf[sol_key][pname]["bound"][:],
                                        "node": hdf[sol_key][pname]["nodelist"][:]}
-                        sens_level, sens_cond = self.lam_drhs_dbnd(lamb, head, sp_bnd_dict)
+                        sens_level, sens_cond = self.lam_drhs_dbnd(lamb, head, sp_bnd_dict,has_flux_pm)
                         comp_bnd_results[pname+"_"+bnd_dict[ptype][0]] += sens_level
                         data[pname + "_" + bnd_dict[ptype][0]] = sens_level
                         if len(bnd_dict[ptype]) > 1:
@@ -462,7 +469,7 @@ class PerfMeas(object):
             result[node] = sum2
         return result, result33
 
-    def lam_drhs_dbnd(self, lamb, head, sp_dict):
+    def lam_drhs_dbnd(self, lamb, head, sp_dict,has_flux_pm):
         result_head = np.zeros_like(lamb)
         result_cond = np.zeros_like(lamb)
 
@@ -472,13 +479,15 @@ class PerfMeas(object):
             # the second item in bound should be cond
             result_head[n] = lamb[n] * bound[1]
             # Add the direct effect
-            result_head[n] += bound[1]
+            if has_flux_pm:
+                result_head[n] += bound[1]
             # the first item in bound should be head
             lam_drhs_dcond = lamb[n] * bound[0]
             lam_dadcond_h = -1.0 * lamb[n] * head[n]
             result_cond[n] = lam_drhs_dcond + lam_dadcond_h
             # Add the direct effect
-            result_cond[n] += bound[0] - head[n]
+            if has_flux_pm:
+                result_cond[n] += bound[0] - head[n]
 
         return result_head, result_cond
 
