@@ -81,7 +81,7 @@ class Mf6Adj(object):
         # self._iss = {}
         # self._sat = {}
         # self._sat_old = {}
-        self._gwf_package_types = ["wel6","ghb6","riv6","drn6","sfr6","rch6","recha6"]
+        self._gwf_package_types = ["wel6","ghb6","riv6","drn6","sfr6","rch6","recha6","sfr6"]
 
     def _read_adj_file(self):
         """read the adj input file
@@ -680,6 +680,7 @@ class Mf6Adj(object):
                 data_dict["drhsdh"] = np.zeros_like(sat_old)
 
             for package_type in self._gwf_package_types:
+
                 if package_type in self._gwf_package_dict:
                     if pert_save and package_type not in sp_package_data:
                         sp_package_data[package_type] = {}
@@ -703,6 +704,13 @@ class Mf6Adj(object):
                             rhs = self._gwf.get_value(self._gwf.get_var_address("RHS", self._gwf_name, tag.upper()))
 
                             simvals = self._gwf.get_value(self._gwf.get_var_address("SIMVALS", self._gwf_name, tag.upper()))
+
+                            if package_type == "sfr6":
+                                tag = self._gwf_package_dict[package_type][0]
+                                stage = self._gwf.get_value(
+                                    self._gwf.get_var_address("STAGE", self._gwf_name, tag.upper()))
+                                bound[:,0] = stage
+                                bound[:,1] = -1. * hcof
 
                             if pert_save:
                                 for i in range(nbound):

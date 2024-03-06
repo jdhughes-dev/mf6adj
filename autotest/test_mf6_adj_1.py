@@ -1046,7 +1046,7 @@ def freyberg_structured_demo():
     duration = (datetime.now() - start).total_seconds()
     print("took:",duration)
 
-    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_pm1")]
+    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_tailwater")]
     print(result_hdf)
     assert len(result_hdf) == 1
     result_hdf = result_hdf[0]
@@ -1057,7 +1057,7 @@ def freyberg_structured_demo():
     print(keys)
     from matplotlib.backends.backend_pdf import PdfPages
     idomain = np.loadtxt(os.path.join(new_d,"freyberg6.dis_idomain_layer1.txt"))
-    with PdfPages(os.path.join(new_d,"results.pdf")) as pdf:
+    with PdfPages(os.path.join(new_d,result_hdf+".pdf")) as pdf:
         for key in keys:
             if key != "composite":
                 continue
@@ -1515,10 +1515,10 @@ def freyberg_notional_unstruct_demo():
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    new_d = test_xd_box_1()
-    xd_box_compare(new_d,True)
+    #new_d = test_xd_box_1()
+    #xd_box_compare(new_d,True)
 
-    #freyberg_structured_demo()
+    freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()

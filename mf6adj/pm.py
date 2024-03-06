@@ -65,7 +65,8 @@ class PerfMeas(object):
         #d = {"wel6":{0:"q"},"ghb6":{0:"bhead",1:"cond"},"rch6":{0:"recharge"},
         #     "drn6":{0:"elev",1:"cond"},"riv6":{0:"stage",1:"cond"}}
         d = {"ghb6":{0:"bhead",1:"cond"},
-             "drn6":{0:"elev",1:"cond"},"riv6":{0:"stage",1:"cond"}}
+             "drn6":{0:"elev",1:"cond"},"riv6":{0:"stage",1:"cond"},
+             "sfr6":{0:"stage",1:"cond"}}
         return d
 
     @staticmethod
