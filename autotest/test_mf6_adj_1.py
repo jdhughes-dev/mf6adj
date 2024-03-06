@@ -784,7 +784,7 @@ def test_xd_box_unstruct_1():
     if clean:
         sim = setup_xd_box_model(new_d, nper=nper, include_sto=include_sto, include_id0=include_id0, nrow=nrow,
                                  ncol=ncol,
-                                 nlay=nlay, q=-1, icelltype=1, iconvert=0, newton=True, delr=100.0, delc=100,
+                                 nlay=nlay, q=-0.1, icelltype=1, iconvert=0, newton=True, delr=100.0, delc=100,
                                  full_sat_bnd=False,name=name)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
@@ -1515,10 +1515,10 @@ def freyberg_notional_unstruct_demo():
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    #new_d = test_xd_box_1()
+    new_d = test_xd_box_1()
     #xd_box_compare(new_d,True)
 
-    freyberg_structured_demo()
+    #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()

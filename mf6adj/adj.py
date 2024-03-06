@@ -67,20 +67,8 @@ class Mf6Adj(object):
                                                                       ncol=ncol,
                                                                       nlay=nlay)
             self._shape = (nlay,nrow,ncol)
-
         self._performance_measures = []
-
         self._read_adj_file()
-
-        # self._amat = {}
-        # self._head = {}
-        # self._head_old = {}
-        #
-        # self._kperkstp = []
-        # self._deltat = {}
-        # self._iss = {}
-        # self._sat = {}
-        # self._sat_old = {}
         self._gwf_package_types = ["wel6","ghb6","riv6","drn6","sfr6","rch6","recha6","sfr6"]
 
     def _read_adj_file(self):
@@ -89,9 +77,6 @@ class Mf6Adj(object):
         """
         # clear any existing PMs
         self._performance_measures = []
-        # used to detect location-pak duplicates
-        current_period = -1
-        current_entries = []
 
         addr = ["NODEUSER", self._gwf_name.upper(), "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
@@ -99,17 +84,14 @@ class Mf6Adj(object):
 
         addr = ["NODEREDUCED", self._gwf_name.upper(), "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
-        nred = self._gwf.get_value(wbaddr)
 
         ncpl = None
-        nlay = None
         if not self.is_structured:
             addr = ["NCPL", self._gwf_name.upper(), "DIS"]
             wbaddr = self._gwf.get_var_address(*addr)
             ncpl = self._gwf.get_value(wbaddr)
             addr = ["NLAY", self._gwf_name.upper(), "DIS"]
             wbaddr = self._gwf.get_var_address(*addr)
-            nlay = self._gwf.get_value(wbaddr)
 
         with open(self.adj_filename, 'r') as f:
             count = 0
@@ -153,10 +135,6 @@ class Mf6Adj(object):
                         raise Exception("'begin' line {0} has wrong number of items, should be 3, not {1}".format(count,len(raw)))
 
                     pm_name = raw[2].strip().lower()
-                    #pm_type = raw[4].strip().lower()
-                    #if pm_type not in ["direct", "residual","flux"]:
-                    #    raise Exception("unrecognized PM type:'{0}', should be 'direct', 'residual', or 'flux'")
-                    #pm_pakname = None
 
                     pm_entries = []
                     pm_line = 0
@@ -212,37 +190,9 @@ class Mf6Adj(object):
                                         print(kij)
                                     raise Exception("node num {0} not in reduced node num".format(n))
 
-                                #pm_entries.append(
-                                #    PerfMeasRecord(kper, kstp, nn[0], k=kij[0], i=kij[1], j=kij[2], weight=weight,
-                                #                   obsval=obsval))
                                 inode = nn[0]
-                            #else:
-                            #    pm_entries.append(
-                            #        PerfMeasRecord(kper, kstp, n, k=kij[0], i=kij[1], j=kij[2], weight=weight,
-                            #                       obsval=obsval))
-                        else:
-                            # raise NotImplementedError("only structured grids currently supported")
-                            #if len(raw) < 5:
-                            #    raise Exception(
-                            #        "performance measure {0} line {1} has too few entries, need at least 5".format(
-                            #            pm_name, line2))
-                            #weight = None
-                            #if pm_type == "direct":
-                            #    if len(raw) < 5:
-                            #        raise Exception(
-                            #            "direct performance measure {0} line {1} has wrong number of entries, should be 5".format(
-                            #                pm_name, line2))
-                            #    weight = float(raw[4])
-                            #obsval = None
-                            #if pm_type == "residual":
-                            #    if len(raw) < 6:
-                            #        raise Exception(
-                            #            "residual performance measure {0} line {1} has wrong number of entries, should be 6".format(
-                            #                pm_name, line2))
-                            #    #todo: wrap these in try-except
-                            #    weight = float(raw[4])
-                            #    obsval = float(raw[5])
 
+                        else:
                             try:
                                 lay = int(raw[2])
                             except:
@@ -260,12 +210,8 @@ class Mf6Adj(object):
                                 nn = np.where(nuser == inode)[0]
                                 if nn.shape[0] != 1:
                                     raise Exception("node num {0} not in reduced node num".format(n))
-                                #nn = nn[0]
-                                #pm_entries.append(PerfMeasRecord(kper, kstp, nn, k=lay-1, weight=weight, obsval=obsval))
                                 inode = nn[0]
-                            #else:
-                            #    pm_entries.append(
-                            #        PerfMeasRecord(kper, kstp, inode, k=lay-1, weight=weight, obsval=obsval))
+
                         obsval = float(raw[-1])
                         weight = float(raw[-2])
                         pm_form = raw[-3].strip().lower()
@@ -409,7 +355,6 @@ class Mf6Adj(object):
             fname = tag
         self._hdf5_name = fname
         if os.path.exists(fname):
-            # raise Exception("hdf5 file '{0}' exists somehow...".format(fname))
             os.remove(fname)
         f = h5py.File(fname, 'w')
         return f
@@ -487,7 +432,6 @@ class Mf6Adj(object):
         bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
         area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
         iconvert = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "ICONVERT", gwf)
-        ia = PerfMeas.get_ptr_from_gwf(gwf_name, "CON", "IA", gwf) - 1
 
         # handle iconvert
         sat_mod = sat.copy()
@@ -550,11 +494,6 @@ class Mf6Adj(object):
         if PerfMeas.has_sto_iconvert(self._gwf):
             has_sto = True
 
-        # nodekchange = self._gwf.get_value_ptr(self._gwf.get_var_address("NODEKCHANGE", self._gwf_name, "NPF"))
-        # k11 = self._gwf.get_value_ptr(self._gwf.get_var_address("K11", self._gwf_name, "NPF"))
-        # k11input = self._gwf.get_value_ptr(self._gwf.get_var_address("K11INPUT", self._gwf_name, "NPF"))
-        # condsat = self._gwf.get_value_ptr(self._gwf.get_var_address("CONDSAT", self._gwf_name, "NPF"))
-
         sp_package_data = None
         head_dict = None
         if pert_save:
@@ -573,7 +512,6 @@ class Mf6Adj(object):
             time_step = self._gwf.get_value(self._gwf.get_var_address("KSTP", "TDIS"))[0]
             kper, kstp = stress_period - 1, time_step - 1
             kperkstp = (kper, kstp)
-            #print("...preping for ",stress_period,time_step)
 
             # this is to force mf6 to update cond sat using the k11 and k33 arrays
             # which is needed for the perturbation testing
@@ -600,7 +538,6 @@ class Mf6Adj(object):
                     bnd_ptr[idx] = _sp_pert_dict["bound"]
 
             self._gwf.prepare_solve(1)
-            sat = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
             if sat_old is None:
                 sat_old = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
 
@@ -672,8 +609,6 @@ class Mf6Adj(object):
             if has_sto: #has storage
                 dresdss_h = Mf6Adj.dresdss_h(self._gwf_name,self._gwf,head,head_old,dt1,sat,sat_old)
                 data_dict["dresdss_h"] = dresdss_h
-
-                #if iss == 0 : #has storage and this kper is transient
                 drhsdh = Mf6Adj.drhsdh(self._gwf_name,self._gwf,dt1)
                 data_dict["drhsdh"] = drhsdh
             else:
@@ -740,7 +675,6 @@ class Mf6Adj(object):
             return head_dict, sp_package_data
 
     def solve_adjoint(self):
-        #if len(self._kperkstp) == 0:
         if self._hdf5_name is None or not os.path.exists(self._hdf5_name):
             raise Exception("need to call solve_gwf() first")
 
@@ -795,7 +729,6 @@ class Mf6Adj(object):
 
         kijs = None
         if self.is_structured:
-            #kijs = self._structured_mg.get_lrc(list(nuser))
             kijs = PerfMeas.get_lrc(self._shape,list(nuser))
             kijs = {n:kij for n,kij in zip(nuser,kijs)}
         addr = ["NLAY", gwf_name, "DIS"]
@@ -816,8 +749,6 @@ class Mf6Adj(object):
             print("running perturbations for ", paktype)
             for kk, infolist in pdict.items():
                 for infodict in infolist:
-                    #if nuser[infodict["node"]] == 0:
-                    #    continue
                     bnd_items = infodict["bound"].shape[0]
                     for ibnd in range(min(bnd_items,2)):
                         new_bound = infodict["bound"].copy()
@@ -837,10 +768,7 @@ class Mf6Adj(object):
                         for pm, result in pert_results.items():
                             pert_results_dict[pm].append(result)
                         bound_idx.append(ibnd)
-                        #if paktype == "rch6":
                         nodes.append(infodict["node"])
-                        #else:
-                        #    nodes.append(nuser[infodict["node"]])
                         if paktype == "wel6":
                             names.append("wel6_q")
                         elif paktype == "rch6":
@@ -850,11 +778,9 @@ class Mf6Adj(object):
             df = pd.DataFrame(pert_results_dict)
             df.loc[:, "node"] = nodes
             df.loc[:,"epsilon"] = epsilons
-            #df.loc[:, "epsilon"] = epsilons
             df.loc[:,"addr"] = names
             df.index = df.pop("node") - 1
             df = df.loc[df.index != -1,:]
-            #if paktype == "rch6":
             df.index = df.index.map(lambda x: nuser[x])
 
             if kijs is not None:
@@ -879,7 +805,6 @@ class Mf6Adj(object):
 
         has_sto = False
         if PerfMeas.has_sto_iconvert(self._gwf):
-            #address.append(["SS", gwf_name, "STO"])
             has_sto = True
 
         wbaddr = self._gwf.get_var_address(*address[0])
@@ -925,7 +850,6 @@ class Mf6Adj(object):
                 test_dir = "pert_temp"
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
-            #shutil.copy2(self._flow_dir,test_dir)
             sim = flopy.mf6.MFSimulation.load(sim_ws=self._flow_dir)
             gwf = sim.get_model()
             ss = gwf.sto.ss.array.copy().flatten()
@@ -955,8 +879,6 @@ class Mf6Adj(object):
                 pert_arr[arr_node] = delt
 
                 # reset the ss property
-                #gwf.sto.ss = pert_arr
-                #gwf.write()
                 np.savetxt(ss_arr_name,pert_arr.flatten(),fmt="%15.6E")
 
                 self._gwf = self._initialize_gwf(self._lib_name, test_dir)

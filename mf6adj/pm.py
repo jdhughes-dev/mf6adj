@@ -1,5 +1,4 @@
 import os
-import shutil
 import numpy as np
 import scipy.sparse as sparse
 from scipy.sparse.linalg import spsolve
@@ -62,8 +61,6 @@ class PerfMeas(object):
 
     @staticmethod
     def get_mf6_bound_dict():
-        #d = {"wel6":{0:"q"},"ghb6":{0:"bhead",1:"cond"},"rch6":{0:"recharge"},
-        #     "drn6":{0:"elev",1:"cond"},"riv6":{0:"stage",1:"cond"}}
         d = {"ghb6":{0:"bhead",1:"cond"},
              "drn6":{0:"elev",1:"cond"},"riv6":{0:"stage",1:"cond"},
              "sfr6":{0:"stage",1:"cond"}}
@@ -98,7 +95,6 @@ class PerfMeas(object):
                                         result += pfr.weight * kk_d["simval"]
                                     elif pfr.pm_form == "residual":
                                         result += (pfr.weight * (kk_d["simval"] - pfr.obsval)) ** 2
-
         return result
 
 
@@ -146,9 +142,7 @@ class PerfMeas(object):
                 raise Exception("no solution dataset found for kper,kstp:{0}".format(str(kk)))
             kk_sol_map[kk] = sol
 
-        # nnodes = PerfMeas.get_value_from_gwf(gwf_name, "DIS", "NODES", gwf)[0]
         nnodes = hdf["gwf_info"]["nnodes"][:]
-        #print(hdf["gwf_info"].keys())
         nodeuser = hdf["gwf_info"]["nodeuser"][:]
         nodereduced = hdf["gwf_info"]["nodereduced"][:]
         if len(nodeuser) == 1:
@@ -172,8 +166,6 @@ class PerfMeas(object):
         top = hdf["gwf_info"]["top"][:]
         bot = hdf["gwf_info"]["bot"][:]
         icelltype = hdf["gwf_info"]["icelltype"][:]
-        area = hdf["gwf_info"]["area"][:]
-        idomain = hdf["gwf_info"]["idomain"][:]
 
         comp_k33_sens = np.zeros(nnodes)
         comp_k_sens = np.zeros(nnodes)
@@ -216,18 +208,13 @@ class PerfMeas(object):
             iss = hdf[sol_key]["iss"][0]
 
             if itime != 0:  # transient
-                # if False:
                 # get the derv of RHS WRT head
                 drhsdh = hdf[sol_key]["drhsdh"][:]
                 data["drhsdh"] = drhsdh
                 rhs = (drhsdh * lamb) - dfdh
             else:
                 rhs = - dfdh
-            # if np.all(rhs == 0.0):
-            #    print(
-            #        "WARNING: adjoint solve rhs is all zeros, adjoint states cannot be calculated for {0} at kperkstp {1}".format(
-            #            self._name, kk))
-            # continue
+
 
             amat = hdf[sol_key]["amat"][:]
             head = hdf[sol_key]["head"][:]
@@ -274,9 +261,6 @@ class PerfMeas(object):
                         if len(bnd_dict[ptype]) > 1:
                             comp_bnd_results[pname+"_"+bnd_dict[ptype][1]] += sens_cond
                             data[pname + "_" + bnd_dict[ptype][1]] = sens_cond
-
-
-                        #print()
 
             data["lambda"] = lamb
             data["head"] = hdf[sol_key]["head"][:]
@@ -351,9 +335,7 @@ class PerfMeas(object):
                     if isinstance(v,np.ndarray):
                         dset = subgrp.create_dataset(k, v.shape, dtype=v.dtype, data=v)
                     else:
-                        #print("WARNING: unknown dtype, setting as attribute for group {2}: {0} {1}".format(k,type(v), tag))
                         subgrp.attrs[k] = v
-                        #print()
 
             else:
                 raise Exception("unrecognized data_dict entry: {0},type:{1}".format(tag, type(item)))
@@ -374,7 +356,6 @@ class PerfMeas(object):
 
     @staticmethod
     def smooth_sat(sat):
-        # satomega = self._gwf.get_value(self._gwf.get_var_address("SATOMEGA", self._gwf_name, "NPF"))
         satomega = 1.0e-6
         A_omega = 1 / (1 - satomega)
         s_sat = 1.0
@@ -426,7 +407,6 @@ class PerfMeas(object):
         sat_mod = sat.copy()
         sat_mod[icelltype == 0] = 1.0
 
-        # height = sat_mod * (top - bot)
         height = top - bot
 
         result33 = np.zeros_like(head)
@@ -510,7 +490,6 @@ class PerfMeas(object):
             if pfr.kperkstp == kk:
                 if pfr.pm_type == "head":
                     if pfr.pm_form == "direct":
-                    # dfdh[pfr.nnode] = -1. * pfr.weight / deltat_dict[kk]
                         dfdh[pfr.inode] = pfr.weight
                     elif pfr.pm_form == "residual":
                         dfdh[pfr.inode] = 2.0 * pfr.weight * (head[pfr.inode] - pfr.obsval)
