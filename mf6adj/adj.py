@@ -13,16 +13,20 @@ DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 
 class Mf6Adj(object):
-    def __init__(self, adj_filename, lib_name, verbose_level=1):
+    """The MODFLOW6 Adjoint solver
 
-        """todo:
+    Parameters
+    ----------
+    adj_filename (str): the adjoint input filename
+    lib_name (str): the MODFLOW6 shared library file
+    verbose_level (int): flag to control output.  Default is 1
 
-        check for unsupported horizontal conductance formulation
-        check for unsupported vertical conductance formulation
-        check for unsupported aniso options
-        check for unsupported xt3d option/horizontal anisotropy!
 
-        add chd,drn,and riv to bc types
+
+    """
+    def __init__(self, adj_filename: str, lib_name: str, verbose_level=1):
+
+        """
 
         """
         self.verbose_level = int(verbose_level)
@@ -72,7 +76,43 @@ class Mf6Adj(object):
         self._gwf_package_types = ["wel6","ghb6","riv6","drn6","sfr6","rch6","recha6","sfr6"]
 
     def _read_adj_file(self):
-        """read the adj input file
+        """private method to read the adj input file
+
+        Note
+        ----
+        The input file structure is very similar to other MODFLOW6 input files.
+        Each performance measure is defined in a 'performance_measure' block.  Each
+        block contains one or more entries describing model output quantities that
+        together define the performance measure.  Each performance measure entry must
+        have information about the spatial and temporal location of the quantity such as
+        node/lay-row-col information and stress period/time step information, as well as
+        information about which output quantity to use (head or flux).  The entries must
+        also include a weight and optionally an observed value (for residual type performance
+        measures).
+
+        For example, if the performance measure was for a head in a single cell located in
+        layer 3, row 10, column 34 during the 4th timestep of the 25th stress period and
+        it is a direct performance measure, the entry would be:
+           25 3 3 10 34 head direct 1.0 -999 # the -999 is a null value for the unused obsval
+        Alternatively, if the same spatial temporal location was used for a sum-of-squared
+        residual performance measure and the observed value is 123.45, the entry would be:
+           25 3 3 10 34 head residual 1.0 123.45
+
+        If the performance measure is for the simulated flux exchanged with a GHB boundary
+        in model layer 10, row 2, column 3 for stress periods 1 and 2 (assuming 1 timestep
+        per stress period and assuming the GHB package is named 'ghb_1' in the GWF nam file):
+           1 1 10 2 3 ghb_1 direct 1.0 -999
+           2 1 10 2 3 ghb_1 direct 1.0 -999
+        The resulting adjoint sensitivities will be with respect to the ghb flux in model cell
+        (10,2,3) for both stress periods 1 and 2
+
+        As presently coded, performance measure forms (i.e. 'direct' or 'residual') cannot be mixed
+        for a given performance measure and performance type (i.e. 'head' or flux) cannot be mixed
+        for a given performance measure.
+
+
+
+
 
         """
         # clear any existing PMs
@@ -247,10 +287,12 @@ class Mf6Adj(object):
     def get_model_names_from_mfsim(sim_ws):
         """return the model names from an mfsim.nam file
 
-        Parameters:
+        Parameters
+        ----------
             sim_ws (str): the simulation path
 
-        Returns:
+        Returns
+        -------
             dict,dict: a pair of dicts, first is model-name:model-type (e.g. {"gwf-1":"gwf"},
                 the second is model namfile: model-type (e.g. {"gwf-1":"gwf_1.nam"})
 
@@ -282,7 +324,17 @@ class Mf6Adj(object):
 
     @staticmethod
     def get_package_names_from_gwfname(gwf_nam_file):
+        """return the package names from a GWF nam file
 
+        Parameters
+        ----------
+            gwf_nam_file (str): GWF nam file
+
+        Returns
+        -------
+            dict: package types as keys and list of package names as values
+
+        """
         if not os.path.exists(gwf_nam_file):
             raise Exception("gwf nam file '{0}' not found".format(gwf_nam_file))
         package_dict = {}
@@ -326,6 +378,20 @@ class Mf6Adj(object):
 
     @staticmethod
     def write_group_to_hdf(hdf, group_name, data_dict, attr_dict={}):
+        """write information to an open HDF5 file
+
+        Parameters
+        ----------
+            hdf (h5py.File) : an open HDF5 filehandle
+            group_name (str) : name of the group to create
+            data_dict (dict) : dict of info to write as the group.  If key
+                is a list, its cast to an ndarray.  If key is a dict itself,
+                only 'nodelist' and 'bound' are stored.
+            attr_dict (dict) : an optional dict of attributes to store with the
+                group
+
+
+        """
         if group_name in hdf:
             raise Exception("group_name {0} already in hdf file".format(group_name))
         grp = hdf.create_group(group_name)
@@ -349,6 +415,17 @@ class Mf6Adj(object):
                 raise Exception("unrecognized data_dict entry: {0},type:{1}".format(tag, type(item)))
 
     def _open_hdf(self, tag):
+        """private method to open an HDF5 filehandle for writing
+
+        Parameters
+        ----------
+        tag (str) : a prefix tag for the file
+
+        Returns
+        -------
+        f (h5py.File) : filehandle
+
+        """
         if tag is None:
             fname = self._gwf_name + "_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".hd5"
         else:
@@ -359,9 +436,15 @@ class Mf6Adj(object):
         f = h5py.File(fname, 'w')
         return f
 
-    def _add_gwf_info_to_hdf(self, fhd):
-        """
-        todo: add kij info for structure grids
+    def _add_gwf_info_to_hdf(self, hdf):
+        """add model structure and metadata to an HDF5 file
+
+        Parameters
+        ----------
+        hdf (h5py.File) : an HDF5 filehandle
+
+
+
         """
         gwf_name = self._gwf_name
         gwf = self._gwf
@@ -420,13 +503,28 @@ class Mf6Adj(object):
             ncol = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NCOL", gwf)
             data_dict["ncol"] = ncol
 
-        PerfMeas.write_group_to_hdf(fhd, "gwf_info", data_dict,attr_dict=self._gwf_package_dict)
+        PerfMeas.write_group_to_hdf(hdf, "gwf_info", data_dict,attr_dict=self._gwf_package_dict)
 
 
     @staticmethod
     def dresdss_h(gwf_name, gwf, head, head_old, dt, sat, sat_old):
         """partial of residual wrt ss times h.  Just need to mult
         times lambda in the PerfMeas.solve_adjoint()
+
+        Parameters
+        ----------
+        gwf_name (str) : name of the GWF model
+        gwf (MODFLOW6 API) : the API instance
+        head (ndarray) : current heads
+        head_old (ndarray) : heads from the last solve
+        dt (float) : length of the current solution step in model time
+        sat (ndarray) : current saturation
+        sat_old (ndarray) : saturation from the last solve
+
+        Returns
+        -------
+        result (ndarray) : dresdss_h
+
         """
         top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
         bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
@@ -456,6 +554,19 @@ class Mf6Adj(object):
 
     @staticmethod
     def drhsdh(gwf_name, gwf, dt):
+        """partial of the RHS WRT H
+
+        Parameters
+        ----------
+        gwf_name (str) : name of the GWF model
+        gwf (MODFLOW6 API) : the API instance
+        dt (float) : length of the current solution step in model time
+
+        Returns
+        -------
+        drhsdh (ndarray) : drhsdh
+
+        """
         top = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "TOP", gwf)
         bot = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "BOT", gwf)
         area = PerfMeas.get_ptr_from_gwf(gwf_name, "DIS", "AREA", gwf)
@@ -465,7 +576,22 @@ class Mf6Adj(object):
 
 
     def solve_gwf(self, verbose=True, _force_k_update=False, _sp_pert_dict=None,pert_save=False):
-        """solve the flow across the modflow sim times
+        """solve the flow across the modflow sim times and harvest the solution
+        components needed for the adjoint solution and store them in the HDF5 file
+
+        Parameters
+        ----------
+        verbose (bool) : flag to control stdout reporting
+        _force_k_update (bool) : flag to force MODFLOW6 to re-process the K and K33 arrays.
+            This is used in the perturbation testing
+        _sp_pert_dict (dict) : a dictionary of perturbed boundary information.
+            This is used in the perturbation testing
+        pert_save (bool) : flag to save more information for the perturbation testing
+
+        Returns
+        -------
+        pert_results (dict) : information for the perturbation testing.
+
         """
         if self._gwf is None:
             raise Exception("gwf is None")
@@ -675,6 +801,22 @@ class Mf6Adj(object):
             return head_dict, sp_package_data
 
     def solve_adjoint(self):
+        """solve for the adjoint state, one performance measure at at time
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+
+        dfs (dict) : dictionary of dataframes (one per performance measure) summarizing
+            the composite sensitivity information.  More granular information can be
+            found in the corresponding HDF5 file that is created by the adjoint
+            solve
+
+
+        """
         if self._hdf5_name is None or not os.path.exists(self._hdf5_name):
             raise Exception("need to call solve_gwf() first")
 
@@ -684,12 +826,21 @@ class Mf6Adj(object):
             dfs[pm.name] = df
         return dfs
 
-    def _initialize_gwf(self, lib_name, flow_dir):
+    def _initialize_gwf(self, lib_name, sim_ws):
+        """initialze the MODFLOW6 API
+
+        Parameters
+        ----------
+        lib_name (str) : MODFLOW6 shared library file
+        sim_ws (str) : directory of the simulation.  This dir
+            is assumed to contain the shared library file
+
+        """
         # instantiate the flow model api
         if self._gwf is not None:
             self._gwf.finalize()
             self._gwf = None
-        gwf = modflowapi.ModflowApi(os.path.join(flow_dir, lib_name), working_directory=flow_dir)
+        gwf = modflowapi.ModflowApi(os.path.join(sim_ws, lib_name), working_directory=sim_ws)
         gwf.initialize()
         return gwf
 
