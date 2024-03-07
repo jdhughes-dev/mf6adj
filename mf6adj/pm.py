@@ -7,6 +7,23 @@ import h5py
 
 
 class PerfMeasRecord(object):
+    """a performance measure record class - an instance for each row in the performance measure block
+
+    Parameters
+    ----------
+    kper (int) : zero-based stress period
+    kstp (int) : zero-based time step
+    inode (int) : zero-based node number
+    pm_type (str) : either 'head' or boundary package name as shown in the GWF nam file
+    pm_form (str) : either 'direct' or 'residual'
+    weight (float) : weight value
+    obsval (float) : optional observed counterpart.  only used if 'pm_form' is residual
+    k (int) : optional zero-based layer (for structured grids - only for reporting)
+    i (int) : optional zero-based row (for structured grids - only for reporting)
+    j (int) : optional zero-based column (for structured grids - only for reporting)
+
+
+    """
     def __init__(self, kper, kstp, inode, pm_type, pm_form, weight, obsval, k=None, i=None, j=None, ):
         self._kper = int(kper)
         self._kstp = int(kstp)
@@ -37,7 +54,16 @@ class PerfMeasRecord(object):
 
 
 class PerfMeas(object):
-    """todo: preprocess all the connectivity in to faster look dict containers,
+    """Performance measures for adjoint solves
+
+    Parameters
+    ----------
+    pm_name (str) : name of the performance measure
+    pm_entries (list(PerfMeasRec)) : container of performance measure entries
+    verbose_level (int) : how much stdout
+
+
+    todo: preprocess all the connectivity in to faster look dict containers,
 	including nnode to kij info for structured grids
 
 	todo: convert several class methods to static methods - this might make testing easier
@@ -48,33 +74,45 @@ class PerfMeas(object):
 	
 	"""
 
-    def __init__(self, pm_name, pm_entries, is_structured, verbose_level=1):
+    def __init__(self, pm_name, pm_entries, verbose_level=1):
         self._name = pm_name.lower().strip()
         self._entries = pm_entries
-        self.is_structured = is_structured
         self.verbose_level = int(verbose_level)
 
 
     @property
     def name(self):
+        """get self._name
+
+        Returns
+        -------
+        name (str) : performance measure name
+
+        """
         return str(self._name)
 
     @staticmethod
     def get_mf6_bound_dict():
+        """get a container of information about which axes of the 'bound'
+        array from MODFLOW6 has the quantities for calculating the sensitivity to
+
+        Returns
+        -------
+        d (dict) : dict of boundary info
+
+        """
         d = {"ghb6":{0:"bhead",1:"cond"},
              "drn6":{0:"elev",1:"cond"},"riv6":{0:"stage",1:"cond"},
              "sfr6":{0:"stage",1:"cond"}}
         return d
 
-    @staticmethod
-    def has_sto_iconvert(gwf):
-        names = [n for n in list(gwf.get_input_var_names()) if "STO" in n and "ICONVERT" in n]
-        if len(names) == 0:
-            return False
-        return True
 
     def solve_forward(self, head_dict,sp_package_dict):
-        """for testing only"""
+        """calculate forward solution for the performance measure.
+        Thjs is only for the perturbation testing process
+
+
+        """
         result = 0.0
         for pfr in self._entries:
             if pfr.pm_type == "head":
@@ -99,7 +137,18 @@ class PerfMeas(object):
 
 
     def solve_adjoint(self, hdf5_forward_solution_fname, hdf5_adjoint_solution_fname=None):
-        """
+        """Solve for the adjoint state for the performance measure.
+
+        Parameters
+        ----------
+        hdf5_forward_solution_fname (str) : the HDF5 file written during the forward GWF solution
+            that contains all the information needed to solve for the adjoint state
+        hdf5_adjoint_solution_fname (str) : the HDF5 file to be created by the adjoint solution process.
+            If None, use `"adjoint_solution_{0}_".format(self._name) + hdf5_forward_solution_fname`.
+
+        Returns
+        -------
+        dfs (DataFrame) : summary of composite sensitivity information
 
 		"""
         try:
@@ -171,7 +220,6 @@ class PerfMeas(object):
         comp_k_sens = np.zeros(nnodes)
         comp_ss_sens = None
 
-        # has_sto = PerfMeas.has_sto_iconvert(gwf)
         has_sto = hdf[sol_keys[0]].attrs["has_sto"]
         if has_sto:
             comp_ss_sens = np.zeros(nnodes)
@@ -199,7 +247,6 @@ class PerfMeas(object):
 
             print('solving adjoint solution for PerfMeas:', self._name, " (kper,kstp)", kk)
             sol_key = kk_sol_map[kk]
-            #print(hdf[sol_key].keys())
             if sol_key in adf:
                 raise Exception("solution key '{0}' already in adjoint hdf5 file".format(sol_key))
 
@@ -301,6 +348,18 @@ class PerfMeas(object):
 
     @staticmethod
     def write_group_to_hdf(hdf, group_name, data_dict, attr_dict={}, grid_shape=None, nodeuser=None,nodereduced=None):
+        """write a group in data to an open HDF5 file
+
+        Parameters
+        ----------
+        hdf (h5py.File) : an open HDF5 filehandle
+        group_name (str) : the group name for the dataset
+        data_dict (dict) : datasets to write to the HDF5 file
+        attr_dict (dict) : optional dict of attributes to write for the group
+        nodeuser (ndarray) : optional `nodeuser` array from MODFLOW6
+        nodereduced (ndarray) : optional `nodereduced` array from MODFLOW6
+
+        """
         if group_name in hdf:
             raise Exception("group_name {0} already in hdf file".format(group_name))
         grp = hdf.create_group(group_name)
@@ -348,6 +407,24 @@ class PerfMeas(object):
 
     @staticmethod
     def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
+        """partial of conductance with respect to K
+
+        Parameters
+        ----------
+        k1 (float) : K of connection 1
+        k2 (float) : K of connection 2
+        cl1 (float) : length of connection 1
+        cl2 (float) : length of connection 2
+        width (float) : connection width
+        height1 (float) : height of connection 1
+        height2 (float) : height of connmection 2
+
+        Returns
+        -------
+        d (float) : partial of conductance WRT K
+
+        """
+
         # todo: upstream weighting - could use height1 and height2 to check...
         # todo: vertically staggered
         d = (width * cl1 * height1 * (height2 ** 2) * (k2 ** 2)) / (
@@ -356,6 +433,17 @@ class PerfMeas(object):
 
     @staticmethod
     def smooth_sat(sat):
+        """smoother saturation using sigmoid function a la MODFLOW6
+
+        Parameters
+        ----------
+        sat (ndarray) : saturation array
+
+        Returns
+        -------
+        s_sat (ndarray) : smoothed saturation
+
+        """
         satomega = 1.0e-6
         A_omega = 1 / (1 - satomega)
         s_sat = 1.0
@@ -371,6 +459,19 @@ class PerfMeas(object):
 
     @staticmethod
     def d_smooth_sat_dh(sat, top, bot):
+        """partial of smoother saturation with respect to head
+
+        Parameters
+        ----------
+        sat (ndarray) : saturation
+        top (ndarray) : cell top
+        bot (ndarray) : cell bottom
+
+        Returns
+        -------
+        d_s_sat_dh (ndarray) : partial of smoothed saturation WRT head
+
+        """
         satomega = 1.0e-6
         A_omega = 1 / (1 - satomega)
         d_s_sat_dh = 0.0
@@ -384,6 +485,20 @@ class PerfMeas(object):
 
     @staticmethod
     def _smooth_sat(sat1, sat2, h1, h2):
+        """private method for upstream smoothing
+
+        Parameters
+        ----------
+        sat1 (float) : saturation of node 1
+        sat2 (float) : saturation of node 2
+        h1 (float) : head of node 1
+        h2 (float) : head of node 2
+
+        Returns
+        -------
+        value (float) smoothed saturation of the upstream node
+
+        """
         if h1 >= h2:
             value = PerfMeas.smooth_sat(sat1)
         else:
@@ -392,6 +507,21 @@ class PerfMeas(object):
 
     @staticmethod
     def _d_smooth_sat_dh(sat, h1, h2, top, bot):
+        """private method of partial of smoothed saturation with respect to upstream head
+
+        Parameters
+        ----------
+        sat (float) : saturation
+        h1 (float) : head of node 1
+        h2 (float) : head of node 2
+        top (float): top
+
+        Returns
+        -------
+
+        value (float) : partial of smoothed saturation WRT upstream head
+
+        """
         value = 0.0
         if h1 >= h2:
             value = PerfMeas.d_smooth_sat_dh(sat, top, bot)
@@ -400,7 +530,31 @@ class PerfMeas(object):
     @staticmethod
     def lam_dresdk_h(is_newton, lamb, sat, head, ihc, ia, ja, jas, cl1, cl2, hwva, top, bot,
                      icelltype, k11, k33):
+        """adjoint state times the partial of residual with respect to k times head
 
+        Parameters
+        ----------
+        is_newton (bool) : flag for newton solution
+        lamb (ndarray) : adjoint state array
+        sat (ndarray) : saturation array
+        head (ndarray) : head array
+        ihc (ndarray) : horizontal connection indicator array
+        ia (ndarray) : the index of connection array in the compressed sparse row format
+        ja (ndarray) : the connection array in the compressed sparse row format
+        jas (ndarray) : the full connectivity array
+        cl1 (ndarray) : the connection length array for conn 1
+        cl2 (ndarray) : the connection length array for conn 2
+        hwva (ndarray) : the horizontal width vertical area array
+        top (ndarray) : the top array
+        bot (ndarray) : the bottom array
+        icelltype (ndarray) : the convertible cell type indicator array
+        k11 (ndarray) : the k11 array
+        k33 (ndarray) : the k33 array
+
+        Returns
+        -------
+        result_k, result_k33 (ndarray) : the adjoint state times the partial of residual with respect to k and k33 times head
+        """
         iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
         # array of number of connections per node (size ndoes)
 
@@ -472,18 +626,19 @@ class PerfMeas(object):
 
         return result_head, result_cond
 
-    @staticmethod
-    def derivative_conductance_k33(k1, k2, w1, w2, area):
-        d = - 2.0 * w1 * area / ((w1 + w2 * k1 / k2) ** 2)
-        return d
-
-    @staticmethod
-    def derivative_conductance_k1(k1, k2, w1, w2, d1, d2):
-        d = - 2.0 * w1 * d1 * d2 / ((w1 + w2 * k1 / k2) ** 2)
-        return d
-
-
     def _dfdh(self, kk, sol_dataset):
+        """partial of the performance measure with respect to head
+
+        Parameters
+        ----------
+        kk (tuple) : zero-based stress period and time step
+        sol_dataset(h5py.Dataset): the forward solution dataset
+
+        Returns
+        -------
+        result (ndarray) : partial of performance measure WRT head
+
+        """
         head = sol_dataset["head"][:]
         dfdh = np.zeros_like(head)
         for pfr in self._entries:
@@ -502,16 +657,55 @@ class PerfMeas(object):
 
     @staticmethod
     def get_value_from_gwf(gwf_name, pak_name, prop_name, gwf):
+        """get a copy of a quantity from the MODFLOW6 API
+
+        Parameters
+        ----------
+        gwf_name (str): name of the GWF instance
+        pak_name (str): name of the package in the GWF nam file
+        prop_name (str): name of the property in the 'pak_name' package
+        gwf (MODFLOW6 API): a MODFLOW6 GWF instance
+
+        Returns
+        -------
+        value (varies): the quantity of interest
+
+        """
         addr = gwf.get_var_address(prop_name, gwf_name, pak_name)
         return gwf.get_value(addr)
 
     @staticmethod
     def get_ptr_from_gwf(gwf_name, pak_name, prop_name, gwf):
+        """get a pointer (well reference anyway) to a quantity from the MODFLOW6 API
+
+        Parameters
+        ----------
+        gwf_name (str): name of the GWF instance
+        pak_name (str): name of the package in the GWF nam file
+        prop_name (str): name of the property in the 'pak_name' package
+        gwf (MODFLOW6 API): a MODFLOW6 GWF instance
+
+        Returns
+        -------
+        value (varies): a mutable reference to the quantity of interest
+
+        """
         addr = gwf.get_var_address(prop_name, gwf_name, pak_name)
         return gwf.get_value_ptr(addr)
 
     @staticmethod
     def get_node(shape, lrc_list):
+        """get the node numbers for a given list of lrc values. stolen from flopy
+
+        Parameters
+        ----------
+        lrc_list (list): list of layer row columnn values
+
+        Returns
+        -------
+        values (ndarray): node numbers
+
+        """
 
         if not isinstance(lrc_list, list):
             lrc_list = [lrc_list]
@@ -520,7 +714,37 @@ class PerfMeas(object):
 
     @staticmethod
     def get_lrc(shape, nodes):
+        """get layer row column values from node numbers.  Also stolen from flopy
+
+        Parameters
+        ----------
+        nodes (list) : list of node numbers
+
+        Returns
+        -------
+        values (list): list of layer-row-column values
+
+
+        """
         if isinstance(nodes, int):
             nodes = [nodes]
         return list(zip(*np.unravel_index(nodes, shape)))
+
+    @staticmethod
+    def has_sto_iconvert(gwf):
+        """does the forward model has an sto package with iconvert
+
+        Parameters
+        ----------
+        gwf (MODFLOW6 API): a MODFLOW6 GWF API instance
+
+        Returns
+        -------
+            flag (bool) : has sto iconvert?
+
+        """
+        names = [n for n in list(gwf.get_input_var_names()) if "STO" in n and "ICONVERT" in n]
+        if len(names) == 0:
+            return False
+        return True
 

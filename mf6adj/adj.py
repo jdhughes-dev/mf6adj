@@ -276,7 +276,7 @@ class Mf6Adj(object):
                     if pm_name in [pm._name for pm in self._performance_measures]:
                         raise Exception("PM {0} multiply defined".format(pm_name))
                     self._performance_measures.append(
-                        PerfMeas(pm_name, pm_entries, self.is_structured, self.verbose_level))
+                        PerfMeas(pm_name, pm_entries, self.verbose_level))
 
                 else:
                     raise Exception("unrecognized adj file input on line {0}: '{1}'".format(count, line))
