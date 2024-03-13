@@ -575,7 +575,8 @@ class Mf6Adj(object):
         return drhsdh
 
 
-    def solve_gwf(self, verbose=True, _force_k_update=False, _sp_pert_dict=None,pert_save=False):
+    def solve_gwf(self, verbose=True, _force_k_update=False, _sp_pert_dict=None,pert_save=False,
+                  hdf5_name=None):
         """solve the flow across the modflow sim times and harvest the solution
         components needed for the adjoint solution and store them in the HDF5 file
 
@@ -587,6 +588,8 @@ class Mf6Adj(object):
         _sp_pert_dict (dict) : a dictionary of perturbed boundary information.
             This is used in the perturbation testing
         pert_save (bool) : flag to save more information for the perturbation testing
+        hdf5_name (str) : optional hdf5 filename to store forward solution components in.
+            If None, a generic time-stamped filename is created
 
         Returns
         -------
@@ -596,6 +599,8 @@ class Mf6Adj(object):
         if self._gwf is None:
             raise Exception("gwf is None")
             self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
+        if hdf5_name is not None:
+            self._hdf5_name = hdf5_name
         fhd = self._open_hdf(self._hdf5_name)
         sim_start = datetime.now()
         if verbose:
