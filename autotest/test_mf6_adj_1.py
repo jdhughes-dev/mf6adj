@@ -1023,6 +1023,7 @@ def freyberg_structured_demo():
                 f.write("{0} 1 {1} head direct 1.0 -1.0e+30\n".format(kper + 1, lrc, rval))
         f.write("end performance_measure\n\n")
 
+        sfr_data = pd.DataFrame.from_records(gwf.sfr.packagedata.array)
         bnames = sfr_data.boundname.unique()
         bnames.sort()
         for bname in bnames:
@@ -1202,37 +1203,22 @@ def freyberg_structured_highres_demo():
 
     org_d = "freyberg_highres"
     new_d = "freyberg_highres_test"
-    if os.path.exists(new_d):
-        shutil.rmtree(new_d)
-    shutil.copytree(org_d, new_d)
-    shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
-    shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
-    shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
-    shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
-    shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
-    shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
-    # shutil.copytree(os.path.join('mf6adj'), os.path.join(new_d, 'mf6adj'))
 
-    #os.chdir(new_d)
-    #os.system("mf6")
-    #os.chdir("..")
+    #if os.path.exists(new_d):
+    #    shutil.rmtree(new_d)
+    #shutil.copytree(org_d, new_d)
+    # shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
+    # shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
+    # shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+    # shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+    # shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+    # shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
+
     pyemu.os_utils.run("mf6",cwd=new_d)
-    # lrcs = []
-    # k_dict = {}
-    # with open(os.path.join(new_d, "head.obs"), 'r') as f:
-    #     f.readline()
-    #     for line in f:
-    #         if line.strip().lower().startswith("end"):
-    #             break
-    #         raw = line.strip().split()
-    #         lrcs.append(" ".join(raw[2:]))
-    #         k = int(raw[2]) - 1
-    #         i = int(raw[3]) - 1
-    #         j = int(raw[4]) - 1
-    #         if k not in k_dict:
-    #             k_dict[k] = []
-    #         k_dict[k].append([i, j])
 
+
+    sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
+    gwf = sim.get_model()
     df = pd.read_csv(os.path.join(new_d, "freyberg6.obs_continuous_heads.csv.txt"), header=None,
                      names=["site", "otype", "layer", "row","col"],delim_whitespace=True)
     df.loc[:, "layer"] = df.layer.astype(int)
@@ -1250,6 +1236,19 @@ def freyberg_structured_highres_demo():
                 f.write("{0} 1 {1} {2} {3} head direct 1.0 -1.0e+30\n".format(kper + 1, lay, row, col, rval))
         f.write("end performance_measure\n\n")
 
+        sfr_data = pd.DataFrame.from_records(gwf.sfr.packagedata.array)
+        bnames = sfr_data.boundname.unique()
+        bnames.sort()
+        for bname in bnames:
+            bdf = sfr_data.loc[sfr_data.boundname == bname, :].copy()
+
+            f.write("begin performance_measure {0}\n".format(bname))
+            for kper in range(sim.tdis.nper.data):
+                for kij in bdf.cellid.values:
+                    f.write("{0} 1 {1} {2} {3} sfr_1 direct 1.0 -1.0e+30\n".format(kper + 1, kij[0] + 1, kij[1] + 1,
+                                                                                   kij[2] + 1))
+            f.write("end performance_measure\n\n")
+
     # np.random.seed(11111)
     # rvals = np.random.random(len(lrcs)) + 36
     # with open(os.path.join(new_d, "test.adj"), 'w') as f:
@@ -1261,16 +1260,16 @@ def freyberg_structured_highres_demo():
     #     f.write("end performance_measure\n\n")
 
     start = datetime.now()
-    os.chdir(new_d)
-    adj = mf6adj.Mf6Adj("test.adj", os.path.split(local_lib_name)[1], verbose_level=2)
-    adj.solve_gwf()
-    adj.solve_adjoint()
-    adj.finalize()
-    os.chdir("..")
+    #os.chdir(new_d)
+    #adj = mf6adj.Mf6Adj("test.adj", os.path.split(local_lib_name)[1], verbose_level=2)
+    #adj.solve_gwf()
+    #adj.solve_adjoint()
+    #adj.finalize()
+    #os.chdir("..")
     duration = (datetime.now() - start).total_seconds()
     print("took:", duration)
 
-    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_pm1")]
+    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_headwater")]
     print(result_hdf)
     assert len(result_hdf) == 1
     result_hdf = result_hdf[0]
@@ -1515,11 +1514,11 @@ def freyberg_notional_unstruct_demo():
 
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
-    new_d = test_xd_box_1()
+    #new_d = test_xd_box_1()
     #xd_box_compare(new_d,True)
 
     #freyberg_structured_demo()
-    #freyberg_structured_highres_demo()
+    freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()
 
