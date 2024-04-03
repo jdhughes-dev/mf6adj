@@ -1512,13 +1512,110 @@ def freyberg_notional_unstruct_demo():
                     plt.close(fig)
                     print("...", key, pkey, k + 1)
 
+def test_sagehen1():
+    if os.path.exists('mf6adj'):
+        shutil.rmtree('mf6adj')
+    #shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
+    sys.path.insert(0,os.path.join(".."))
+    import mf6adj
+
+    org_d = "ex-gwf-sagehen-external"
+    new_d = "sagehen_test1"
+
+    adj_file = os.path.join(new_d,"test.adj")
+    if os.path.exists(new_d):
+        shutil.rmtree(new_d)
+    shutil.copytree(org_d,new_d)
+    shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
+    shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
+    shutil.copy2(gg_bin, os.path.join(new_d, os.path.split(gg_bin)[1]))
+    shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+    shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+    shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+    shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
+
+
+
+
+    pyemu.os_utils.run("mf6", cwd=new_d)
+    sim = flopy.mf6.MFSimulation.load(sim_ws=new_d, load_only=["dis", "sfr"])
+    gwf = sim.get_model()
+
+
+    with open(adj_file,'w') as f:
+        sfr_data = pd.DataFrame.from_records(gwf.sfr.packagedata.array)
+        f.write("begin performance_measure swgw\n")
+        for kper in range(sim.tdis.nper.data):
+            for kij in sfr_data.cellid.values:
+                f.write("{0} 1 {1} {2} {3} sfr-1 direct 1.0 -1.0e+30\n".format(kper+1,kij[0]+1,kij[1]+1,kij[2]+1))
+        f.write("end performance_measure\n\n")
+
+        # now a direct head pm at the terminal sfr reach (the last kij covered)
+        f.write("begin performance_measure terminalhead\n")
+        for kper in range(sim.tdis.nper.data):
+            f.write("{0} 1 {1} {2} {3} head direct 1.0 -1.0e+30\n".format(kper+1,kij[0]+1,kij[1]+1,kij[2]+1))
+        f.write("end performance_measure\n")
+
+
+    start = datetime.now()
+    os.chdir(new_d)
+
+    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], os.path.split(local_lib_name)[1], verbose_level=2)
+
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
+    os.chdir("..")
+    duration = (datetime.now() - start).total_seconds()
+    print("took:", duration)
+
+    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_swgw")]
+    #print(result_hdf)
+    assert len(result_hdf) == 1
+    result_hdf = result_hdf[0]
+    import h5py
+    hdf = h5py.File(os.path.join(new_d, result_hdf), 'r')
+    keys = list(hdf.keys())
+    keys.sort()
+    #print(keys)
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
+
+    idomain = gwf.dis.idomain.array
+
+    with PdfPages(os.path.join(new_d, "results.pdf")) as pdf:
+        for key in keys:
+            if key != "composite":
+                continue
+            grp = hdf[key]
+            #print(grp.keys())
+
+            plot_keys = [i for i in grp.keys() if grp[i].shape == (nlay,nrow,ncol)]
+            #print(plot_keys)
+            for pkey in plot_keys:
+
+                arr = grp[pkey][:].reshape((nlay, nrow, ncol))
+                for k, karr in enumerate(arr):
+                    karr[idomain[k,:,:] < 1] = np.nan
+                    karr[np.abs(karr)>1e20] = np.nan
+                    fig, ax = plt.subplots(1, 1, figsize=(6, 5))
+                    cb = ax.imshow(karr)
+                    plt.colorbar(cb, ax=ax)
+                    ax.set_title(key + ", " + pkey + ", layer:{0}".format(k + 1), loc="left")
+                    plt.tight_layout()
+                    pdf.savefig()
+                    plt.close(fig)
+                    print("...", key, pkey, k + 1)
+
+
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
     #new_d = test_xd_box_1()
     #xd_box_compare(new_d,True)
-
+    test_sagehen1()
     #freyberg_structured_demo()
-    freyberg_structured_highres_demo()
+    #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
     #freyberg_quadtree_demo()
 

@@ -122,8 +122,8 @@ class Mf6Adj(object):
         wbaddr = self._gwf.get_var_address(*addr)
         nuser = self._gwf.get_value(wbaddr) - 1
 
-        addr = ["NODEREDUCED", self._gwf_name.upper(), "DIS"]
-        wbaddr = self._gwf.get_var_address(*addr)
+        nstp = self._gwf.get_value(self._gwf.get_var_address("NSTP", "TDIS"))
+        nper = nstp.shape[0]
 
         ncpl = None
         if not self.is_structured:
@@ -209,7 +209,11 @@ class Mf6Adj(object):
                                     count, len(raw)))
                         kper = int(raw[0]) - 1
                         kstp = int(raw[1]) - 1
-                        # todo: check limits of kper, kstp
+                        if kper > nper-1:
+                            raise Exception("kper > nper -1 on line number {0}".format(count))
+                        if kstp > nstp[kper]-1:
+                            raise Exception("kstp > nstp[kper] -1 on line number {0}".format(count))
+
                         i,j = None,None
                         if self.is_structured:
                             kij = []
@@ -256,6 +260,15 @@ class Mf6Adj(object):
                         weight = float(raw[-2])
                         pm_form = raw[-3].strip().lower()
                         pm_type = raw[-4].strip().lower()
+                        if pm_type != "head":
+                            found = False
+                            for ptype, pnames in self._gwf_package_dict.items():
+                                if pm_type in pnames:
+                                    found = True
+                                    break
+                            if not found:
+                                raise Exception("`pm_type` {0} names a GWF package instance that was not found".format(pm_type))
+
                         pm_entries.append(PerfMeasRecord(kper,kstp,inode,pm_type,pm_form,weight,obsval,k,i,j))
                     if len(pm_entries) == 0:
                         raise Exception("no entries found for PM {0}".format(pm_name))
