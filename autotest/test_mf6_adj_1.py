@@ -1513,6 +1513,7 @@ def freyberg_notional_unstruct_demo():
                     print("...", key, pkey, k + 1)
 
 def test_sagehen1():
+    prep = True
     if os.path.exists('mf6adj'):
         shutil.rmtree('mf6adj')
     #shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
@@ -1523,23 +1524,25 @@ def test_sagehen1():
     new_d = "sagehen_test1"
 
     adj_file = os.path.join(new_d,"test.adj")
-    if os.path.exists(new_d):
-        shutil.rmtree(new_d)
-    shutil.copytree(org_d,new_d)
-    shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
-    shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
-    shutil.copy2(gg_bin, os.path.join(new_d, os.path.split(gg_bin)[1]))
-    shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
-    shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
-    shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
-    shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
+    if prep:
+        if os.path.exists(new_d):
+            shutil.rmtree(new_d)
+        shutil.copytree(org_d,new_d)
+        shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
+        shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
+        shutil.copy2(gg_bin, os.path.join(new_d, os.path.split(gg_bin)[1]))
+        shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+        shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+        shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+        shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
 
 
 
 
-    pyemu.os_utils.run("mf6", cwd=new_d)
+        pyemu.os_utils.run("mf6", cwd=new_d)
     sim = flopy.mf6.MFSimulation.load(sim_ws=new_d, load_only=["dis", "sfr"])
     gwf = sim.get_model()
+
 
 
     with open(adj_file,'w') as f:
@@ -1583,7 +1586,7 @@ def test_sagehen1():
     nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
 
     idomain = gwf.dis.idomain.array
-
+    thresh = 0.0001
     with PdfPages(os.path.join(new_d, "results.pdf")) as pdf:
         for key in keys:
             if key != "composite":
@@ -1598,11 +1601,16 @@ def test_sagehen1():
                 arr = grp[pkey][:].reshape((nlay, nrow, ncol))
                 for k, karr in enumerate(arr):
                     karr[idomain[k,:,:] < 1] = np.nan
-                    karr[np.abs(karr)>1e20] = np.nan
+                    ib = idomain[k,:,:].copy().astype(float)
+                    ib[ib>0] = np.nan
+                    #karr[np.abs(karr)>1e20] = np.nan
+                    karr[np.abs(karr)<thresh] = np.nan
+                    #karr = np.log10(karr)
                     fig, ax = plt.subplots(1, 1, figsize=(6, 5))
+                    ax.imshow(ib,cmap="Greys_r")
                     cb = ax.imshow(karr)
                     plt.colorbar(cb, ax=ax)
-                    ax.set_title(key + ", " + pkey + ", layer:{0}".format(k + 1), loc="left")
+                    ax.set_title(key + ", " + pkey + ", layer:{0}, masked where abs < {1}".format(k + 1,thresh), loc="left")
                     plt.tight_layout()
                     pdf.savefig()
                     plt.close(fig)
