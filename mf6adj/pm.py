@@ -103,7 +103,8 @@ class PerfMeas(object):
         """
         d = {"ghb6":{0:"bhead",1:"cond"},
              "drn6":{0:"elev",1:"cond"},"riv6":{0:"stage",1:"cond"},
-             "sfr6":{0:"stage",1:"cond"}}
+             "sfr6":{0:"stage",1:"cond"}}#,
+             #"chd6":{0:"head"}}
         return d
 
 
@@ -195,7 +196,7 @@ class PerfMeas(object):
         nodeuser = hdf["gwf_info"]["nodeuser"][:]
         nodereduced = hdf["gwf_info"]["nodereduced"][:]
         if len(nodeuser) == 1:
-            nodeuser = np.arange(nnodes,dtype=int)
+            nodeuser = np.arange(nnodes[0],dtype=int)
         lamb = np.zeros(nnodes)
 
         grid_shape = None
@@ -298,6 +299,8 @@ class PerfMeas(object):
             data["rch6_recharge"] = lamb
 
             for ptype,pnames in gwf_package_dict.items():
+                if ptype == "chd6":
+                    continue
                 if ptype in bnd_dict:
                     for pname in pnames:
                         sp_bnd_dict = {"bound": hdf[sol_key][pname]["bound"][:],
@@ -611,11 +614,14 @@ class PerfMeas(object):
         #for id in sp_dict:
         for node,bound in zip(sp_dict["node"],sp_dict["bound"]):
             n = node - 1
+            boundcond = 1e10
+            if len(bound) > 1:
+                boundcond = bound[1]
             # the second item in bound should be cond
-            result_head[n] = lamb[n] * bound[1]
+            result_head[n] = lamb[n] * boundcond
             # Add the direct effect
             if has_flux_pm:
-                result_head[n] += bound[1]
+                result_head[n] += boundcond
             # the first item in bound should be head
             lam_drhs_dcond = lamb[n] * bound[0]
             lam_dadcond_h = -1.0 * lamb[n] * head[n]

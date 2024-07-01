@@ -73,7 +73,7 @@ class Mf6Adj(object):
             self._shape = (nlay,nrow,ncol)
         self._performance_measures = []
         self._read_adj_file()
-        self._gwf_package_types = ["wel6","ghb6","riv6","drn6","sfr6","rch6","recha6","sfr6"]
+        self._gwf_package_types = ["chd6","wel6","ghb6","riv6","drn6","sfr6","rch6","recha6","sfr6"]
 
     def _read_adj_file(self):
         """private method to read the adj input file
@@ -461,6 +461,7 @@ class Mf6Adj(object):
         """
         gwf_name = self._gwf_name
         gwf = self._gwf
+        has_sto = PerfMeas.has_sto_iconvert(gwf)
         data_dict = {}
 
         #todo: work out what dis type we have
@@ -491,10 +492,11 @@ class Mf6Adj(object):
 
         area = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "AREA", gwf)
         data_dict["area"] = area
-        iconvert = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "ICONVERT", gwf)
-        data_dict["iconvert"] = iconvert
-        storage = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "SS", gwf)
-        data_dict["storage"] = storage
+        if has_sto:
+            iconvert = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "ICONVERT", gwf)
+            data_dict["iconvert"] = iconvert
+            storage = PerfMeas.get_ptr_from_gwf(gwf_name, "STO", "SS", gwf)
+            data_dict["storage"] = storage
         nodeuser = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NODEUSER", gwf) - 1
         data_dict["nodeuser"] = nodeuser
         nodereduced = PerfMeas.get_ptr_from_gwf(gwf_name, dis_pak, "NODEREDUCED", gwf) - 1
@@ -784,7 +786,10 @@ class Mf6Adj(object):
 
                             simvals = self._gwf.get_value(self._gwf.get_var_address("SIMVALS", self._gwf_name, tag.upper()))
 
-                            if package_type == "sfr6":
+                            if package_type == "chd6":
+                                data_dict["drhsdh"][nodelist-1] = 0.0
+
+                            elif package_type == "sfr6":
                                 tag = self._gwf_package_dict[package_type][0]
                                 stage = self._gwf.get_value(
                                     self._gwf.get_var_address("STAGE", self._gwf_name, tag.upper()))
@@ -910,6 +915,8 @@ class Mf6Adj(object):
         bnd_dict = PerfMeas.get_mf6_bound_dict()
 
         for paktype, pdict in org_sp_package_data.items():
+            if paktype == "chd6":
+                continue
             epsilons = []
             bound_idx = []
             nodes = []
