@@ -273,12 +273,18 @@ class PerfMeas(object):
                 print("WARNING: nans in adjoint states for pm {0} at kperkstp {1}".format(self._name, kk))
 
             is_newton = hdf[sol_key].attrs["is_newton"]
+            chd_nodelist = []
+            if "chd6" in gwf_package_dict:
+                for pname in gwf_package_dict["chd6"]:
+                    nodelist = list(hdf[sol_key][pname]["nodelist"][:] - 1)
+                    chd_nodelist.extend(nodelist)
+            chd_nodelist = np.array(chd_nodelist,dtype=int)
             k_sens, k33_sens = PerfMeas.lam_dresdk_h(is_newton, lamb, hdf[sol_key]["sat"][:],
                                                      head, ihc, ia, ja, jas, cl1, cl2,
                                                      hwva, top, bot, icelltype,
                                                      hdf[sol_key]["k11"][:],
-                                                     hdf[sol_key]["k33"][:]
-                                                     )
+                                                     hdf[sol_key]["k33"][:],
+                                                     chd_nodelist)
 
             data["k11"] = k_sens
             data["k33"] = k33_sens
@@ -532,7 +538,7 @@ class PerfMeas(object):
 
     @staticmethod
     def lam_dresdk_h(is_newton, lamb, sat, head, ihc, ia, ja, jas, cl1, cl2, hwva, top, bot,
-                     icelltype, k11, k33):
+                     icelltype, k11, k33,chd_nodelist):
         """adjoint state times the partial of residual with respect to k times head
 
         Parameters
@@ -553,6 +559,7 @@ class PerfMeas(object):
         icelltype (ndarray) : the convertible cell type indicator array
         k11 (ndarray) : the k11 array
         k33 (ndarray) : the k33 array
+        chd_nodelist (ndarray) : zero-based index of chd nodes
 
         Returns
         -------
@@ -570,10 +577,12 @@ class PerfMeas(object):
         result = np.zeros_like(head)
 
         for node, (offset, ncon) in enumerate(zip(ia, iac)):
+            if node in chd_nodelist:
+                continue
             sum1 = 0.
             sum2 = 0.
             height1 = height[node]
-            pp = 1
+
             for ii in range(offset + 1, offset + ncon):
                 mnode = ja[ii]
                 height2 = height[mnode]
