@@ -23,13 +23,13 @@ if "linux" in platform.platform().lower():
     local_lib_name = "./libmf6.so"
     local_mf6_bin = "./mf6"
     gg_bin = os.path.join("..", "bin", "linux", "gridgen")
-elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower() and "arm" not in platform.platform().lower():
+elif ("darwin" in platform.platform().lower() or "macos" in platform.platform().lower()) and "arm" not in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "mac", "libmf6.dylib")
     mf6_bin = os.path.join("..", "bin", "mac", "mf6")
     local_lib_name = "./libmf6.dylib"
     local_mf6_bin = "./mf6"
     gg_bin = os.path.join("..", "bin", "mac", "gridgen")
-elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower() and "arm" in platform.platform().lower():
+elif ("darwin" in platform.platform().lower() or "macos" in platform.platform().lower()) and "arm" in platform.platform().lower():
     lib_name = os.path.join("..", "bin", "mac", "libmf6_arm.dylib")
     mf6_bin = os.path.join("..", "bin", "mac", "mf6")
     local_lib_name = "./libmf6_arm.dylib"
@@ -1878,7 +1878,7 @@ def test_xd_box_ss():
 
 
 def test_sanpedro1():
-    prep = True
+    prep = False
     if os.path.exists('mf6adj'):
         shutil.rmtree('mf6adj')
     #shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
@@ -1901,10 +1901,8 @@ def test_sanpedro1():
         shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
         shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
 
-
-
-
         pyemu.os_utils.run("mf6", cwd=new_d)
+
     sim = flopy.mf6.MFSimulation.load(sim_ws=new_d, load_only=["dis", "sfr"])
     gwf = sim.get_model()
 

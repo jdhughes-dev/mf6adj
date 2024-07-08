@@ -311,6 +311,8 @@ class PerfMeas(object):
                     for pname in pnames:
                         sp_bnd_dict = {"bound": hdf[sol_key][pname]["bound"][:],
                                        "node": hdf[sol_key][pname]["nodelist"][:]}
+                        print(pname,ptype)
+                        print(hdf[sol_key][pname]["bound"][:])
                         sens_level, sens_cond = self.lam_drhs_dbnd(lamb, head, sp_bnd_dict,has_flux_pm)
                         comp_bnd_results[pname+"_"+bnd_dict[ptype][0]] += sens_level
                         data[pname + "_" + bnd_dict[ptype][0]] = sens_level
