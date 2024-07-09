@@ -4,7 +4,7 @@ channels:
   - defaults
 dependencies:
   - scipy
-  - numpy
+  - numpy<2.0
   - matplotlib
   - pandas
   - jupyter
