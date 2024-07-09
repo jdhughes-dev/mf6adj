@@ -73,7 +73,10 @@ class Mf6Adj(object):
             self._shape = (nlay,nrow,ncol)
         self._performance_measures = []
         self._read_adj_file()
-        self._gwf_package_types = ["chd6","wel6","ghb6","riv6","drn6","sfr6","rch6","recha6","sfr6"]
+        self._gwf_package_types = ["chd6","wel6","ghb6","riv6","drn6","sfr6","rch6","recha6","evt6"]
+        self._gwf_boundary_attr_dict = {"chd6":["head"],"ghb6":["bhead","cond"],"riv6":["stage","cond"],
+                                        "drn6":["elev","cond"]}
+
 
     def _read_adj_file(self):
         """private method to read the adj input file
@@ -785,6 +788,19 @@ class Mf6Adj(object):
                             rhs = self._gwf.get_value(self._gwf.get_var_address("RHS", self._gwf_name, tag.upper()))
 
                             simvals = self._gwf.get_value(self._gwf.get_var_address("SIMVALS", self._gwf_name, tag.upper()))
+                            bnd_attrs = {}
+                            if package_type in self._gwf_boundary_attr_dict:
+                                fill_bound = False
+                                if bound.size == 0:
+                                    bound = np.zeros((len(nodelist),len(self._gwf_boundary_attr_dict[package_type])))
+                                    fill_bound = True
+                                for i,attr in enumerate(self._gwf_boundary_attr_dict[package_type]):
+                                    vals = self._gwf.get_value(
+                                       self._gwf.get_var_address(attr.upper(), self._gwf_name, tag.upper()))
+                                    bnd_attrs[attr] = vals
+                                    if fill_bound:
+                                        bound[:,i] = vals
+
 
                             if package_type == "chd6":
                                 data_dict["drhsdh"][nodelist-1] = 0.0
@@ -799,11 +815,13 @@ class Mf6Adj(object):
                             if pert_save:
                                 for i in range(nbound):
                                     # note bound is an array!
-
                                     sp_package_data[package_type][kperkstp].append(
                                         {"node": nodelist[i], "bound": bound[i],
                                          "hcof": hcof[i], "rhs": rhs[i], "packagename": tag,"simval":simvals[i]})
                             data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound,"hcof":hcof,"rhs":rhs,"simvals":simvals}
+                            for key,val in bnd_attrs.items():
+                                assert key not in data_dict[tag],"boundary attribute '{0}' already in data dict for {1}".format(key,tag)
+                                data_dict[tag][key] = val
             attr_dict = {"ctime": ctime, "dt": dt1, "kper": kper, "kstp": kstp,"is_newton":is_newton,"has_sto":has_sto}
             PerfMeas.write_group_to_hdf(fhd, group_name="solution_kper:{0:05d}_kstp:{1:05d}".format(kper, kstp), data_dict=data_dict,
                                      attr_dict=attr_dict)
