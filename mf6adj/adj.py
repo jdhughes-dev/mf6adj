@@ -815,9 +815,11 @@ class Mf6Adj(object):
                             if pert_save:
                                 for i in range(nbound):
                                     # note bound is an array!
-                                    sp_package_data[package_type][kperkstp].append(
-                                        {"node": nodelist[i], "bound": bound[i],
-                                         "hcof": hcof[i], "rhs": rhs[i], "packagename": tag,"simval":simvals[i]})
+                                    pak_data = {"node": nodelist[i], "bound": bound[i],
+                                         "hcof": hcof[i], "rhs": rhs[i], "packagename": tag,"simval":simvals[i]}
+                                    for key, val in bnd_attrs.items():
+                                       pak_data[key] = val
+                                    sp_package_data[package_type][kperkstp].append(pak_data)
                             data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound,"hcof":hcof,"rhs":rhs,"simvals":simvals}
                             for key,val in bnd_attrs.items():
                                 assert key not in data_dict[tag],"boundary attribute '{0}' already in data dict for {1}".format(key,tag)
