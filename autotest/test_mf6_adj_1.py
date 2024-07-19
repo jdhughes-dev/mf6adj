@@ -1878,7 +1878,7 @@ def test_xd_box_ss():
 
 
 def test_sanpedro1():
-    prep = False
+    prep = True
     if os.path.exists('mf6adj'):
         shutil.rmtree('mf6adj')
     #shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
@@ -1978,10 +1978,10 @@ if __name__ == "__main__":
 
     #new_d = test_xd_box_ss()
     #new_d = test_xd_box_chd()
-    new_d = test_xd_box_1()
+    #new_d = test_xd_box_1()
     #xd_box_compare(new_d,True)
     #test_sagehen1()
-    #test_sanpedro1()
+    test_sanpedro1()
     #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
