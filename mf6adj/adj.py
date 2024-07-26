@@ -594,7 +594,8 @@ class Mf6Adj(object):
 
 
     def solve_gwf(self, verbose=True, _force_k_update=False, _sp_pert_dict=None,pert_save=False,
-                  hdf5_name=None):
+                  hdf5_name=None, solve_func_ptr=None,presolve_func_ptr=None,
+                  postsolve_func_ptr=None):
         """solve the flow across the modflow sim times and harvest the solution
         components needed for the adjoint solution and store them in the HDF5 file
 
@@ -655,6 +656,7 @@ class Mf6Adj(object):
             dt = self._gwf.get_time_step()
             # prep the current time step
             self._gwf.prepare_time_step(dt)
+
             kiter = 0
             # prep to solve
             stress_period = self._gwf.get_value(self._gwf.get_var_address("KPER", "TDIS"))[0]
@@ -690,12 +692,18 @@ class Mf6Adj(object):
                             raise Exception("sp pert dict node not found :"+str(_sp_pert_dict))
                         bnd_ptr[idx] = _sp_pert_dict[pert_item]
 
+            if presolve_func_ptr is not None:
+                presolve_funct_ptr(self._gwf)
+
             self._gwf.prepare_solve(1)
             if sat_old is None:
                 sat_old = self._gwf.get_value(self._gwf.get_var_address("SAT", self._gwf_name, "NPF"))
 
+
             # solve until converged
             while kiter < max_iter:
+                if solve_func_ptr is not None:
+                    solve_func_ptr(self._gwf)
                 convg = self._gwf.solve(1)
                 if convg:
                     td = (datetime.now() - sol_start).total_seconds() / 60.0
@@ -719,6 +727,8 @@ class Mf6Adj(object):
                 pass
 
             self._gwf.finalize_time_step()
+            if postsolve_func_ptr is not None:
+                postsolve_func_ptr(self._gwf)
             # update current sim time
             ctime = self._gwf.get_current_time()
             dt1 = self._gwf.get_time_step()
