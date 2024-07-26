@@ -75,7 +75,7 @@ class Mf6Adj(object):
         self._read_adj_file()
         self._gwf_package_types = ["chd6","wel6","ghb6","riv6","drn6","sfr6","rch6","recha6","evt6"]
         self._gwf_boundary_attr_dict = {"chd6":["head"],"ghb6":["bhead","cond"],"riv6":["stage","cond"],
-                                        "drn6":["elev","cond"]}
+                                        "drn6":["elev","cond"],"wel6":["q"],"rch6":["recharge"]}
 
 
     def _read_adj_file(self):
@@ -675,16 +675,20 @@ class Mf6Adj(object):
             # apply any boundary condition perturbation info
             if _sp_pert_dict is not None:
                 if _sp_pert_dict["kperkstp"] == kperkstp:
-                    addr = ["BOUND", self._gwf_name, _sp_pert_dict["packagename"].upper()]
-                    wbaddr = self._gwf.get_var_address(*addr)
-                    bnd_ptr = self._gwf.get_value_ptr(wbaddr)
-                    wbaddr = self._gwf.get_var_address("NODELIST", self._gwf_name, _sp_pert_dict["packagename"].upper())
-                    nodelist = self._gwf.get_value_ptr(wbaddr)
-                    idx = np.where(nodelist == _sp_pert_dict["node"])[0]
-                    if idx.shape[0] == 0:
-                        print(nodelist)
-                        raise Exception("sp pert dict node not found :"+str(_sp_pert_dict))
-                    bnd_ptr[idx] = _sp_pert_dict["bound"]
+                    for pert_item in self._gwf_boundary_attr_dict[_sp_pert_dict["packagetype"]]:
+                        if pert_item not in _sp_pert_dict:
+                            print("pert_item '{0}' not in _sp_pert_dict".format(pert_item))
+                            continue
+                        addr = [pert_item.upper(), self._gwf_name, _sp_pert_dict["packagename"].upper()]
+                        wbaddr = self._gwf.get_var_address(*addr)
+                        bnd_ptr = self._gwf.get_value_ptr(wbaddr)
+                        wbaddr = self._gwf.get_var_address("NODELIST", self._gwf_name, _sp_pert_dict["packagename"].upper())
+                        nodelist = self._gwf.get_value_ptr(wbaddr)
+                        idx = np.where(nodelist == _sp_pert_dict["node"])[0]
+                        if idx.shape[0] == 0:
+                            print(nodelist)
+                            raise Exception("sp pert dict node not found :"+str(_sp_pert_dict))
+                        bnd_ptr[idx] = _sp_pert_dict[pert_item]
 
             self._gwf.prepare_solve(1)
             if sat_old is None:
@@ -818,7 +822,7 @@ class Mf6Adj(object):
                                     pak_data = {"node": nodelist[i], "bound": bound[i],
                                          "hcof": hcof[i], "rhs": rhs[i], "packagename": tag,"simval":simvals[i]}
                                     for key, val in bnd_attrs.items():
-                                       pak_data[key] = val
+                                       pak_data[key] = val[i]
                                     sp_package_data[package_type][kperkstp].append(pak_data)
                             data_dict[tag] = {"ptype": package_type, "nodelist": nodelist, "bound": bound,"hcof":hcof,"rhs":rhs,"simvals":simvals}
                             for key,val in bnd_attrs.items():
@@ -937,6 +941,7 @@ class Mf6Adj(object):
         for paktype, pdict in org_sp_package_data.items():
             if paktype == "chd6":
                 continue
+            pert_items = self._gwf_boundary_attr_dict[paktype]
             epsilons = []
             bound_idx = []
             nodes = []
@@ -944,18 +949,20 @@ class Mf6Adj(object):
             pert_results_dict = {pm.name: [] for pm in self._performance_measures}
             print("running perturbations for ", paktype)
             for kk, infolist in pdict.items():
-                for infodict in infolist:
-                    bnd_items = infodict["bound"].shape[0]
-                    for ibnd in range(min(bnd_items,2)):
-                        new_bound = infodict["bound"].copy()
-                        org = new_bound[ibnd]
+                for ibnd,infodict in enumerate(infolist):
+                    #bnd_items = infodict["bound"].shape[0]
+
+                    #for ibnd in range(min(bnd_items,2)):
+                    for pert_item in pert_items:
+                        new_bound = infodict[pert_item].copy()
+                        org = new_bound
                         delt = org * pert_mult
-                        epsilons.append(delt - new_bound[ibnd])
-                        new_bound[ibnd] = delt
+                        epsilons.append(delt - new_bound)
+                        new_bound = delt
                         pakname = infodict["packagename"]
                         pert_dict = {"kperkstp": kk, "packagename": pakname, "node": infodict["node"],
-                                     "bound": new_bound}
-                        print("...",pakname,ibnd,kk,org,delt,infodict["node"])
+                                     pert_item: new_bound,"packagetype":paktype}
+                        print("...",pakname,pert_item,kk,org,delt,infodict["node"])
 
                         self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
                         pert_head, pert_sp_dict = self.solve_gwf(verbose=False, _sp_pert_dict=pert_dict,pert_save=True)
@@ -970,7 +977,7 @@ class Mf6Adj(object):
                         elif paktype == "rch6":
                             names.append("rch6_recharge")
                         else:
-                            names.append(pakname+"_"+bnd_dict[paktype][ibnd].format(ibnd))
+                            names.append(pakname+"_"+pert_item+"_{0}".format(ibnd))
             df = pd.DataFrame(pert_results_dict)
             df.loc[:, "node"] = nodes
             df.loc[:,"epsilon"] = epsilons
