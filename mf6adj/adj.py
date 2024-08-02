@@ -405,8 +405,6 @@ class Mf6Adj(object):
                 only 'nodelist' and 'bound' are stored.
             attr_dict (dict) : an optional dict of attributes to store with the
                 group
-
-
         """
         if group_name in hdf:
             raise Exception("group_name {0} already in hdf file".format(group_name))
