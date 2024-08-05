@@ -1204,15 +1204,15 @@ def freyberg_structured_highres_demo():
     org_d = "freyberg_highres"
     new_d = "freyberg_highres_test"
 
-    #if os.path.exists(new_d):
-    #    shutil.rmtree(new_d)
-    #shutil.copytree(org_d, new_d)
-    # shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
-    # shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
-    # shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
-    # shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
-    # shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
-    # shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
+    if os.path.exists(new_d):
+       shutil.rmtree(new_d)
+    shutil.copytree(org_d, new_d)
+    shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
+    shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
+    shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+    shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+    shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+    shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
 
     pyemu.os_utils.run("mf6",cwd=new_d)
 
@@ -1260,12 +1260,12 @@ def freyberg_structured_highres_demo():
     #     f.write("end performance_measure\n\n")
 
     start = datetime.now()
-    #os.chdir(new_d)
-    #adj = mf6adj.Mf6Adj("test.adj", os.path.split(local_lib_name)[1], verbose_level=2)
-    #adj.solve_gwf()
-    #adj.solve_adjoint()
-    #adj.finalize()
-    #os.chdir("..")
+    os.chdir(new_d)
+    adj = mf6adj.Mf6Adj("test.adj", os.path.split(local_lib_name)[1], verbose_level=2)
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
+    os.chdir("..")
     duration = (datetime.now() - start).total_seconds()
     print("took:", duration)
 
@@ -1972,17 +1972,17 @@ def test_sanpedro1():
 
 
 if __name__ == "__main__":
-    #test_xd_box_unstruct_1()
+    # test_xd_box_unstruct_1()
 
 
-    #new_d = test_xd_box_ss()
-    #new_d = test_xd_box_chd()
-    #new_d = test_xd_box_1()
-    #xd_box_compare(new_d,True)
-    test_sagehen1()
-    #test_sanpedro1()
-    #freyberg_structured_demo()
-    #freyberg_structured_highres_demo()
-    #freyberg_notional_unstruct_demo()
-    #freyberg_quadtree_demo()
+    # new_d = test_xd_box_ss()
+    # new_d = test_xd_box_chd()
+    # new_d = test_xd_box_1()
+    # #xd_box_compare(new_d,True)
+    # test_sagehen1()
+    # test_sanpedro1()
+    # freyberg_structured_demo()
+    freyberg_structured_highres_demo()
+    freyberg_notional_unstruct_demo()
+    freyberg_quadtree_demo()
 
