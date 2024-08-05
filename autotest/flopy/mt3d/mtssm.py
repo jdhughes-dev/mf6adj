@@ -1,7 +1,9 @@
-import numpy as np
 import warnings
+
+import numpy as np
+
 from ..pakbase import Package
-from ..utils import Util2d, MfList, Transient2d
+from ..utils import MfList, Transient2d, Util2d
 
 # Note: Order matters as first 6 need logical flag on line 1 of SSM file
 SsmLabels = ["WEL", "DRN", "RCH", "EVT", "RIV", "GHB", "BAS6", "CHD", "PBC"]
@@ -166,35 +168,18 @@ class Mt3dSsm(Package):
         filenames=None,
         **kwargs,
     ):
-
         if unitnumber is None:
             unitnumber = Mt3dSsm._defaultunit()
         elif unitnumber == 0:
             unitnumber = Mt3dSsm._reservedunit()
 
-        # set filenames
-        if filenames is None:
-            filenames = [None]
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        # Fill namefile items
-        name = [Mt3dSsm._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=self._prepare_filenames(filenames),
         )
 
         deprecated_kwargs = ["criv", "cghb", "cibd", "cchd", "cpbc", "cwel"]
@@ -287,7 +272,6 @@ class Mt3dSsm(Package):
                 print("   explicit crcg in file")
 
         if crch is not None:
-
             self.crch = []
             t2d = Transient2d(
                 model,
@@ -510,7 +494,7 @@ class Mt3dSsm(Package):
             if self.stress_period_data is not None:
                 self.stress_period_data.write_transient(f_ssm, single_per=kper)
             else:
-                f_ssm.write("{}\n".format(0))
+                f_ssm.write(f"0\n")
 
         f_ssm.close()
         return
@@ -678,7 +662,6 @@ class Mt3dSsm(Package):
         stress_period_data = {}
 
         for iper in range(nper):
-
             if model.verbose:
                 print(f"   loading ssm for kper {iper + 1:5d}")
 

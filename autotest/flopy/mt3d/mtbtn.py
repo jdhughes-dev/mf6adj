@@ -7,10 +7,12 @@ User's Manual.
 
 """
 
+import warnings
+
 import numpy as np
+
 from ..pakbase import Package
 from ..utils import Util2d, Util3d
-import warnings
 
 
 class Mt3dBtn(Package):
@@ -230,35 +232,18 @@ class Mt3dBtn(Package):
         filenames=None,
         **kwargs,
     ):
-
         if unitnumber is None:
             unitnumber = Mt3dBtn._defaultunit()
         elif unitnumber == 0:
             unitnumber = Mt3dBtn._reservedunit()
 
-        # set filenames
-        if filenames is None:
-            filenames = [None]
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        # Fill namefile items
-        name = [Mt3dBtn._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=self._prepare_filenames(filenames),
         )
 
         # Set these variables from the Modflow model (self.parent.mf) unless
@@ -549,7 +534,7 @@ class Mt3dBtn(Package):
                 array_free_format=False,
             )
         else:
-            thickness = mf.modelgrid.thick
+            thickness = mf.modelgrid.cell_thickness
             self.dz = Util3d(
                 self.parent,
                 (nlay, nrow, ncol),
@@ -692,28 +677,31 @@ class Mt3dBtn(Package):
 
         # A3; Keywords
         # Build a string of the active keywords
-        str1 = ""
-        if self.MFStyleArr:
-            str1 += " MODFLOWSTYLEARRAYS"
-        if self.DRYCell:
-            str1 += " DRYCELL"
-        if self.Legacy99Stor:
-            str1 += " LEGACY99STORAGE"
-        if self.FTLPrint:
-            str1 += " FTLPRINT"
-        if self.NoWetDryPrint:
-            str1 += " NOWETDRYPRINT"
-        if self.OmitDryBud:
-            str1 += " OMITDRYCELLBUDGET"
-        if self.AltWTSorb:
-            str1 += " ALTWTSORB"
+        if (
+            self.parent.version == "mt3d-usgs"
+        ):  # Keywords not supported by MT3Dms
+            str1 = ""
+            if self.MFStyleArr:
+                str1 += " MODFLOWSTYLEARRAYS"
+            if self.DRYCell:
+                str1 += " DRYCELL"
+            if self.Legacy99Stor:
+                str1 += " LEGACY99STORAGE"
+            if self.FTLPrint:
+                str1 += " FTLPRINT"
+            if self.NoWetDryPrint:
+                str1 += " NOWETDRYPRINT"
+            if self.OmitDryBud:
+                str1 += " OMITDRYCELLBUDGET"
+            if self.AltWTSorb:
+                str1 += " ALTWTSORB"
 
-        if str1 != "":
-            f_btn.write(str1 + "\n")
+            if str1 != "":
+                f_btn.write(str1 + "\n")
 
         # A3
         f_btn.write(
-            "{0:10d}{1:10d}{2:10d}{3:10d}{4:10d}{5:10d}\n".format(
+            "{:10d}{:10d}{:10d}{:10d}{:10d}{:10d}\n".format(
                 self.nlay,
                 self.nrow,
                 self.ncol,
@@ -728,25 +716,25 @@ class Mt3dBtn(Package):
 
         # A5
         if self.parent.adv != None:
-            f_btn.write("{0:2s}".format("T"))
+            f_btn.write("T ")
         else:
-            f_btn.write("{0:2s}".format("F"))
+            f_btn.write("F ")
         if self.parent.dsp != None:
-            f_btn.write("{0:2s}".format("T"))
+            f_btn.write("T ")
         else:
-            f_btn.write("{0:2s}".format("F"))
+            f_btn.write("F ")
         if self.parent.ssm != None:
-            f_btn.write("{0:2s}".format("T"))
+            f_btn.write("T ")
         else:
-            f_btn.write("{0:2s}".format("F"))
+            f_btn.write("F ")
         if self.parent.rct != None:
-            f_btn.write("{0:2s}".format("T"))
+            f_btn.write("T ")
         else:
-            f_btn.write("{0:2s}".format("F"))
+            f_btn.write("F ")
         if self.parent.gcg != None:
-            f_btn.write("{0:2s}".format("T"))
+            f_btn.write("T ")
         else:
-            f_btn.write("{0:2s}".format("F"))
+            f_btn.write("F ")
         f_btn.write("\n")
 
         # A6
@@ -813,7 +801,7 @@ class Mt3dBtn(Package):
             f_btn.write(f"{nobs:10d}{self.nprobs:10d}\n")
             for i in range(nobs):
                 f_btn.write(
-                    "{0:10d}{1:10d}{2:10d}\n".format(
+                    "{:10d}{:10d}{:10d}\n".format(
                         self.obs[i, 0] + 1,
                         self.obs[i, 1] + 1,
                         self.obs[i, 2] + 1,
@@ -835,7 +823,7 @@ class Mt3dBtn(Package):
             s += "\n"
             f_btn.write(s)
             f_btn.write(
-                "{0:10.4G}{1:10d}{2:10.4G}{3:10.4G}\n".format(
+                "{:10.4G}{:10d}{:10.4G}{:10.4G}\n".format(
                     self.dt0[t],
                     self.mxstrn[t],
                     self.ttsmult[t],
@@ -887,12 +875,12 @@ class Mt3dBtn(Package):
             print("   loading COMMENT LINES A1 AND A2...")
         line = f.readline()
         if model.verbose:
-            print("A1: ".format(line.strip()))
+            print(f"A1: {line.strip()}")
 
         # A2
         line = f.readline()
         if model.verbose:
-            print("A2: ".format(line.strip()))
+            print(f"A2: {line.strip()}")
 
         # New keyword options in MT3D-USGS are found here
         line = f.readline()

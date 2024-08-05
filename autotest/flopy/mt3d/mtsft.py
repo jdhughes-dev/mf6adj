@@ -1,7 +1,7 @@
 import numpy as np
 
 from ..pakbase import Package
-from ..utils import Util2d, MfList
+from ..utils import MfList, Util2d
 
 __author__ = "emorway"
 
@@ -206,7 +206,6 @@ class Mt3dSft(Package):
         extension="sft",
         **kwargs,
     ):
-
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = Mt3dSft._defaultunit()
@@ -214,26 +213,16 @@ class Mt3dSft(Package):
             unitnumber = Mt3dSft._reservedunit()
 
         # set filenames
-        if filenames is None:  # if filename not passed
-            filenames = [None, None]  # setup filenames
-            if abs(ioutobs) > 0:
-                filenames[1] = model.name
-        elif isinstance(filenames, str):
-            filenames = [filenames, None, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                for idx in range(len(filenames), 2):
-                    filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
+        if filenames[1] is None and abs(ioutobs) > 0:
+            filenames[1] = model.name
 
         if ioutobs is not None:
             ext = "sftcobs.out"
             if filenames[1] is not None:
-                if (
-                    len(filenames[1].split(".", 1)) > 1
-                ):  # already has extension
-                    fname = "{}.{}".format(*filenames[1].split(".", 1))
-                else:
-                    fname = f"{filenames[1]}.{ext}"
+                fname = filenames[1]
+                if "." not in fname:  # add extension
+                    fname += f".{ext}"
             else:
                 fname = f"{model.name}.{ext}"
             model.add_output_file(
@@ -241,28 +230,18 @@ class Mt3dSft(Package):
                 fname=fname,
                 extension=None,
                 binflag=False,
-                package=Mt3dSft._ftype(),
+                package=self._ftype(),
             )
         else:
             ioutobs = 0
 
-        # Fill namefile items
-        name = [Mt3dSft._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
         # Set dimensions
@@ -323,9 +302,8 @@ class Mt3dSft(Package):
                         val = kwargs.pop(name)
                     else:
                         print(
-                            "SFT: setting {0} for component {1} to zero, kwarg name {2}".format(
-                                base_name, icomp, name
-                            )
+                            f"SFT: setting {base_name} for component {icomp} "
+                            f"to zero, kwarg name {name}"
                         )
                         val = 0.0
                     u2d = Util2d(
@@ -403,7 +381,7 @@ class Mt3dSft(Package):
 
         # Item 1
         f.write(
-            "{0:10d}{1:10d}{2:10d}{3:10d}{4:10d}".format(
+            "{:10d}{:10d}{:10d}{:10d}{:10d}".format(
                 self.nsfinit,
                 self.mxsfbc,
                 self.icbcsf,
@@ -416,7 +394,7 @@ class Mt3dSft(Package):
 
         # Item 2
         f.write(
-            "{0:10d}{1:10.5f}{2:10.5f}{3:10.7f}{4:10d}{5:10.5f}{6:10d}".format(
+            "{:10d}{:10.5f}{:10.5f}{:10.7f}{:10d}{:10.5f}{:10d}".format(
                 self.isfsolv,
                 self.wimp,
                 self.wups,
@@ -738,7 +716,6 @@ class Mt3dSft(Package):
         sf_stress_period_data = {}
 
         for iper in range(nper):
-
             # Item 7 NTMP (Transient data)
             if model.verbose:
                 print(f"   loading NTMP...stress period {iper + 1} of {nper}")

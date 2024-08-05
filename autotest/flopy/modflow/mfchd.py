@@ -4,11 +4,12 @@ the ModflowChd class as `flopy.modflow.ModflowChd`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow-nwt/MODFLOW-NWT-Guide/chd.htm>`_.
+<https://water.usgs.gov/ogw/modflow-nwt/MODFLOW-NWT-Guide/chd.html>`_.
 
 """
 
 import numpy as np
+
 from ..pakbase import Package
 from ..utils import MfList
 from ..utils.recarray_utils import create_empty_recarray
@@ -23,8 +24,7 @@ class ModflowChd(Package):
     model : model object
         The model object (of type :class:`flopy.modflow.mf.Modflow`) to which
         this package will be added.
-    stress_period_data : list of boundaries, recarrays, or dictionary of
-        boundaries.
+    stress_period_data : list, recarray, dataframe, or dictionary of boundaries.
 
         Each chd cell is defined through definition of
         layer (int), row (int), column (int), shead (float), ehead (float)
@@ -111,37 +111,20 @@ class ModflowChd(Package):
         filenames=None,
         **kwargs,
     ):
-
         # set default unit number if one is not specified
         if unitnumber is None:
             unitnumber = ModflowChd._defaultunit()
 
-        # set filenames
-        if filenames is None:
-            filenames = [None]
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        # Fill namefile items
-        name = [ModflowChd._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=self._prepare_filenames(filenames),
         )
 
-        self.url = "chd.htm"
+        self.url = "chd.html"
         self._generate_heading()
 
         if dtype is not None:
@@ -183,7 +166,7 @@ class ModflowChd(Package):
         f_chd.write(f"{self.heading}\n")
         f_chd.write(f" {self.stress_period_data.mxact:9d}")
         for option in self.options:
-            f_chd.write("  {}".format(option))
+            f_chd.write(f"  {option}")
         f_chd.write("\n")
         self.stress_period_data.write_transient(f_chd)
         f_chd.close()

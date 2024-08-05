@@ -1,8 +1,11 @@
+import os
+from typing import Optional, Union
+
 import numpy as np
+
 from ..mbase import BaseModel
 from ..pakbase import Package
 from .mp6sim import Modpath6Sim
-import os
 
 
 class Modpath6List(Package):
@@ -11,13 +14,8 @@ class Modpath6List(Package):
     """
 
     def __init__(self, model, extension="list", listunit=7):
-        """
-        Package constructor.
-
-        """
-        # Call ancestor's init to set self.parent, extension, name and
-        # unit number
-        Package.__init__(self, model, extension, "LIST", listunit)
+        # call base package constructor
+        super().__init__(model, extension, "LIST", listunit)
         # self.parent.add_package(self) This package is not added to the base
         # model so that it is not included in get_name_file_entries()
         return
@@ -42,22 +40,22 @@ class Modpath6(BaseModel):
     version : str, default "modpath"
         String that defines the MODPATH version. Valid versions are
         "modpath" (default).
-    exe_name : str, default "mp6.exe"
+    exe_name : str or PathLike, default "mp6"
         The name of the executable to use.
     modflowmodel : flopy.modflow.Modflow
         MODFLOW model object with one of LPF, BCF6, or UPW packages.
-    dis_file : str
+    dis_file : str or PathLike
         Required dis file name.
     dis_unit : int, default 87
         Optional dis file unit number.
-    head_file : str
+    head_file : str or PathLike
         Required filename of the MODFLOW output head file.
-    budget_file : str
+    budget_file : str or PathLike
         Required filename of the MODFLOW output cell-by-cell budget file.
-    model_ws : str, optional
+    model_ws : str or PathLike, optional
         Model workspace.  Directory name to create model data sets.
         Default is the current working directory.
-    external_path : str, optional
+    external_path : str or PathLike, optional
         Location for external files.
     verbose : bool, default False
         Print additional information to the screen.
@@ -74,14 +72,14 @@ class Modpath6(BaseModel):
         simfile_ext="mpsim",
         namefile_ext="mpnam",
         version="modpath",
-        exe_name="mp6.exe",
+        exe_name: Union[str, os.PathLike] = "mp6",
         modflowmodel=None,
-        dis_file=None,
+        dis_file: Optional[Union[str, os.PathLike]] = None,
         dis_unit=87,
-        head_file=None,
-        budget_file=None,
-        model_ws=None,
-        external_path=None,
+        head_file: Optional[Union[str, os.PathLike]] = None,
+        budget_file: Optional[Union[str, os.PathLike]] = None,
+        model_ws: Optional[Union[str, os.PathLike]] = None,
+        external_path: Optional[Union[str, os.PathLike]] = None,
         verbose=False,
         load=True,
         listunit=7,
@@ -104,7 +102,11 @@ class Modpath6(BaseModel):
         if self.__mf is not None:
             # ensure that user-specified files are used
             iu = self.__mf.oc.iuhead
-            head_file = self.__mf.get_output(unit=iu)
+            head_file = (
+                self.__mf.get_output(unit=iu)
+                if head_file is None
+                else head_file
+            )
             p = self.__mf.get_package("LPF")
             if p is None:
                 p = self.__mf.get_package("BCF6")
@@ -116,14 +118,28 @@ class Modpath6(BaseModel):
                     "passed MODFLOW model"
                 )
             iu = p.ipakcb
-            budget_file = self.__mf.get_output(unit=iu)
+            budget_file = (
+                self.__mf.get_output(unit=iu)
+                if budget_file is None
+                else budget_file
+            )
             dis_file = (
                 self.__mf.dis.file_name[0] if dis_file is None else dis_file
             )
+
             dis_unit = self.__mf.dis.unit_number[0]
+            nper = self.__mf.dis.nper
+            nlay, nrow, ncol = (
+                self.__mf.dis.nlay,
+                self.__mf.dis.nrow,
+                self.__mf.dis.ncol,
+            )
+
+            self.nrow_ncol_nlay_nper = (nrow, ncol, nlay, nper)
         self.head_file = head_file
         self.budget_file = budget_file
         self.dis_file = dis_file
+
         self.dis_unit = dis_unit
         # make sure the valid files are available
         if self.head_file is None:
@@ -142,6 +158,24 @@ class Modpath6(BaseModel):
                 "to __init__ cannot be None"
             )
 
+        if self.__mf is None:
+            # read from nper, lay, nrow, ncol from dis file, Item 1: NLAY, NROW, NCOL, NPER, ITMUNI, LENUNI
+            read_dis = dis_file
+            if not os.path.exists(read_dis):
+                # path doesn't exist, probably relative to model_ws
+                read_dis = os.path.join(self.model_ws, dis_file)
+            with open(read_dis) as f:
+                line = f.readline()
+                while line[0] == "#":
+                    line = f.readline()
+                nlay, nrow, ncol, nper, itmuni, lennuni = line.split()
+                self.nrow_ncol_nlay_nper = (
+                    int(nrow),
+                    int(ncol),
+                    int(nlay),
+                    int(nper),
+                )
+
         # set the rest of the attributes
         self.__sim = None
         self.array_free_format = False
@@ -158,7 +192,6 @@ class Modpath6(BaseModel):
                 external_path
             ), "external_path does not exist"
             self.external = True
-        return
 
     def __repr__(self):
         return "Modpath model"
@@ -233,7 +266,7 @@ class Modpath6(BaseModel):
             Keyword that defines the MODPATH particle tracking direction.
             Available trackdir's are 'backward' and 'forward'.
             (default is 'forward')
-        packages : str or list of strings
+        packages : None, str or list of strings
             Keyword defining the modflow packages used to create initial
             particle locations. Supported packages are 'WEL', 'MNW2' and 'RCH'.
             (default is 'WEL').
@@ -257,8 +290,15 @@ class Modpath6(BaseModel):
         mpsim : ModpathSim object
 
         """
+        if self.__mf is None:
+            raise ValueError(
+                "cannot create simulation by packages if the Modflow model is None"
+            )
+
         if isinstance(packages, str):
             packages = [packages]
+        if packages is None:
+            packages = []
         pak_list = self.__mf.get_package_list()
 
         # not sure if this is the best way to handle this
@@ -291,12 +331,7 @@ class Modpath6(BaseModel):
         ReleaseStartTime = 0.0
         ReleaseOption = 1
         CHeadOption = 1
-        nper = self.__mf.dis.nper
-        nlay, nrow, ncol = (
-            self.__mf.dis.nlay,
-            self.__mf.dis.nrow,
-            self.__mf.dis.ncol,
-        )
+        nrow, ncol, nlay, nper = self.nrow_ncol_nlay_nper
         arr = np.zeros((nlay, nrow, ncol), dtype=int)
         group_name = []
         group_region = []
@@ -305,7 +340,6 @@ class Modpath6(BaseModel):
         face_ct = []
         strt_file = None
         for package in packages:
-
             if package.upper() == "WEL":
                 ParticleGenerationOption = 1
                 if "WEL" not in pak_list:

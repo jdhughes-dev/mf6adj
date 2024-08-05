@@ -1,6 +1,7 @@
 import numpy as np
-from ..utils.util_array import Util3d as Util3d
+
 from ..utils.util_array import Transient2d as Transient2d
+from ..utils.util_array import Util3d as Util3d
 
 
 def get_template_array(pakarray):
@@ -47,7 +48,6 @@ class Transient2dTpl:
         return
 
     def get_kper_entry(self, kper):
-
         # Set defaults
         parameterized = False
         multiplier = None

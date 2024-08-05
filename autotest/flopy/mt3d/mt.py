@@ -1,21 +1,23 @@
 import os
+
 import numpy as np
+
+from ..discretization.modeltime import ModelTime
+from ..discretization.structuredgrid import StructuredGrid
 from ..mbase import BaseModel
 from ..pakbase import Package
 from ..utils import mfreadnam
-from .mtbtn import Mt3dBtn
 from .mtadv import Mt3dAdv
+from .mtbtn import Mt3dBtn
 from .mtdsp import Mt3dDsp
-from .mtssm import Mt3dSsm
-from .mtrct import Mt3dRct
 from .mtgcg import Mt3dGcg
-from .mttob import Mt3dTob
-from .mtphc import Mt3dPhc
-from .mtuzt import Mt3dUzt
-from .mtsft import Mt3dSft
 from .mtlkt import Mt3dLkt
-from ..discretization.structuredgrid import StructuredGrid
-from flopy.discretization.modeltime import ModelTime
+from .mtphc import Mt3dPhc
+from .mtrct import Mt3dRct
+from .mtsft import Mt3dSft
+from .mtssm import Mt3dSsm
+from .mttob import Mt3dTob
+from .mtuzt import Mt3dUzt
 
 
 class Mt3dList(Package):
@@ -24,9 +26,8 @@ class Mt3dList(Package):
     """
 
     def __init__(self, model, extension="list", listunit=7):
-        # Call ancestor's init to set self.parent, extension, name and
-        # unit number
-        Package.__init__(self, model, extension, "LIST", listunit)
+        # call base package constructor
+        super().__init__(model, extension, "LIST", listunit)
         # self.parent.add_package(self) This package is not added to the base
         # model so that it is not included in get_name_file_entries()
         return
@@ -60,7 +61,7 @@ class Mt3dms(BaseModel):
         (False, default).
     version : str, default "mt3dms"
         Mt3d version. Choose one of: "mt3dms" (default) or "mt3d-usgs".
-    exe_name : str, default "mt3dms.exe"
+    exe_name : str, default "mt3dms"
         The name of the executable to use.
     structured : bool, default True
         Specify if model grid is structured (default) or unstructured.
@@ -108,7 +109,7 @@ class Mt3dms(BaseModel):
         ftlfilename="mt3d_link.ftl",
         ftlfree=False,
         version="mt3dms",
-        exe_name="mt3dms.exe",
+        exe_name="mt3dms",
         structured=True,
         listunit=16,
         ftlunit=10,
@@ -279,8 +280,7 @@ class Mt3dms(BaseModel):
             top=top,
             botm=botm,
             idomain=ibound,
-            proj4=self._modelgrid.proj4,
-            epsg=self._modelgrid.epsg,
+            crs=self._modelgrid.crs,
             xoff=self._modelgrid.xoffset,
             yoff=self._modelgrid.yoffset,
             angrot=self._modelgrid.angrot,
@@ -312,12 +312,9 @@ class Mt3dms(BaseModel):
                     yoff = self._modelgrid._yul_to_yll(self.mf._yul)
                 else:
                     yoff = 0.0
-        proj4 = self._modelgrid.proj4
-        if proj4 is None:
-            proj4 = self.mf._modelgrid.proj4
-        epsg = self._modelgrid.epsg
-        if epsg is None:
-            epsg = self.mf._modelgrid.epsg
+        crs = self._modelgrid.crs
+        if crs is None:
+            crs = self.mf._modelgrid.crs
         angrot = self._modelgrid.angrot
         if angrot is None or angrot == 0.0:  # angrot normally defaulted to 0.0
             if self.mf._modelgrid.angrot is not None:
@@ -325,7 +322,7 @@ class Mt3dms(BaseModel):
             else:
                 angrot = 0.0
 
-        self._modelgrid.set_coord_info(xoff, yoff, angrot, epsg, proj4)
+        self._modelgrid.set_coord_info(xoff, yoff, angrot, crs=crs)
         self._mg_resync = not self._modelgrid.is_complete
         return self._modelgrid
 
@@ -333,12 +330,6 @@ class Mt3dms(BaseModel):
     def solver_tols(self):
         if self.gcg is not None:
             return self.gcg.cclose, -999
-        return None
-
-    @property
-    def sr(self):
-        if self.mf is not None:
-            return self.mf.sr
         return None
 
     @property
@@ -443,7 +434,7 @@ class Mt3dms(BaseModel):
         cls,
         f,
         version="mt3dms",
-        exe_name="mt3dms.exe",
+        exe_name="mt3dms",
         verbose=False,
         model_ws=".",
         load_only=None,
@@ -459,7 +450,7 @@ class Mt3dms(BaseModel):
             Path to MT3D name file to load.
         version : str, default "mt3dms"
             Mt3d version. Choose one of: "mt3dms" (default) or "mt3d-usgs".
-        exe_name : str, default "mt3dms.exe"
+        exe_name : str, default "mt3dms"
             The name of the executable to use.
         verbose : bool, default False
             Print information on the load process if True.
@@ -692,16 +683,15 @@ class Mt3dms(BaseModel):
         # write message indicating packages that were successfully loaded
         if mt.verbose:
             print(
-                "\n   The following {0} packages were "
+                "\n   The following {} packages were "
                 "successfully loaded.".format(len(files_successfully_loaded))
             )
             for fname in files_successfully_loaded:
                 print(f"      {os.path.basename(fname)}")
             if len(files_not_loaded) > 0:
                 print(
-                    "   The following {0} packages were not loaded.".format(
-                        len(files_not_loaded)
-                    )
+                    f"   The following {len(files_not_loaded)} packages "
+                    "were not loaded."
                 )
                 for fname in files_not_loaded:
                     print(f"      {os.path.basename(fname)}")
@@ -764,7 +754,7 @@ class Mt3dms(BaseModel):
 
         if not os.path.isfile(fname):
             raise Exception(f"Could not find file: {fname}")
-        with open(fname, "r") as f:
+        with open(fname) as f:
             line = f.readline()
             if line.strip() != firstline:
                 raise Exception(

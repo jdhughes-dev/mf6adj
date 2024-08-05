@@ -4,13 +4,14 @@ the ModflowRch class as `flopy.modflow.ModflowRch`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/index.html?rch.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/rch.html>`_.
 
 """
 import numpy as np
-from ..pakbase import Package
-from ..utils import Util2d, Transient2d
+
 from ..modflow.mfparbc import ModflowParBc as mfparbc
+from ..pakbase import Package
+from ..utils import Transient2d, Util2d
 from ..utils.flopy_io import line_parse
 from ..utils.utils_def import get_pak_vals_shape
 
@@ -24,10 +25,9 @@ class ModflowRch(Package):
     model : model object
         The model object (of type :class:`flopy.modflow.mf.Modflow`) to which
         this package will be added.
-    ipakcb : int
-        A flag that is used to determine if cell-by-cell budget data should be
-        saved. If ipakcb is non-zero cell-by-cell budget data will be saved.
-        (default is 0).
+    ipakcb : int, optional
+        Toggles whether cell-by-cell budget data should be saved. If None or zero,
+        budget data will not be saved (default is None).
     nrchop : int
         is the recharge option code.
         1: Recharge to top grid layer only
@@ -48,9 +48,9 @@ class ModflowRch(Package):
         filenames=None the package name will be created using the model name
         and package extension and the cbc output name will be created using
         the model name and .cbc extension (for example, modflowtest.cbc),
-        if ipakcbc is a number greater than zero. If a single string is passed
+        if ipakcb is a number greater than zero. If a single string is passed
         the package will be set to the string and cbc output names will be
-        created using the model name and .cbc extension, if ipakcbc is a
+        created using the model name and .cbc extension, if ipakcb is a
         number greater than zero. To define the names for all package files
         (input and output) the length of the list of strings should be 2.
         Default is None.
@@ -100,58 +100,30 @@ class ModflowRch(Package):
         unitnumber=None,
         filenames=None,
     ):
-        """
-        Package constructor.
-
-        """
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowRch._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
 
-        # update external file information with cbc output, if necessary
-        if ipakcb is not None:
-            fname = filenames[1]
-            model.add_output_file(
-                ipakcb, fname=fname, package=ModflowRch._ftype()
-            )
-        else:
-            ipakcb = 0
+        # cbc output file
+        self.set_cbc_output_file(ipakcb, model, filenames[1])
 
-        # Fill namefile items
-        name = [ModflowRch._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and
-        # unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
         nrow, ncol, nlay, nper = self.parent.nrow_ncol_nlay_nper
         self._generate_heading()
-        self.url = "rch.htm"
+        self.url = "rch.html"
 
         self.nrchop = nrchop
-        self.ipakcb = ipakcb
 
         rech_u2d_shape = get_pak_vals_shape(model, rech)
         irch_u2d_shape = get_pak_vals_shape(model, irch)
@@ -241,13 +213,15 @@ class ModflowRch(Package):
                 )
                 l = 0
                 for i, cbd in enumerate(self.parent.dis.laycbd):
-                    thickness[i, :, :] = self.parent.modelgrid.thick[l, :, :]
+                    thickness[i, :, :] = self.parent.modelgrid.cell_thickness[
+                        l, :, :
+                    ]
                     if cbd > 0:
                         l += 1
                     l += 1
-                assert l == self.parent.modelgrid.thick.shape[0]
+                assert l == self.parent.modelgrid.cell_thickness.shape[0]
             else:
-                thickness = self.parent.modelgrid.thick
+                thickness = self.parent.modelgrid.cell_thickness
             assert thickness.shape == self.parent.get_package(pkg).hk.shape
             Tmean = (
                 (self.parent.get_package(pkg).hk.array * thickness)[:, active]
@@ -463,6 +437,9 @@ class ModflowRch(Package):
             nrow, ncol, nlay, nper = model.get_nrow_ncol_nlay_nper()
         else:
             nrow, ncol, nlay, _ = model.get_nrow_ncol_nlay_nper()
+
+        u2d_shape = (nrow, ncol)
+
         # read data for every stress period
         rech = {}
         irch = None
@@ -477,14 +454,10 @@ class ModflowRch(Package):
 
             if nrchop == 2:
                 inirch = int(t[1])
+                if (not model.structured) and (inirch >= 0):
+                    u2d_shape = (1, inirch)
             elif not model.structured:
-                # usg uses only layer 1 nodes for options 1 and 3. ncol is nodelay for mfusg models.
-                inirch = ncol[0]
-
-            if model.structured:
-                u2d_shape = (nrow, ncol)
-            else:
-                u2d_shape = (1, inirch)
+                u2d_shape = (1, ncol[0])
 
             if inrech >= 0:
                 if npar == 0:
@@ -522,6 +495,7 @@ class ModflowRch(Package):
 
                 current_rech = t
             rech[iper] = current_rech
+
             if nrchop == 2:
                 if inirch >= 0:
                     if model.verbose:

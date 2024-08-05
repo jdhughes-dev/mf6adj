@@ -5,20 +5,14 @@ shapefiles are also included.
 
 """
 import os
-import numpy as np
 import warnings
-from ..utils import Util3d
-from ..datbase import DataType, DataInterface
+from typing import Union
 
-try:
-    import shapefile
-except ImportError:
-    shapefile = None
+import matplotlib.pyplot as plt
+import numpy as np
 
-try:
-    import matplotlib.pyplot as plt
-except (ImportError, RuntimeError):
-    plt = None
+from ..datbase import DataInterface, DataType
+from ..utils import Util3d, import_optional_dependency
 
 warnings.simplefilter("ignore", RuntimeWarning)
 
@@ -972,14 +966,13 @@ class PlotUtilities:
         if "mflay" in kwargs:
             kwargs.pop("mflay")
 
+        name = transient2d.name.replace("_", "").upper()
         axes = []
         for idx, kper in enumerate(range(k0, k1)):
-            title = "{} stress period {:d}".format(
-                transient2d.name.replace("_", "").upper(), kper + 1
-            )
+            title = f"{name} stress period {kper + 1 :d}"
 
             if filename_base is not None:
-                filename = f"{filename_base}_{kper + 1:05d}.{fext}"
+                filename = f"{filename_base}_{name}_{kper + 1:05d}.{fext}"
             else:
                 filename = None
 
@@ -1067,7 +1060,7 @@ class PlotUtilities:
         ----------
         plotarray : np.array object
         model: fp.modflow.Modflow object
-            optional if spatial reference is provided
+            optional if modelgrid is provided
         modelgrid: fp.discretization.Grid object
             object that defines the spatial orientation of a modflow
             grid within flopy. Optional if model object is provided
@@ -1106,13 +1099,6 @@ class PlotUtilities:
             "fmt": "%1.3f",
             "modelgrid": None,
         }
-
-        # check that matplotlib is installed
-        if plt is None:
-            raise ImportError(
-                "Could not import matplotlib.  Must install matplotlib "
-                "in order to plot LayerFile data."
-            )
 
         for key in defaults:
             if key in kwargs:
@@ -1258,12 +1244,6 @@ class PlotUtilities:
         """
 
         from .map import PlotMapView
-
-        if plt is None:
-            raise ImportError(
-                "Could not import matplotlib.  Must install matplotlib "
-                "in order to plot boundary condition data."
-            )
 
         defaults = {
             "figsize": None,
@@ -1574,102 +1554,6 @@ class PlotUtilities:
 
         return sat_thk
 
-    @staticmethod
-    def centered_specific_discharge(Qx, Qy, Qz, delr, delc, sat_thk):
-        """
-        DEPRECATED. Use postprocessing.get_specific_discharge() instead.
-
-        Using the MODFLOW discharge, calculate the cell centered specific
-        discharge by dividing by the flow width and then averaging
-        to the cell center.
-
-        Parameters
-        ----------
-        Qx : numpy.ndarray
-            MODFLOW 'flow right face'
-        Qy : numpy.ndarray
-            MODFLOW 'flow front face'.  The sign on this array will be flipped
-            by this function so that the y axis is positive to north.
-        Qz : numpy.ndarray
-            MODFLOW 'flow lower face'.  The sign on this array will be
-            flipped by this function so that the z axis is positive
-            in the upward direction.
-        delr : numpy.ndarray
-            MODFLOW delr array
-        delc : numpy.ndarray
-            MODFLOW delc array
-        sat_thk : numpy.ndarray
-            Saturated thickness for each cell
-
-        Returns
-        -------
-        (qx, qy, qz) : tuple of numpy.ndarrays
-            Specific discharge arrays that have been interpolated to cell centers.
-
-        """
-        import warnings
-
-        warnings.warn(
-            "centered_specific_discharge() has been deprecated and will be "
-            "removed in version 3.3.5. Use "
-            "postprocessing.get_specific_discharge() instead.",
-            DeprecationWarning,
-        )
-
-        qx = None
-        qy = None
-        qz = None
-
-        if Qx is not None:
-
-            nlay, nrow, ncol = Qx.shape
-            qx = np.zeros(Qx.shape, dtype=Qx.dtype)
-
-            for k in range(nlay):
-                for j in range(ncol - 1):
-                    area = (
-                        delc[:]
-                        * 0.5
-                        * (sat_thk[k, :, j] + sat_thk[k, :, j + 1])
-                    )
-                    idx = area > 0.0
-                    qx[k, idx, j] = Qx[k, idx, j] / area[idx]
-
-            qx[:, :, 1:] = 0.5 * (qx[:, :, 0 : ncol - 1] + qx[:, :, 1:ncol])
-            qx[:, :, 0] = 0.5 * qx[:, :, 0]
-
-        if Qy is not None:
-
-            nlay, nrow, ncol = Qy.shape
-            qy = np.zeros(Qy.shape, dtype=Qy.dtype)
-
-            for k in range(nlay):
-                for i in range(nrow - 1):
-                    area = (
-                        delr[:]
-                        * 0.5
-                        * (sat_thk[k, i, :] + sat_thk[k, i + 1, :])
-                    )
-                    idx = area > 0.0
-                    qy[k, i, idx] = Qy[k, i, idx] / area[idx]
-
-            qy[:, 1:, :] = 0.5 * (qy[:, 0 : nrow - 1, :] + qy[:, 1:nrow, :])
-            qy[:, 0, :] = 0.5 * qy[:, 0, :]
-            qy = -qy
-
-        if Qz is not None:
-            qz = np.zeros(Qz.shape, dtype=Qz.dtype)
-            dr = delr.reshape((1, delr.shape[0]))
-            dc = delc.reshape((delc.shape[0], 1))
-            area = dr * dc
-            for k in range(nlay):
-                qz[k, :, :] = Qz[k, :, :] / area[:, :]
-            qz[1:, :, :] = 0.5 * (qz[0 : nlay - 1, :, :] + qz[1:nlay, :, :])
-            qz[0, :, :] = 0.5 * qz[0, :, :]
-            qz = -qz
-
-        return (qx, qy, qz)
-
 
 class UnstructuredPlotUtilities:
     """
@@ -1760,11 +1644,13 @@ class UnstructuredPlotUtilities:
                         cells.append(cell)
                         cell_vertex_ix.append(cvert_ix)
 
-            # find interesection vertices
+            # find intersection vertices
             numa = (x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)
             numb = (x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)
             denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1)
-            ua = numa / denom
+            ua = np.ones(denom.shape, dtype=denom.dtype) * np.nan
+            idx = np.where(denom != 0.0)
+            ua[idx] = numa[idx] / denom[idx]
             # ub = numb / denom
             del numa
             del numb
@@ -1829,17 +1715,18 @@ class UnstructuredPlotUtilities:
         return vdict
 
     @staticmethod
-    def irregular_shape_patch(xverts, yverts):
+    def irregular_shape_patch(xverts, yverts=None):
         """
-        Patch for vertex cross section plotting when
-        we have an irregular shape type throughout the
-        model grid or multiple shape types.
+        Patch for vertex cross-section plotting when we have an irregular
+        shape type throughout the model grid or multiple shape types. This
+        method is also used by the model splitter as a helper function
+        for remapping the cell2d array.
 
         Parameters
         ----------
         xverts : list
             xvertices
-        yverts : list
+        yverts : list or None
             yvertices
 
         Returns
@@ -1853,9 +1740,10 @@ class UnstructuredPlotUtilities:
             if len(xv) > max_verts:
                 max_verts = len(xv)
 
-        for yv in yverts:
-            if len(yv) > max_verts:
-                max_verts = len(yv)
+        if yverts is not None:
+            for yv in yverts:
+                if len(yv) > max_verts:
+                    max_verts = len(yv)
 
         adj_xverts = []
         for xv in xverts:
@@ -1866,19 +1754,26 @@ class UnstructuredPlotUtilities:
             else:
                 adj_xverts.append(xv)
 
-        adj_yverts = []
-        for yv in yverts:
-            if len(yv) < max_verts:
-                yv = list(yv)
-                n = max_verts - len(yv)
-                adj_yverts.append(yv + [yv[-1]] * n)
-            else:
-                adj_yverts.append(yv)
+        if yverts is not None:
+            adj_yverts = []
+            for yv in yverts:
+                if len(yv) < max_verts:
+                    yv = list(yv)
+                    n = max_verts - len(yv)
+                    adj_yverts.append(yv + [yv[-1]] * n)
+                else:
+                    adj_yverts.append(yv)
 
-        xverts = np.array(adj_xverts)
-        yverts = np.array(adj_yverts)
+            xverts = np.array(adj_xverts)
+            yverts = np.array(adj_yverts)
 
-        return xverts, yverts
+            return xverts, yverts
+
+        txverts = np.array(adj_xverts)
+        xverts = np.zeros((txverts.shape[0], txverts.shape[1] + 1), dtype=int)
+        xverts[:, 0:-1] = txverts
+        xverts[:, -1] = xverts[:, 0]
+        return xverts
 
     @staticmethod
     def arctan2(verts, reverse=False):
@@ -2020,11 +1915,7 @@ def shapefile_extents(shp):
     >>> extent = flopy.plot.plotutil.shapefile_extents(fshp)
 
     """
-    if shapefile is None:
-        raise ImportError(
-            "Could not import shapefile.  "
-            "Must install pyshp in order to plot shapefiles."
-        )
+    shapefile = import_optional_dependency("shapefile")
 
     sf = shapefile.Reader(shp)
     shapes = sf.shapes()
@@ -2064,11 +1955,7 @@ def shapefile_get_vertices(shp):
     >>> lines = flopy.plot.plotutil.shapefile_get_vertices(fshp)
 
     """
-    if shapefile is None:
-        raise ImportError(
-            "Could not import shapefile.  "
-            "Must install pyshp in order to plot shapefiles."
-        )
+    shapefile = import_optional_dependency("shapefile")
 
     sf = shapefile.Reader(shp)
     shapes = sf.shapes()
@@ -2097,13 +1984,15 @@ def shapefile_get_vertices(shp):
     return vertices
 
 
-def shapefile_to_patch_collection(shp, radius=500.0, idx=None):
+def shapefile_to_patch_collection(
+    shp: Union[str, os.PathLike], radius=500.0, idx=None
+):
     """
     Create a patch collection from the shapes in a shapefile
 
     Parameters
     ----------
-    shp : string
+    shp : str or PathLike
         Name of the shapefile to convert to a PatchCollection.
     radius : float
         Radius of circle for points in the shapefile.  (Default is 500.)
@@ -2117,22 +2006,12 @@ def shapefile_to_patch_collection(shp, radius=500.0, idx=None):
             Patch collection of shapes in the shapefile
 
     """
-    if shapefile is None:
-        raise ImportError(
-            "Could not import shapefile.  "
-            "Must install pyshp in order to plot shapefiles."
-        )
-    if plt is None:
-        raise ImportError(
-            "matplotlib must be installed to "
-            "use shapefile_to_patch_collection()"
-        )
-    else:
-        from matplotlib.patches import Polygon, Circle, PathPatch
-        import matplotlib.path as MPath
-        from matplotlib.collections import PatchCollection
-        from ..utils.geospatial_utils import GeoSpatialCollection
-        from ..utils.geometry import point_in_polygon
+    import matplotlib.path as MPath
+    from matplotlib.collections import PatchCollection
+    from matplotlib.patches import Circle, PathPatch, Polygon
+
+    from ..utils.geometry import point_in_polygon
+    from ..utils.geospatial_utils import GeoSpatialCollection
 
     geofeats = GeoSpatialCollection(shp)
     shapes = geofeats.shape
@@ -2233,8 +2112,8 @@ def plot_shapefile(
 
     Parameters
     ----------
-    shp : string
-        Name of the shapefile to plot.
+    shp : string or os.PathLike
+        Path of the shapefile to plot.
     ax : matplolib.pyplot.axes object
 
     radius : float
@@ -2264,13 +2143,6 @@ def plot_shapefile(
     --------
 
     """
-
-    if shapefile is None:
-        raise ImportError(
-            "Could not import shapefile.  "
-            "Must install pyshp in order to plot shapefiles."
-        )
-
     vmin = kwargs.pop("vmin", None)
     vmax = kwargs.pop("vmax", None)
 
@@ -2306,190 +2178,6 @@ def plot_shapefile(
     return pc
 
 
-def cvfd_to_patch_collection(verts, iverts):
-    """
-    Create a patch collection from control volume vertices and incidence list
-
-    Parameters
-    ----------
-    verts : ndarray
-        2d array of x and y points.
-    iverts : list of lists
-        should be of len(ncells) with a list of vertex numbers for each cell
-
-    """
-    warnings.warn(
-        "cvfd_to_patch_collection is deprecated and will be removed in "
-        "version 3.3.5. Use PlotMapView for plotting",
-        DeprecationWarning,
-    )
-
-    if plt is None:
-        raise ImportError(
-            "matplotlib must be installed to use cvfd_to_patch_collection()"
-        )
-    else:
-        from matplotlib.patches import Polygon
-        from matplotlib.collections import PatchCollection
-
-    ptchs = []
-    for ivertlist in iverts:
-        points = []
-        for iv in ivertlist:
-            points.append((verts[iv, 0], verts[iv, 1]))
-        # close the polygon, if necessary
-        if ivertlist[0] != ivertlist[-1]:
-            iv = ivertlist[0]
-            points.append((verts[iv, 0], verts[iv, 1]))
-        ptchs.append(Polygon(points))
-    pc = PatchCollection(ptchs)
-    return pc
-
-
-def plot_cvfd(
-    verts,
-    iverts,
-    ax=None,
-    layer=0,
-    cmap="Dark2",
-    edgecolor="scaled",
-    facecolor="scaled",
-    a=None,
-    masked_values=None,
-    **kwargs,
-):
-    """
-    Generic function for plotting a control volume finite difference grid of
-    information.
-
-    Parameters
-    ----------
-    verts : ndarray
-        2d array of x and y points.
-    iverts : list of lists
-        should be of len(ncells) with a list of vertex number for each cell
-    ax : matplotlib.pylot axis
-        matplotlib.pyplot axis instance. Default is None
-    layer : int
-        layer to extract. Used in combination to the optional ncpl
-        parameter. Default is 0
-    cmap : string
-        Name of colormap to use for polygon shading (default is 'Dark2')
-    edgecolor : string
-        Color name.  (Default is 'scaled' to scale the edge colors.)
-    facecolor : string
-        Color name.  (Default is 'scaled' to scale the face colors.)
-    a : numpy.ndarray
-        Array to plot.
-    masked_values : iterable of floats, ints
-        Values to mask.
-    kwargs : dictionary
-        Keyword arguments that are passed to PatchCollection.set(``**kwargs``).
-        Some common kwargs would be 'linewidths', 'linestyles', 'alpha', etc.
-
-    Returns
-    -------
-    pc : matplotlib.collections.PatchCollection
-
-    Examples
-    --------
-
-    """
-    warnings.warn(
-        "plot_cvfd is deprecated and will be removed in version 3.3.5. "
-        "Use PlotMapView for plotting",
-        DeprecationWarning,
-    )
-    if plt is None:
-        err_msg = "matplotlib must be installed to use plot_cvfd()"
-        raise ImportError(err_msg)
-
-    if "vmin" in kwargs:
-        vmin = kwargs.pop("vmin")
-    else:
-        vmin = None
-
-    if "vmax" in kwargs:
-        vmax = kwargs.pop("vmax")
-    else:
-        vmax = None
-
-    if "ncpl" in kwargs:
-        nlay = layer + 1
-        ncpl = kwargs.pop("ncpl")
-        if isinstance(ncpl, int):
-            i = int(ncpl)
-            ncpl = np.ones((nlay), dtype=int) * i
-        elif isinstance(ncpl, list) or isinstance(ncpl, tuple):
-            ncpl = np.array(ncpl)
-        i0 = 0
-        i1 = 0
-        for k in range(nlay):
-            i0 = i1
-            i1 = i0 + ncpl[k]
-        # retain iverts in selected layer
-        iverts = iverts[i0:i1]
-        # retain vertices in selected layer
-        tverts = []
-        for iv in iverts:
-            for iloc in iv:
-                tverts.append((verts[iloc, 0], verts[iloc, 1]))
-        verts = np.array(tverts)
-        # calculate offset for starting vertex in layer based on
-        # global vertex numbers
-        iadj = iverts[0][0]
-        # reset iverts to relative vertices in selected layer
-        tiverts = []
-        for iv in iverts:
-            i = []
-            for t in iv:
-                i.append(t - iadj)
-            tiverts.append(i)
-        iverts = tiverts
-    else:
-        i0 = 0
-        i1 = len(iverts)
-
-    # get current axis
-    if ax is None:
-        ax = plt.gca()
-    cm = plt.get_cmap(cmap)
-
-    pc = cvfd_to_patch_collection(verts, iverts)
-    pc.set(**kwargs)
-
-    # set colors
-    if a is None:
-        nshp = len(pc.get_paths())
-        cccol = cm(1.0 * np.arange(nshp) / nshp)
-        if facecolor == "scaled":
-            pc.set_facecolor(cccol)
-        else:
-            pc.set_facecolor(facecolor)
-        if edgecolor == "scaled":
-            pc.set_edgecolor(cccol)
-        else:
-            pc.set_edgecolor(edgecolor)
-    else:
-        pc.set_cmap(cm)
-        if masked_values is not None:
-            for mval in masked_values:
-                a = np.ma.masked_equal(a, mval)
-
-        # add NaN values to mask
-        a = np.ma.masked_where(np.isnan(a), a)
-
-        if edgecolor == "scaled":
-            pc.set_edgecolor("none")
-        else:
-            pc.set_edgecolor(edgecolor)
-        pc.set_array(a[i0:i1])
-        pc.set_clim(vmin=vmin, vmax=vmax)
-    # add the patch collection to the axis
-    ax.add_collection(pc)
-    return pc
-
-
 def _set_coord_info(mg, xul, yul, xll, yll, rotation):
     """
 
@@ -2512,8 +2200,6 @@ def _set_coord_info(mg, xul, yul, xll, yll, rotation):
     -------
     mg : fp.discretization.Grid object
     """
-    import warnings
-
     if xul is not None and yul is not None:
         if rotation is not None:
             mg._angrot = rotation
@@ -2528,69 +2214,6 @@ def _set_coord_info(mg, xul, yul, xll, yll, rotation):
         mg.set_coord_info(xoff=xll, yoff=yll, angrot=rotation)
 
     return mg
-
-
-def _depreciated_dis_handler(modelgrid, dis):
-    """
-    PlotMapView handler for the deprecated dis parameter
-    which adds top and botm information to the modelgrid
-
-    Parameter
-    ---------
-    modelgrid : fp.discretization.Grid object
-
-    dis : fp.modflow.ModflowDis object
-
-    Returns
-    -------
-    modelgrid : fp.discretization.Grid
-
-    """
-    # creates a new modelgrid instance with the dis information
-    from ..discretization import StructuredGrid, VertexGrid, UnstructuredGrid
-    import warnings
-
-    warnings.warn(
-        "the dis parameter has been depreciated and will be removed in "
-        "version 3.3.5.",
-        PendingDeprecationWarning,
-    )
-    if modelgrid.grid_type == "vertex":
-        modelgrid = VertexGrid(
-            vertices=modelgrid.vertices,
-            cell2d=modelgrid.cell2d,
-            top=dis.top.array,
-            botm=dis.botm.array,
-            idomain=modelgrid.idomain,
-            xoff=modelgrid.xoffset,
-            yoff=modelgrid.yoffset,
-            angrot=modelgrid.angrot,
-        )
-    if modelgrid.grid_type == "unstructured":
-        modelgrid = UnstructuredGrid(
-            vertices=modelgrid._vertices,
-            iverts=modelgrid._iverts,
-            xcenters=modelgrid._xc,
-            ycenters=modelgrid._yc,
-            top=dis.top.array,
-            botm=dis.botm.array,
-            idomain=modelgrid.idomain,
-            xoff=modelgrid.xoffset,
-            yoff=modelgrid.yoffset,
-            angrot=modelgrid.angrot,
-        )
-    else:
-        modelgrid = StructuredGrid(
-            delc=dis.delc.array,
-            delr=dis.delr.array,
-            top=dis.top.array,
-            botm=dis.botm.array,
-            idomain=modelgrid.idomain,
-            xoff=modelgrid.xoffset,
-            yoff=modelgrid.yoffset,
-            angrot=modelgrid.angrot,
-        )
-    return modelgrid
 
 
 def advanced_package_bc_helper(pkg, modelgrid, kper):
@@ -2630,10 +2253,19 @@ def advanced_package_bc_helper(pkg, modelgrid, kper):
 
 def filter_modpath_by_travel_time(recarray, travel_time):
     """
+    Helper method for filtering particles by travel time. Used in modpath
+    plotting routines
 
-    :param recarray:
-    :param travel_time:
-    :return:
+    Parameters
+    ----------
+    recarray : np.recarray
+        recarray of modpath particle information
+    travel_time : str, float
+        travel time logical argument to filter modpath output
+
+    Returns
+    -------
+        np.recarray
     """
     if travel_time is None:
         tp = recarray.copy()
@@ -2642,6 +2274,7 @@ def filter_modpath_by_travel_time(recarray, travel_time):
             funcs = {
                 "<=": lambda a, b: a["time"] <= b,
                 ">=": lambda a, b: a["time"] >= b,
+                "==": lambda a, b: a["time"] == b,
                 "<": lambda a, b: a["time"] < b,
                 ">": lambda a, b: a["time"] > b,
             }
@@ -2659,7 +2292,7 @@ def filter_modpath_by_travel_time(recarray, travel_time):
                     raise Exception(
                         "flopy.map.plot_pathline travel_time variable cannot "
                         "be parsed. Acceptable logical variables are , "
-                        "<=, <, >=, and >. "
+                        "<=, <, ==, >=, and >. "
                         "You passed {}".format(travel_time)
                     )
         else:
@@ -2734,9 +2367,7 @@ def intersect_modpath_with_crosssection(
     nppts = {}
 
     for cell, verts in projpts.items():
-        tcell = cell
-        while tcell >= ncpl:
-            tcell -= ncpl
+        tcell = cell % ncpl
         zmin = np.min(np.array(verts)[:, 1])
         zmax = np.max(np.array(verts)[:, 1])
         nmin = np.min(v_norm[tcell])
@@ -2848,6 +2479,8 @@ def reproject_modpath_to_crosssection(
             while tcell >= ncpl:
                 tcell -= ncpl
             line = xypts[tcell]
+            if len(line) < 2:
+                continue
             if projection == "x":
                 d0 = np.min([i[0] for i in projpts[cell]])
             else:
@@ -2860,7 +2493,7 @@ def reproject_modpath_to_crosssection(
                 rec[xp] = x
                 rec[yp] = y
                 pid = rec["particleid"][0]
-                pline = list(zip(rec[proj], rec[zp]))
+                pline = list(zip(rec[proj], rec[zp], rec["time"]))
                 if pid not in ptdict:
                     ptdict[pid] = pline
                 else:
@@ -2878,7 +2511,7 @@ def reproject_modpath_to_crosssection(
                 rec[xp] = x
                 rec[yp] = y
                 pid = rec["particleid"][0]
-                pline = list(zip(rec[proj], rec[zp]))
+                pline = list(zip(rec[proj], rec[zp], rec["time"]))
                 if pid not in ptdict:
                     ptdict[pid] = pline
                 else:

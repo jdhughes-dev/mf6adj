@@ -4,7 +4,7 @@ the ModflowNwt class as `flopy.modflow.ModflowNwt`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow-nwt/MODFLOW-NWT-Guide/nwt_newton_solver.htm>`_.
+<https://water.usgs.gov/ogw/modflow-nwt/MODFLOW-NWT-Guide/nwt_newton_solver.html>`_.
 
 """
 from ..pakbase import Package
@@ -236,7 +236,6 @@ class ModflowNwt(Package):
         unitnumber=None,
         filenames=None,
     ):
-
         if model.version != "mfnwt":
             err = "Error: model version must be mfnwt to use NWT package"
             raise Exception(err)
@@ -245,33 +244,17 @@ class ModflowNwt(Package):
         if unitnumber is None:
             unitnumber = ModflowNwt._defaultunit()
 
-        # set filenames
-        if filenames is None:
-            filenames = [None]
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        # Fill namefile items
-        name = [ModflowNwt._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=self._prepare_filenames(filenames),
         )
 
         self._generate_heading()
-        self.url = "nwt_newton_solver.htm"
+        self.url = "nwt_newton_solver.html"
         self.headtol = headtol
         self.fluxtol = fluxtol
         self.maxiterout = maxiterout
@@ -335,7 +318,7 @@ class ModflowNwt(Package):
         )
         isspecified = False
         for option in self.options:
-            f.write("{0:>10s}".format(option.upper()))
+            f.write(f"{option.upper():>10s}")
             if option.lower() == "specified":
                 isspecified = True
         if isspecified:
@@ -479,7 +462,7 @@ class ModflowNwt(Package):
         }
         ipos = len(kwargs)
         if kwargs["options"].lower().strip() == "specified":
-            for (k, c) in specdict.items():
+            for k, c in specdict.items():
                 if ifrfm:
                     kwargs[k] = c(t[ipos].strip())
                 else:

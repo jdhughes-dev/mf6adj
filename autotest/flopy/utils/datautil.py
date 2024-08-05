@@ -1,5 +1,19 @@
 import os
+import shlex
+
 import numpy as np
+
+
+def clean_filename(file_name):
+    if (
+        file_name[0] in PyListUtil.quote_list
+        and file_name[-1] in PyListUtil.quote_list
+    ):
+        # quoted string
+        # keep entire string and remove the quotes
+        f_name = file_name.strip('"')
+        return f_name.strip("'")
+    return file_name
 
 
 def clean_name(name):
@@ -68,6 +82,26 @@ class DatumUtil:
         ):
             return True
         return False
+
+    @staticmethod
+    def cellid_model_num(data_item_name, model_data, model_dim):
+        # determine which model to use based on cellid name
+        # contains hard coded relationship between data item names and
+        # model number
+        # TODO: Incorporate this into the DFNs
+        if model_data:
+            return None
+        if data_item_name.startswith("cellidm") and len(data_item_name) > 7:
+            model_num = data_item_name[7:]
+            if DatumUtil.is_int(model_num):
+                return int(model_num) - 1
+        if (
+            data_item_name == "cellidn" or data_item_name == "cellidsj"
+        ) and len(model_dim) > 0:
+            return 0
+        elif data_item_name == "cellidm" and len(model_dim) > 1:
+            return 1
+        return None
 
 
 class PyListUtil:
@@ -295,7 +329,8 @@ class PyListUtil:
         else:
             # compare against the default split option without comments split
             comment_split = line.split("#", 1)
-            clean_line = comment_split[0].strip().split()
+            # first try standard split preserving quotes
+            clean_line = shlex.split(comment_split[0].strip(), posix=False)
             if len(comment_split) > 1:
                 clean_line.append("#")
                 clean_line.append(comment_split[1].strip())
@@ -314,6 +349,7 @@ class PyListUtil:
                 if alt_split_len > max_split_size:
                     max_split_size = len(alt_split)
                     max_split_type = delimiter
+                    max_split_list = alt_split
                 elif alt_split_len == max_split_size:
                     if (
                         max_split_type not in PyListUtil.delimiter_list
@@ -324,13 +360,14 @@ class PyListUtil:
                         max_split_type = delimiter
                         max_split_list = alt_split
 
-            if max_split_type is not None:
+            if max_split_type is not None and max_split_size > 1:
                 clean_line = max_split_list
                 if PyListUtil.line_num == 0:
                     PyListUtil.delimiter_used = max_split_type
                 elif PyListUtil.delimiter_used != max_split_type:
                     PyListUtil.consistent_delim = False
-            PyListUtil.line_num += 1
+            if max_split_size > 1:
+                PyListUtil.line_num += 1
 
         arr_fixed_line = []
         index = 0
@@ -342,6 +379,7 @@ class PyListUtil:
                 if item and item[0] in PyListUtil.quote_list:
                     # starts with a quote, handle quoted text
                     if item[-1] in PyListUtil.quote_list:
+                        # if quoted on both ends, remove quotes
                         arr_fixed_line.append(item[1:-1])
                     else:
                         arr_fixed_line.append(item[1:])
@@ -566,6 +604,8 @@ class MultiList:
         return shape_size
 
     def in_shape(self, indexes):
+        if isinstance(indexes, int):
+            indexes = [indexes]
         for index, item in zip(indexes, self.list_shape):
             if index > item:
                 return False

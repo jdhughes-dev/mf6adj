@@ -3,6 +3,7 @@ mp7bas module.  Contains the Modpath7Bas class.
 
 """
 import numpy as np
+
 from ..pakbase import Package
 from ..utils import Util2d, Util3d
 
@@ -39,14 +40,9 @@ class Modpath7Bas(Package):
     def __init__(
         self, model, porosity=0.30, defaultiface=None, extension="mpbas"
     ):
-        """
-        Package constructor.
-
-        """
-
         unitnumber = model.next_unit()
 
-        Package.__init__(self, model, extension, "MPBAS", unitnumber)
+        super().__init__(model, extension, "MPBAS", unitnumber)
 
         shape = model.shape
         if len(shape) == 3:
@@ -58,24 +54,14 @@ class Modpath7Bas(Package):
 
         self._generate_heading()
 
-        if model.flowmodel.version == "mf6":
-            self.laytyp = Util2d(
-                self.parent,
-                (shape[0],),
-                np.int32,
-                model.laytyp,
-                name="bas - laytype",
-                locat=self.unit_number[0],
-            )
-        else:
-            self.laytyp = Util2d(
-                self.parent,
-                (shape[0],),
-                np.int32,
-                model.laytyp,
-                name="bas - laytype",
-                locat=self.unit_number[0],
-            )
+        self.laytyp = Util2d(
+            self.parent,
+            (shape[0],),
+            np.int32,
+            model.laytyp,
+            name="bas - laytype",
+            locat=self.unit_number[0],
+        )
         if model.flowmodel.version != "mf6":
             self.ibound = Util3d(
                 model,

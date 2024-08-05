@@ -1,6 +1,7 @@
 import numpy as np
+
 from ..pakbase import Package
-from ..utils import Util3d, Transient3d
+from ..utils import Transient3d, Util3d
 
 
 class SeawatVsc(Package):
@@ -146,7 +147,6 @@ class SeawatVsc(Package):
         filenames=None,
         **kwargs,
     ):
-
         if len(list(kwargs.keys())) > 0:
             raise Exception(
                 "VSC error: unrecognized kwargs: "
@@ -156,29 +156,13 @@ class SeawatVsc(Package):
         if unitnumber is None:
             unitnumber = SeawatVsc._defaultunit()
 
-        # set filenames
-        if filenames is None:
-            filenames = [None]
-        elif isinstance(filenames, str):
-            filenames = [filenames]
-
-        # Fill namefile items
-        name = [SeawatVsc._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=self._prepare_filenames(filenames),
         )
 
         nrow, ncol, nlay, nper = self.parent.nrow_ncol_nlay_nper
@@ -261,15 +245,13 @@ class SeawatVsc(Package):
             if self.mutempopt > 0:
                 s = f"{self.mtmutempspec} "
                 for a in tuple(self.amucoeff):
-                    s += "{} ".format(a)
+                    s += f"{a} "
                 f_vsc.write(s + "\n")
 
         # items 4 and 5, transient visc array
         if self.mt3dmuflg == 0:
-
             nrow, ncol, nlay, nper = self.parent.nrow_ncol_nlay_nper
             for kper in range(nper):
-
                 itmp, file_entry_visc = self.visc.get_kper_entry(kper)
 
                 # item 4 (and possibly 5)
@@ -444,12 +426,10 @@ class SeawatVsc(Package):
         invisc = None
         visc = None
         if mt3dmuflg == 0:
-
             # Create visc as a Transient3D record
             visc = {}
 
             for iper in range(nper):
-
                 if model.verbose:
                     print(f"   loading INVISC for stress period {iper + 1}...")
                 line = f.readline()

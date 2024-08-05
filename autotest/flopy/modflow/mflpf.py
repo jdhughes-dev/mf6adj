@@ -4,15 +4,15 @@ the ModflowLpf class as `flopy.modflow.ModflowLpf`.
 
 Additional information for this MODFLOW package can be found at the `Online
 MODFLOW Guide
-<http://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/index.html?lpf.htm>`_.
+<https://water.usgs.gov/ogw/modflow/MODFLOW-2005-Guide/lpf.html>`_.
 
 """
 import numpy as np
-from .mfpar import ModflowPar as mfpar
 
 from ..pakbase import Package
 from ..utils import Util2d, Util3d, read1d
 from ..utils.flopy_io import line_parse
+from .mfpar import ModflowPar as mfpar
 
 
 class ModflowLpf(Package):
@@ -24,10 +24,9 @@ class ModflowLpf(Package):
     model : model object
         The model object (of type :class:`flopy.modflow.mf.Modflow`) to which
         this package will be added.
-    ipakcb : int
-        A flag that is used to determine if cell-by-cell budget data should be
-        saved. If ipakcb is non-zero cell-by-cell budget data will be saved.
-        (default is 0)
+    ipakcb : int, optional
+        Toggles whether cell-by-cell budget data should be saved. If None or zero,
+        budget data will not be saved (default is None).
     hdry : float
         Is the head that is assigned to cells that are converted to dry during
         a simulation. Although this value plays no role in the model
@@ -149,13 +148,15 @@ class ModflowLpf(Package):
         filenames=None the package name will be created using the model name
         and package extension and the cbc output name will be created using
         the model name and .cbc extension (for example, modflowtest.cbc),
-        if ipakcbc is a number greater than zero. If a single string is passed
+        if ipakcb is a number greater than zero. If a single string is passed
         the package will be set to the string and cbc output name will be
-        created using the model name and .cbc extension, if ipakcbc is a
+        created using the model name and .cbc extension, if ipakcb is a
         number greater than zero. To define the names for all package files
         (input and output) the length of the list of strings should be 2.
         Default is None.
-
+    add_package : bool
+        Flag to add the initialised package object to the parent model object.
+        Default is True.
 
     Attributes
     ----------
@@ -209,55 +210,32 @@ class ModflowLpf(Package):
         extension="lpf",
         unitnumber=None,
         filenames=None,
+        add_package=True,
     ):
-
         # set default unit number of one is not specified
         if unitnumber is None:
             unitnumber = ModflowLpf._defaultunit()
 
         # set filenames
-        if filenames is None:
-            filenames = [None, None]
-        elif isinstance(filenames, str):
-            filenames = [filenames, None]
-        elif isinstance(filenames, list):
-            if len(filenames) < 2:
-                filenames.append(None)
+        filenames = self._prepare_filenames(filenames, 2)
 
-        # update external file information with cbc output, if necessary
-        if ipakcb is not None:
-            fname = filenames[1]
-            model.add_output_file(
-                ipakcb, fname=fname, package=ModflowLpf._ftype()
-            )
-        else:
-            ipakcb = 0
+        # cbc output file
+        self.set_cbc_output_file(ipakcb, model, filenames[1])
 
-        # Fill namefile items
-        name = [ModflowLpf._ftype()]
-        units = [unitnumber]
-        extra = [""]
-
-        # set package name
-        fname = [filenames[0]]
-
-        # Call ancestor's init to set self.parent, extension, name and unit number
-        Package.__init__(
-            self,
+        # call base package constructor
+        super().__init__(
             model,
             extension=extension,
-            name=name,
-            unit_number=units,
-            extra=extra,
-            filenames=fname,
+            name=self._ftype(),
+            unit_number=unitnumber,
+            filenames=filenames[0],
         )
 
         self._generate_heading()
-        self.url = "lpf.htm"
+        self.url = "lpf.html"
         nrow, ncol, nlay, nper = self.parent.nrow_ncol_nlay_nper
 
         # item 1
-        self.ipakcb = ipakcb
         self.hdry = (
             hdry  # Head in cells that are converted to dry during a simulation
         )
@@ -352,7 +330,8 @@ class ModflowLpf(Package):
             name="wetdry",
             locat=self.unit_number[0],
         )
-        self.parent.add_package(self)
+        if add_package:
+            self.parent.add_package(self)
         return
 
     def write_file(self, check=True, f=None):
@@ -393,7 +372,7 @@ class ModflowLpf(Package):
         # Item 1: IBCFCB, HDRY, NPLPF, <IKCFLAG>, OPTIONS
         if self.parent.version == "mfusg" and self.parent.structured == False:
             f.write(
-                "{0:10d}{1:10.6G}{2:10d}{3:10d} {4:s}\n".format(
+                "{:10d}{:10.6G}{:10d}{:10d} {:s}\n".format(
                     self.ipakcb,
                     self.hdry,
                     self.nplpf,
@@ -580,7 +559,6 @@ class ModflowLpf(Package):
 
         # load by layer
         for k in range(nlay):
-
             # allow for unstructured changing nodes per layer
             if nr is None:
                 nrow = 1
@@ -645,7 +623,6 @@ class ModflowLpf(Package):
 
             # storage properties
             if transient:
-
                 # ss
                 if model.verbose:
                     print(f"   loading ss layer {k + 1:3d}...")

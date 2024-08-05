@@ -1,17 +1,15 @@
-import sys, inspect
+import inspect
+import sys
 from copy import deepcopy
+
 import numpy as np
-from ..mfbase import MFDataException, VerbosityLevel
-from ...utils.datautil import (
-    PyListUtil,
-    find_keyword,
-    DatumUtil,
-    MultiListIter,
-)
-from .mfdatautil import convert_data, to_string, MFComment
-from ...utils.binaryfile import BinaryHeader
+
 from ...utils import datautil
-from ..data.mfstructure import DatumType, MFDataStructure, DataType
+from ...utils.binaryfile import BinaryHeader
+from ...utils.datautil import DatumUtil, PyListUtil, find_keyword
+from ..data.mfstructure import DataType, DatumType, MFDataStructure
+from ..mfbase import MFDataException, VerbosityLevel
+from .mfdatautil import MFComment, convert_data, to_string
 
 
 class MFFileAccess:
@@ -23,6 +21,7 @@ class MFFileAccess:
         self._simulation_data = simulation_data
         self._path = path
         self._current_key = current_key
+        self._pos = 0
 
     @staticmethod
     def _get_bintype(modelgrid):
@@ -213,7 +212,10 @@ class MFFileAccessArray(MFFileAccess):
     ):
         data = self._resolve_cellid_numbers_to_file(data)
         fd = self._open_ext_file(fname, binary=True, write=True)
+        if data.size == modelgrid.nnodes:
+            write_multi_layer = False
         if write_multi_layer:
+            # write data from each layer with a separate header
             for layer, value in enumerate(data):
                 self._write_layer(
                     fd,
@@ -227,6 +229,7 @@ class MFFileAccessArray(MFFileAccess):
                     layer + 1,
                 )
         else:
+            # write data with a single header
             self._write_layer(
                 fd,
                 data,
@@ -237,7 +240,6 @@ class MFFileAccessArray(MFFileAccess):
                 text,
                 fname,
             )
-        data.tofile(fd)
         fd.close()
 
     def _write_layer(
@@ -253,7 +255,14 @@ class MFFileAccessArray(MFFileAccess):
         ilay=None,
     ):
         header_data = self._get_header(
-            modelgrid, modeltime, stress_period, precision, text, fname, ilay
+            modelgrid,
+            modeltime,
+            stress_period,
+            precision,
+            text,
+            fname,
+            ilay=ilay,
+            data=data,
         )
         header_data.tofile(fd)
         data.tofile(fd)
@@ -267,6 +276,7 @@ class MFFileAccessArray(MFFileAccess):
         text,
         fname,
         ilay=None,
+        data=None,
     ):
         # handle dis (row, col, lay), disv (ncpl, lay), and disu (nodes) cases
         if modelgrid is not None and modeltime is not None:
@@ -275,13 +285,18 @@ class MFFileAccessArray(MFFileAccess):
             if ilay is None:
                 ilay = modelgrid.nlay
             if modelgrid.grid_type == "structured":
+                m1, m2, m3 = modelgrid.ncol, modelgrid.nrow, ilay
+                if data is not None:
+                    shape3d = modelgrid.nlay * modelgrid.nrow * modelgrid.ncol
+                    if data.size == shape3d:
+                        m1, m2, m3 = shape3d, 1, 1
                 return BinaryHeader.create(
                     bintype="vardis",
                     precision=precision,
                     text=text,
-                    nrow=modelgrid.nrow,
-                    ncol=modelgrid.ncol,
-                    ilay=ilay,
+                    m1=m1,
+                    m2=m2,
+                    m3=m3,
                     pertim=pertim,
                     totim=totim,
                     kstp=1,
@@ -290,24 +305,30 @@ class MFFileAccessArray(MFFileAccess):
             elif modelgrid.grid_type == "vertex":
                 if ilay is None:
                     ilay = modelgrid.nlay
+                m1, m2, m3 = modelgrid.ncpl, 1, ilay
+                if data is not None:
+                    shape3d = modelgrid.nlay * modelgrid.ncpl
+                    if data.size == shape3d:
+                        m1, m2, m3 = shape3d, 1, 1
                 return BinaryHeader.create(
                     bintype="vardisv",
                     precision=precision,
                     text=text,
-                    ncpl=modelgrid.ncpl,
-                    ilay=ilay,
-                    m3=1,
+                    m1=m1,
+                    m2=m2,
+                    m3=m3,
                     pertim=pertim,
                     totim=totim,
                     kstp=1,
                     kper=stress_period,
                 )
             elif modelgrid.grid_type == "unstructured":
+                m1, m2, m3 = modelgrid.nnodes, 1, 1
                 return BinaryHeader.create(
                     bintype="vardisu",
                     precision=precision,
                     text=text,
-                    nodes=modelgrid.nnodes,
+                    m1=m1,
                     m2=1,
                     m3=1,
                     pertim=pertim,
@@ -318,13 +339,14 @@ class MFFileAccessArray(MFFileAccess):
             else:
                 if ilay is None:
                     ilay = 1
+                m1, m2, m3 = 1, 1, ilay
                 header = BinaryHeader.create(
                     bintype="vardis",
                     precision=precision,
                     text=text,
-                    nrow=1,
-                    ncol=1,
-                    ilay=ilay,
+                    m1=m1,
+                    m2=m2,
+                    m3=m3,
                     pertim=pertim,
                     totim=totim,
                     kstp=1,
@@ -340,14 +362,15 @@ class MFFileAccessArray(MFFileAccess):
                         "binary file {}.".format(fname)
                     )
         else:
+            m1, m2, m3 = 1, 1, 1
             pertim = np.float64(1.0)
             header = BinaryHeader.create(
                 bintype="vardis",
                 precision=precision,
                 text=text,
-                nrow=1,
-                ncol=1,
-                ilay=1,
+                m1=m1,
+                m2=m2,
+                m3=m3,
                 pertim=pertim,
                 totim=pertim,
                 kstp=1,
@@ -401,24 +424,42 @@ class MFFileAccessArray(MFFileAccess):
     ):
         import flopy.utils.binaryfile as bf
 
+        if not isinstance(modelgrid.ncpl, np.ndarray):
+            if data_size != modelgrid.ncpl:
+                read_multi_layer = True
+
         fd = self._open_ext_file(fname, True)
         numpy_type, name = self.datum_to_numpy_type(data_type)
         header_dtype = bf.BinaryHeader.set_dtype(
             bintype=self._get_bintype(modelgrid), precision="double"
         )
         if read_multi_layer and len(data_shape) > 1:
-            all_data = np.empty(data_shape, numpy_type)
-            headers = []
-            layer_shape = data_shape[1:]
-            data_size = int(data_size / data_shape[0])
-            for index in range(0, data_shape[0]):
-                layer_data = self._read_binary_file_layer(
-                    fd, fname, header_dtype, numpy_type, data_size, layer_shape
+            try:
+                all_data = np.empty(data_shape, numpy_type)
+                headers = []
+                layer_shape = data_shape[1:]
+                layer_data_size = int(data_size / data_shape[0])
+                for index in range(0, data_shape[0]):
+                    layer_data = self._read_binary_file_layer(
+                        fd,
+                        fname,
+                        header_dtype,
+                        numpy_type,
+                        layer_data_size,
+                        layer_shape,
+                    )
+                    all_data[index, :] = layer_data[0]
+                    headers.append(layer_data[1])
+                fd.close()
+                return all_data, headers
+            except MFDataException:
+                fd.seek(self._pos, 0)
+                bin_data = self._read_binary_file_layer(
+                    fd, fname, header_dtype, numpy_type, data_size, data_shape
                 )
-                all_data[index, :] = layer_data[0]
-                headers.append(layer_data[1])
-            fd.close()
-            return all_data, headers
+                self._pos = fd.tell()
+                fd.close()
+                return bin_data
         else:
             bin_data = self._read_binary_file_layer(
                 fd, fname, header_dtype, numpy_type, data_size, data_shape
@@ -551,13 +592,26 @@ class MFFileAccessArray(MFFileAccess):
         data_raw = []
         line = " "
         PyListUtil.reset_delimiter_used()
-        while line != "" and len(data_raw) < data_size:
-            line = fd.readline()
-            arr_line = PyListUtil.split_data_line(line, True)
-            if not MFComment.is_comment(arr_line, True):
-                data_raw += arr_line
-            else:
-                PyListUtil.reset_delimiter_used()
+        if data_size < 0:
+            # data size is not defined, load data until an end of data
+            # indicator is found
+            while True:
+                line = fd.readline()
+                arr_line = PyListUtil.split_data_line(line, True)
+                if line == "" or arr_line[0].upper() == "END":
+                    break
+                if not MFComment.is_comment(arr_line, True):
+                    data_raw += arr_line
+                else:
+                    PyListUtil.reset_delimiter_used()
+        else:
+            while line != "" and len(data_raw) < data_size:
+                line = fd.readline()
+                arr_line = PyListUtil.split_data_line(line, True)
+                if not MFComment.is_comment(arr_line, True):
+                    data_raw += arr_line
+                else:
+                    PyListUtil.reset_delimiter_used()
 
         if len(data_raw) < data_size:
             message = (
@@ -592,12 +646,16 @@ class MFFileAccessArray(MFFileAccess):
         elif data_type == DatumType.integer:
             data_type = np.int32
 
-        data_out = np.fromiter(data_raw, dtype=data_type, count=data_size)
+        if data_size < 0:
+            data_out = np.fromiter(data_raw, dtype=data_type)
+        else:
+            data_out = np.fromiter(data_raw, dtype=data_type, count=data_size)
         data_out = self._resolve_cellid_numbers_from_file(data_out)
         if close_file:
             fd.close()
 
-        data_out = np.reshape(data_out, data_dim)
+        if data_size >= 0:
+            data_out = np.reshape(data_out, data_dim)
         return data_out, current_size
 
     def load_from_package(
@@ -977,13 +1035,15 @@ class MFFileAccessList(MFFileAccess):
         self.simple_line = False
 
     def read_binary_data_from_file(
-        self, read_file, modelgrid, precision="double"
+        self, read_file, modelgrid, precision="double", build_cellid=True
     ):
         # read from file
         header, int_cellid_indexes, ext_cellid_indexes = self._get_header(
             modelgrid, precision
         )
         file_array = np.fromfile(read_file, dtype=header, count=-1)
+        if not build_cellid:
+            return file_array
         # build data list for recarray
         cellid_size = len(self._get_cell_header(modelgrid))
         data_list = []
@@ -1063,7 +1123,7 @@ class MFFileAccessList(MFFileAccess):
     def _get_cell_header(self, modelgrid):
         if modelgrid.grid_type == "structured":
             return [("layer", np.int32), ("row", np.int32), ("col", np.int32)]
-        elif modelgrid.grid_type == "vertex_layered":
+        elif modelgrid.grid_type == "vertex":
             return [("layer", np.int32), ("ncpl", np.int32)]
         else:
             return [("nodes", np.int32)]
@@ -1075,6 +1135,9 @@ class MFFileAccessList(MFFileAccess):
         self._data_dimensions.lock()
         self._last_line_info = []
         self._data_line = None
+
+        if first_line is None:
+            first_line = file_handle.readline()
 
         # read in any pre data comments
         current_line = self._read_pre_data_comments(
@@ -1321,7 +1384,8 @@ class MFFileAccessList(MFFileAccess):
                             storage.data_dimensions.unlock()
                             return data_rec
             self.simple_line = (
-                self.simple_line and self.structure.package_type != "sfr"
+                self.simple_line
+                and not self.structure.parent_block.parent_package.advanced_package()
             )
             if self.simple_line:
                 line_len = len(self._last_line_info)
@@ -1651,23 +1715,51 @@ class MFFileAccessList(MFFileAccess):
                                                 name_data
                                                 not in data_item.keystring_dict
                                             ):
+                                                # look for data key in child records
+                                                found = False
+                                                for (
+                                                    key,
+                                                    record,
+                                                ) in (
+                                                    data_item.keystring_dict.items()
+                                                ):
+                                                    if (
+                                                        isinstance(
+                                                            record,
+                                                            MFDataStructure,
+                                                        )
+                                                        and len(
+                                                            record.data_item_structures
+                                                        )
+                                                        > 0
+                                                        and record.data_item_structures[
+                                                            0
+                                                        ].name
+                                                        == data.lower()
+                                                    ):
+                                                        name_data = key
+                                                        found = True
+                                                        break
                                                 # data does not match any
                                                 # expected keywords
-                                                if (
-                                                    self._simulation_data.verbosity_level.value
-                                                    >= VerbosityLevel.normal.value
-                                                ):
-                                                    print(
-                                                        "WARNING: Failed to "
-                                                        "process line {}.  "
-                                                        "Line does not match"
-                                                        " expected keystring"
-                                                        " {}".format(
-                                                            " ".join(arr_line),
-                                                            data_item.name,
+                                                if not found:
+                                                    if (
+                                                        self._simulation_data.verbosity_level.value
+                                                        >= VerbosityLevel.normal.value
+                                                    ):
+                                                        print(
+                                                            "WARNING: Failed to "
+                                                            "process line {}.  "
+                                                            "Line does not match"
+                                                            " expected keystring"
+                                                            " {}".format(
+                                                                " ".join(
+                                                                    arr_line
+                                                                ),
+                                                                data_item.name,
+                                                            )
                                                         )
-                                                    )
-                                                break
+                                                    break
                                         data_item_ks = (
                                             data_item.keystring_dict[name_data]
                                         )
@@ -1733,7 +1825,9 @@ class MFFileAccessList(MFFileAccess):
                                         data_item_ks, MFDataStructure
                                     ):
                                         dis = data_item_ks.data_item_structures
-                                        for ks_data_item in dis:
+                                        for idx, ks_data_item in enumerate(
+                                            dis
+                                        ):
                                             if (
                                                 ks_data_item.type
                                                 != DatumType.keyword
@@ -1758,6 +1852,12 @@ class MFFileAccessList(MFFileAccess):
                                                     data_line,
                                                     zero_based=zero_based,
                                                 )
+                                            elif (
+                                                idx > 0
+                                                and ks_data_item.type
+                                                == DatumType.keyword
+                                            ):
+                                                data_index += 1
                                         while data_index < arr_line_len:
                                             try:
                                                 # append remaining data
@@ -1777,7 +1877,7 @@ class MFFileAccessList(MFFileAccess):
                                                     repeat_count,
                                                     current_key,
                                                     data_line,
-                                                    zero_base=zero_based,
+                                                    zero_based=zero_based,
                                                 )
                                             except MFDataException:
                                                 break
@@ -2000,7 +2100,7 @@ class MFFileAccessList(MFFileAccess):
             self._last_line_info.append([])
         if data_item.is_cellid or (
             data_item.possible_cellid
-            and storage._validate_cellid(arr_line, data_index)
+            and storage._validate_cellid(arr_line, data_index, data_item)
         ):
             if self._data_dimensions is None:
                 comment = (
@@ -2025,8 +2125,16 @@ class MFFileAccessList(MFFileAccess):
                     comment,
                     self._simulation_data.debug,
                 )
+            # in case of multiple model grids, determine which one to use
+            model_num = DatumUtil.cellid_model_num(
+                data_item.name,
+                struct.model_data,
+                self._data_dimensions.package_dim.model_dim,
+            )
+            model_grid = self._data_dimensions.get_model_grid(
+                model_num=model_num
+            )
             # read in the entire cellid
-            model_grid = self._data_dimensions.get_model_grid()
             cellid_size = model_grid.get_num_spatial_coordinates()
             cellid_tuple = ()
             if (
@@ -2156,6 +2264,13 @@ class MFFileAccessList(MFFileAccess):
                         data_item,
                         sub_amt=sub_amt,
                     )
+                    if (
+                        data_item.indicates_file_name()
+                        or data_item.file_nam_in_nam_file()
+                    ):
+                        data_converted = datautil.clean_filename(
+                            data_converted
+                        )
                     if add_to_last_line:
                         self._last_line_info[-1].append(
                             [data_index, data_item.type, 0]
