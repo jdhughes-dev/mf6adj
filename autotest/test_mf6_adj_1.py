@@ -1974,12 +1974,12 @@ def test_sanpedro1():
 if __name__ == "__main__":
     #test_xd_box_unstruct_1()
 
-    #new_d = test_xd_box_ss()
-    #new_d = test_xd_box_chd()
-    #new_d = test_xd_box_1()
+    new_d = test_xd_box_ss()
+    new_d = test_xd_box_chd()
+    new_d = test_xd_box_1()
     #xd_box_compare(new_d,True)
     test_sagehen1()
-    #test_sanpedro1()
+    test_sanpedro1()
     #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
