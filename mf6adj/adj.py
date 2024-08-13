@@ -204,11 +204,11 @@ class Mf6Adj(object):
                         raw = line2.lower().strip().split()
                         if self.is_structured and len(raw) != 9:
                             print("parsed line",raw)
-                            raise Exception("performance measure entry on line {0} has the wrong number of items, found {1}, should have 8".format(count,len(raw)))
+                            raise Exception("performance measure entry on line {0} has the wrong number of items, found {1}, should have 9".format(count,len(raw)))
                         elif not self.is_structured and len(raw) != 8:
                             print("parsed line", raw)
                             raise Exception(
-                                "performance measure entry on line {0} has the wrong number of items, found {1}, should have 9".format(
+                                "performance measure entry on line {0} has the wrong number of items, found {1}, should have 8".format(
                                     count, len(raw)))
                         kper = int(raw[0]) - 1
                         kstp = int(raw[1]) - 1
@@ -265,21 +265,24 @@ class Mf6Adj(object):
                         pm_type = raw[-4].strip().lower()
                         if pm_type != "head":
                             found = False
+                            ppnames = []
                             for ptype, pnames in self._gwf_package_dict.items():
                                 if pm_type in pnames:
                                     found = True
                                     break
+                                ppnames.extend(pnames)
                             if not found:
+                                print(ppnames)
                                 raise Exception("`pm_type` {0} names a GWF package instance that was not found".format(pm_type))
 
                         pm_entries.append(PerfMeasRecord(kper,kstp,inode,pm_type,pm_form,weight,obsval,k,i,j))
                     if len(pm_entries) == 0:
                         raise Exception("no entries found for PM {0}".format(pm_name))
                     pm_types = set([entry.pm_type for entry in pm_entries])
-                    if len(pm_types) > 1:
-                        raise Exception("performance measure"+\
-                                        "{0} has mixed 'pm_types' ({1}), this is not supported".\
-                                        format(pm_name,str(pm_types)))
+                    # if len(pm_types) > 1:
+                    #     raise Exception("performance measure"+\
+                    #                     "{0} has mixed 'pm_types' ({1}), this is not supported".\
+                    #                     format(pm_name,str(pm_types)))
                     pm_forms = set([entry.pm_form for entry in pm_entries])
                     if len(pm_forms) > 1:
                         raise Exception("performance measure" + \

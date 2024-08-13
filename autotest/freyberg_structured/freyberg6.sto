@@ -1,4 +1,5 @@
 BEGIN Options
+   SAVE_FLOWS
 END Options
 
 BEGIN GRIDDATA

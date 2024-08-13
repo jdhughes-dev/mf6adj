@@ -993,8 +993,9 @@ def freyberg_structured_demo():
 
     sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
     gwf = sim.get_model()
+    ib = gwf.dis.idomain.array
     sfr_data = pd.DataFrame.from_records(gwf.sfr.packagedata.array)
-
+    
 
     lrcs = []
     k_dict = {}
@@ -1016,6 +1017,7 @@ def freyberg_structured_demo():
     rvals = np.random.random(len(lrcs)) + 36
     with open(os.path.join(new_d,"test.adj"),'w') as f:
 
+
         f.write("begin performance_measure pm1\n")
         for rval,lrc in zip(rvals,lrcs):
             for kper in range(sim.tdis.nper.data):
@@ -1035,6 +1037,19 @@ def freyberg_structured_demo():
                     f.write("{0} 1 {1} {2} {3} sfr_1 direct 1.0 -1.0e+30\n".format(kper+1,kij[0]+1,kij[1]+1,kij[2]+1))
             f.write("end performance_measure\n\n")
 
+        f.write("begin performance_measure pm-combo\n")
+        for rval,lrc in zip(rvals,lrcs):
+            for kper in range(sim.tdis.nper.data):
+                #f.write("{0} 1 {1} 1.0  {2}\n".format(kper+1,lrc,rval))
+                f.write("{0} 1 {1} head direct 1.0 -1.0e+30\n".format(kper + 1, lrc, rval))
+        for bname in bnames:
+            bdf = sfr_data.loc[sfr_data.boundname==bname,:].copy()
+            for kper in range(sim.tdis.nper.data):
+                for kij in bdf.cellid.values:
+                    f.write("{0} 1 {1} {2} {3} sfr_1 direct 1.0 -1.0e+30\n".format(kper+1,kij[0]+1,kij[1]+1,kij[2]+1))
+        f.write("end performance_measure\n\n")
+
+
 
 
     start = datetime.now()
@@ -1047,40 +1062,44 @@ def freyberg_structured_demo():
     duration = (datetime.now() - start).total_seconds()
     print("took:",duration)
 
-    result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_tailwater")]
-    print(result_hdf)
-    assert len(result_hdf) == 1
-    result_hdf = result_hdf[0]
-    import h5py
-    hdf = h5py.File(os.path.join(new_d,result_hdf),'r')
-    keys = list(hdf.keys())
-    keys.sort()
-    print(keys)
-    from matplotlib.backends.backend_pdf import PdfPages
-    idomain = np.loadtxt(os.path.join(new_d,"freyberg6.dis_idomain_layer1.txt"))
-    with PdfPages(os.path.join(new_d,result_hdf+".pdf")) as pdf:
-        for key in keys:
-            if key != "composite":
-                continue
+    #result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_tailwater")]
+    #result_hdf = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution_pm-combo")]
+    result_hdfs = [f for f in os.listdir(new_d) if f.endswith("hd5") and f.startswith("adjoint_solution")]
+    assert len(result_hdfs) == 4,len(result_hdfs)
+    for result_hdf in result_hdfs:
+        print(result_hdf)
+        #assert len(result_hdf) == 1
+        #result_hdf = result_hdf[0]
+        import h5py
+        hdf = h5py.File(os.path.join(new_d,result_hdf),'r')
+        keys = list(hdf.keys())
+        keys.sort()
+        print(keys)
+        from matplotlib.backends.backend_pdf import PdfPages
+        idomain = np.loadtxt(os.path.join(new_d,"freyberg6.dis_idomain_layer1.txt"))
+        with PdfPages(os.path.join(new_d,result_hdf+".pdf")) as pdf:
+            for key in keys:
+                if key != "composite":
+                    continue
 
-            grp = hdf[key]
-            plot_keys = [i for i in grp.keys() if len(grp[i].shape) == 3]
-            for pkey in plot_keys:
+                grp = hdf[key]
+                plot_keys = [i for i in grp.keys() if len(grp[i].shape) == 3]
+                for pkey in plot_keys:
 
-                arr = grp[pkey][:]
-                for k,karr in enumerate(arr):
-                    karr[idomain < 1] = np.nan
-                    fig, ax = plt.subplots(1, 1, figsize=(6, 5))
-                    mx = np.nanmax(np.abs(karr))
-                    cb = ax.imshow(karr, cmap="gist_stern")# vmax=mx, vmin=-mx, cmap="seismic")
-                    plt.colorbar(cb, ax=ax, label="composite sensitivity")
-                    #cb = ax.imshow(karr)
-                    #plt.colorbar(cb,ax=ax)
-                    ax.set_title(key+", "+pkey+", layer:{0}".format(k+1),loc="left")
-                    plt.tight_layout()
-                    pdf.savefig()
-                    plt.close(fig)
-                    print("...",key, pkey,k+1)
+                    arr = grp[pkey][:]
+                    for k,karr in enumerate(arr):
+                        karr[idomain < 1] = np.nan
+                        fig, ax = plt.subplots(1, 1, figsize=(6, 5))
+                        mx = np.nanmax(np.abs(karr))
+                        cb = ax.imshow(karr, cmap="gist_stern")# vmax=mx, vmin=-mx, cmap="seismic")
+                        plt.colorbar(cb, ax=ax, label="composite sensitivity")
+                        #cb = ax.imshow(karr)
+                        #plt.colorbar(cb,ax=ax)
+                        ax.set_title(key+", "+pkey+", layer:{0}".format(k+1),loc="left")
+                        plt.tight_layout()
+                        pdf.savefig()
+                        plt.close(fig)
+                        print("...",key, pkey,k+1)
 
 
 def freyberg_quadtree_demo():
@@ -1089,11 +1108,17 @@ def freyberg_quadtree_demo():
     #shutil.copytree(os.path.join('..', 'mf6adj'), os.path.join('mf6adj'))
     sys.path.insert(0,os.path.join(".."))
     import mf6adj
+    import h5py
+    import flopy
 
+    
     org_d = "freyberg_quadtree"
     new_d = "freyberg_quadtree_test"
     prep_run = True
     run_adj = True
+
+    sim = flopy.mf6.MFSimulation.load(sim_ws=os.path.join(org_d))
+    m = sim.get_model()
 
     if prep_run:
         if os.path.exists(new_d):
@@ -1126,6 +1151,21 @@ def freyberg_quadtree_demo():
                     f.write("{0} 1 {1} {2} head residual 1.0  {3}\n".format(kper + 1, lay, node, rval))
             f.write("end performance_measure\n\n")
 
+            sfr_data = pd.DataFrame.from_records(m.sfr.packagedata.array)
+            bnames = sfr_data.boundname.unique()
+            bnames.sort()
+            bnames = ["upstream","downstream"]
+            for bname in bnames:
+                bdf = sfr_data.loc[sfr_data.boundname==bname,:].copy()
+                assert bdf.shape[0] > 0
+
+                f.write("begin performance_measure {0}\n".format(bname))
+                for kper in range(sim.tdis.nper.data):
+                    for kij in bdf.cellid.values:
+                        print(kij)
+                        f.write("{0} 1 {1} {2} sfr_0 direct 1.0 -1.0e+30\n".format(kper+1,kij[0]+1,kij[1]+1,))
+                f.write("end performance_measure\n\n")
+
         start = datetime.now()
         os.chdir(new_d)
         adj = mf6adj.Mf6Adj("test.adj", os.path.split(local_lib_name)[1], verbose_level=2)
@@ -1142,14 +1182,13 @@ def freyberg_quadtree_demo():
     print(result_hdf)
     result_hdf = result_hdf[-1]
     print("using hdf",result_hdf)
-    import h5py
+    
     hdf = h5py.File(os.path.join(new_d, result_hdf), 'r')
     keys = list(hdf.keys())
     keys.sort()
     print(keys)
     import flopy
-    sim = flopy.mf6.MFSimulation.load(sim_ws=os.path.join(new_d))
-    m = sim.get_model()
+    
     #m.dis.top.plot()
     #plt.show()
     #return
@@ -1981,8 +2020,8 @@ if __name__ == "__main__":
     # #xd_box_compare(new_d,True)
     # test_sagehen1()
     # test_sanpedro1()
-    # freyberg_structured_demo()
-    freyberg_structured_highres_demo()
-    freyberg_notional_unstruct_demo()
+    #freyberg_structured_demo()
+    #freyberg_structured_highres_demo()
+    #freyberg_notional_unstruct_demo()
     freyberg_quadtree_demo()
 

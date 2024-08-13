@@ -19,3 +19,4 @@ dependencies:
   - pip:
     - git+https://github.com/pypest/pyemu@develop
     - pyshp
+    - flopy
