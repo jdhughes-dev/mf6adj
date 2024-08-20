@@ -1,5 +1,5 @@
 import os
-dirs = [d for d in os.listdir(".") if os.path.isdir(d)]
+dirs = ['.']#d for d in os.listdir(".") if os.path.isdir(d) and not d.startswith(".")]
 notebook_count = 0
 for d in dirs:
     nb_files = [os.path.join(d,f) for f in os.listdir(d) if f.lower().endswith(".ipynb")]
