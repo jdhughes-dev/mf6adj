@@ -123,7 +123,15 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
         sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=iconvert, steady_state=steady_state,transient=transient,ss=ss,sy=sy)
 
     alt_rec = []
+    bnd_nper = np.arange(nper,dtype=int)
+    if nper > 2:
+        bnd_nper = np.arange(1,nper,dtype=int)
+    if nper > 3:
+        bnd_nper = np.arange(1,nper-1,dtype=int)
+    print(nper,bnd_nper)
+ 
     if ncol > 1:
+        
         stage = top
         if not full_sat_bnd:
             stage = botm[0] + ((top-botm[0])/4.0)
@@ -143,20 +151,18 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
 
         #chd = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=chd_rec)
         if alt_bnd == "riv":
-            _ = flopy.mf6.ModflowGwfriv(gwf,stress_period_data={kper:alt_rec for kper in range(nper)})
+            _ = flopy.mf6.ModflowGwfriv(gwf,stress_period_data={kper:alt_rec for kper in bnd_nper})
         elif alt_bnd == "drn":
-            _ = flopy.mf6.ModflowGwfdrn(gwf, stress_period_data={kper: alt_rec for kper in range(nper)})
+            _ = flopy.mf6.ModflowGwfdrn(gwf, stress_period_data={kper: alt_rec for kper in bnd_nper})
         elif alt_bnd == "chd":
-            _ = flopy.mf6.ModflowGwfchd(gwf, stress_period_data={kper: alt_rec for kper in range(nper)})
+            _ = flopy.mf6.ModflowGwfchd(gwf, stress_period_data={kper: alt_rec for kper in bnd_nper})
         elif alt_bnd is None:
             pass
         else:
             raise Exception()
 
-    if alt_bnd is None:
-        ghb_rec = alt_rec
-    else:
-        ghb_rec = []
+
+    ghb_rec = []
     ghb_stage = top+1
     if not full_sat_bnd:
         ghb_stage = botm[0] +  (3.*(top-botm[0])/4.)
@@ -164,13 +170,15 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
         for i in range(nrow):
             ghb_rec.append(((k, i, ncol - 1), ghb_stage, 1000.0))
     ghb_spd = {kper:ghb_rec for kper in range(nper)}
+    if alt_bnd is None:
+        ghb_spd.update({kper:alt_rec for kper in bnd_nper})
     ghb = flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_spd)
 
     #if nrow > 1 and ncol > 1:
         #wel_rec = [(nlay - 1, int(nrow / 2), int(ncol / 2), q)]
    #     wspd ={kper:[(nlay - 1, int(nrow / 2), int(ncol / 2), q*(kper+1))] for kper in range(nper)}
     wspd = {}
-    for kper in range(nper):
+    for kper in range(1,nper):
         wel_rec = []
         for k in range(nlay):
             for i in range(nrow):
@@ -716,18 +724,25 @@ def test_xd_box_1():
 
 
             if include_ghb_flux_pm:
-                ghb = gwf.get_package("ghb_0").stress_period_data.array[0]
+               
                 for k in range(nlay):
-                    kijs = [g[0] for g in ghb if g[0][0] == k]
-                    #print(kijs)
-                    if len(kijs) > 0:
-                        pm_name = "ghb_0_k{0}_direct".format(k)
-                        f.write("begin performance_measure {0}\n".format(pm_name))
-                        for kper in range(sim.tdis.nper.data):
-                            for k,i,j in kijs:
-                                f.write("{0} 1 {1} {2} {3} ghb_0 direct 1.0 -1.0e+30\n".format(kper+1,k+1,i+1,j+1))
+                    pm_name = "ghb_0_k{0}_direct".format(k)
+                    lines = ["begin performance_measure {0}\n".format(pm_name)]
+                    
+                    for kper in range(sim.tdis.nper.data):
+                        ghb = gwf.get_package("ghb_0").stress_period_data.array[kper]
+                        if ghb is None:
+                            continue
+                        print(ghb)
+                        
+                        kijs = [g[0] for g in ghb if g[0][0] == k]
+                    
+                        for k,i,j in kijs:
+                            lines.append("{0} 1 {1} {2} {3} ghb_0 direct 1.0 -1.0e+30\n".format(kper+1,k+1,i+1,j+1))
 
-                        f.write("end performance_measure\n\n")
+                    lines.append("end performance_measure\n\n")
+                if len(lines) >2:
+                    [f.write(line) for line in lines]
 
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
         adj.solve_gwf()
@@ -1740,20 +1755,26 @@ def test_xd_box_chd():
                 f.write("end performance_measure\n\n")
 
 
+            
             if include_ghb_flux_pm:
-                ghb = gwf.get_package("ghb_0").stress_period_data.array[0]
                 for k in range(nlay):
-                    kijs = [g[0] for g in ghb if g[0][0] == k]
-                    #print(kijs)
-                    if len(kijs) > 0:
-                        pm_name = "ghb_0_k{0}_direct".format(k)
-                        f.write("begin performance_measure {0}\n".format(pm_name))
-                        for kper in range(sim.tdis.nper.data):
-                            for k,i,j in kijs:
-                                f.write("{0} 1 {1} {2} {3} ghb_0 direct 1.0 -1.0e+30\n".format(kper+1,k+1,i+1,j+1))
+                    pm_name = "ghb_0_k{0}_direct".format(k)
+                    lines = ["begin performance_measure {0}\n".format(pm_name)]
+                    
+                    for kper in range(sim.tdis.nper.data):
+                        ghb = gwf.get_package("ghb_0").stress_period_data.array[kper]
+                        if ghb is None:
+                            continue
+                        print(ghb)
+                        
+                        kijs = [g[0] for g in ghb if g[0][0] == k]
+                    
+                        for k,i,j in kijs:
+                            lines.append("{0} 1 {1} {2} {3} ghb_0 direct 1.0 -1.0e+30\n".format(kper+1,k+1,i+1,j+1))
 
-                        f.write("end performance_measure\n\n")
-
+                    lines.append("end performance_measure\n\n")
+                if len(lines) >2:
+                    [f.write(line) for line in lines]    
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
         adj.solve_gwf()
         adj.solve_adjoint()
@@ -1870,19 +1891,24 @@ def test_xd_box_ss():
                 f.write("end performance_measure\n\n")
 
             if include_ghb_flux_pm:
-                ghb = gwf.get_package("ghb_0").stress_period_data.array[0]
                 for k in range(nlay):
-                    kijs = [g[0] for g in ghb if g[0][0] == k]
-                    # print(kijs)
-                    if len(kijs) > 0:
-                        pm_name = "ghb_0_k{0}_direct".format(k)
-                        f.write("begin performance_measure {0}\n".format(pm_name))
-                        for kper in range(sim.tdis.nper.data):
-                            for k, i, j in kijs:
-                                f.write("{0} 1 {1} {2} {3} ghb_0 direct 1.0 -1.0e+30\n".format(kper + 1, k + 1, i + 1,
-                                                                                               j + 1))
+                    pm_name = "ghb_0_k{0}_direct".format(k)
+                    lines = ["begin performance_measure {0}\n".format(pm_name)]
+                    
+                    for kper in range(sim.tdis.nper.data):
+                        ghb = gwf.get_package("ghb_0").stress_period_data.array[kper]
+                        if ghb is None:
+                            continue
+                        print(ghb)
+                        
+                        kijs = [g[0] for g in ghb if g[0][0] == k]
+                    
+                        for k,i,j in kijs:
+                            lines.append("{0} 1 {1} {2} {3} ghb_0 direct 1.0 -1.0e+30\n".format(kper+1,k+1,i+1,j+1))
 
-                        f.write("end performance_measure\n\n")
+                    lines.append("end performance_measure\n\n")
+                if len(lines) >2:
+                    [f.write(line) for line in lines]
 
         adj = mf6adj.Mf6Adj("test.adj", local_lib_name, verbose_level=1)
         adj.solve_gwf()
@@ -2010,18 +2036,157 @@ def test_sanpedro1():
                     print("...", key, pkey, k + 1)
 
 
+def test_xd_box_drn():
+
+  
+    # workflow flags
+    include_id0 = True  # include idomain = 0 cells
+    include_sto = True
+
+    include_ghb_flux_pm = True
+
+    clean = True
+
+    run_adj = True
+    plot_adj_results = False # plot adj result
+
+    plot_compare = False
+    new_d = 'xd_box_1_test'
+    nrow = 11
+    ncol = 11
+    nlay = 3
+    nper = 3
+    sp_len = 10
+    delr = 10.0
+    delc = 10.0
+    botm = [-10,-100,-1000]
+    if clean:
+        sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
+                                 nlay=nlay,q=-3, icelltype=1, iconvert=1, newton=True, delr=delr, delc=delc,
+                                 full_sat_bnd=False,botm=botm,alt_bnd="drn",sp_len=sp_len)
+    else:
+        sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
+
+    gwf = sim.get_model()
+    id = gwf.dis.idomain.array
+    nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
+    obsval = 1.0
+
+    pert_mult = 1.01
+    weight = 1.0
+
+    p_kijs = []
+    # pm_locs = [(nlay-1,int(nrow/2),ncol-2),(0,int(nrow/2),ncol-2)]
+
+    for k in range(nlay):
+        for i in range(nrow):
+            for j in range(ncol):
+                p_kijs.append((k, i, j))
+
+    pm_locs = []
+    for k in range(nlay):#[0, int(nlay / 2), nlay-1]:
+        for i in range(nrow):#[0, int(nrow / 2), nrow-1]:
+            #for j in [0, int(ncol / 2), ncol-1]:
+            pm_locs.append((k, i, i))
+
+    pm_locs = list(set(pm_locs))
+    pm_locs.sort()
+
+    assert len(pm_locs) > 0
+    sys.path.insert(0,os.path.join(".."))
+    import mf6adj
+    if run_adj:
+        bd = os.getcwd()
+        os.chdir(new_d)
+        sys.path.append(os.path.join("..",".."))
+
+        print('calculating mf6adj sensitivity')
+
+        with open("test.adj",'w') as f:
+            f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
+            for p_kij in pm_locs:
+                k, i, j = p_kij
+                if id[k, i, j] <= 0:
+                    continue
+                pm_name = "direct_pk{1:03d}_pi{2:03d}_pj{3:03d}".format("0", k, i, j)
+                f.write("begin performance_measure {0}\n".format(pm_name))
+                for kper in range(sim.tdis.nper.data):
+                    f.write("{0} 1 {1} {2} {3} head direct {4} -1e+30\n".format(kper + 1, k + 1, i + 1, j + 1, weight))
+                f.write("end performance_measure\n\n")
+
+                pm_name = "phi_pk{1:03d}_pi{2:03d}_pj{3:03d}".format("0",k,i,j)
+                f.write("begin performance_measure {0}\n".format(pm_name))
+                for kper in range(sim.tdis.nper.data):
+                    f.write("{0} 1 {1} {2} {3} head residual {4} {5}\n".format(kper+1,k+1,i+1,j+1,weight,obsval))
+                f.write("end performance_measure\n\n")
+
+
+            if include_ghb_flux_pm:
+                for k in range(nlay):
+                    pm_name = "ghb_0_k{0}_direct".format(k)
+                    lines = ["begin performance_measure {0}\n".format(pm_name)]
+                    
+                    for kper in range(sim.tdis.nper.data):
+                        ghb = gwf.get_package("ghb_0").stress_period_data.array[kper]
+                        if ghb is None:
+                            continue
+                        print(ghb)
+                        
+                        kijs = [g[0] for g in ghb if g[0][0] == k]
+                    
+                        for k,i,j in kijs:
+                            lines.append("{0} 1 {1} {2} {3} ghb_0 direct 1.0 -1.0e+30\n".format(kper+1,k+1,i+1,j+1))
+
+                    lines.append("end performance_measure\n\n")
+                if len(lines) >2:
+                    [f.write(line) for line in lines]
+                
+        adj = mf6adj.Mf6Adj("test.adj", local_lib_name,verbose_level=1)
+        adj.solve_gwf()
+        adj.solve_adjoint()
+        adj._perturbation_test(pert_mult=pert_mult)
+        adj.finalize()
+
+        if plot_adj_results:
+            afiles_to_plot = [f for f in os.listdir(".") if (f.startswith("pm-direct") or f.startswith("pm-phi")) and f.endswith(".dat")]
+            afiles_to_plot.sort()
+            from matplotlib.backends.backend_pdf import PdfPages
+            with PdfPages('adj.pdf') as pdf:
+                for i,afile in enumerate(afiles_to_plot):
+                    arr = np.atleast_2d(np.loadtxt(afile))
+                    fig,ax = plt.subplots(1,1,figsize=(10,10))
+                    cb = ax.imshow(arr)
+                    plt.colorbar(cb,ax=ax)
+                    ax.set_title(afile,loc="left")
+                    plt.tight_layout()
+                    pdf.savefig()
+                    plt.close(fig)
+                    print(afile,i,len(afiles_to_plot))
+
+
+        os.chdir(bd)
+
+    #if run_pert:
+    #    run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
+
+    xd_box_compare(new_d,plot_compare)
+    return new_d
+
+
+
 if __name__ == "__main__":
     # test_xd_box_unstruct_1()
 
 
     # new_d = test_xd_box_ss()
     # new_d = test_xd_box_chd()
-    # new_d = test_xd_box_1()
-    # #xd_box_compare(new_d,True)
+    new_d = test_xd_box_drn()
+    #new_d = test_xd_box_1()
+    xd_box_compare(new_d,True)
     # test_sagehen1()
     # test_sanpedro1()
     #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
-    freyberg_quadtree_demo()
+    #freyberg_quadtree_demo()
 

@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 import numpy as np
 import scipy.sparse as sparse
 from scipy.sparse.linalg import spsolve
@@ -152,6 +153,7 @@ class PerfMeas(object):
         dfs (DataFrame) : summary of composite sensitivity information
 
 		"""
+        adj_start = datetime.now()
         try:
             hdf = h5py.File(hdf5_forward_solution_fname, 'r')
         except Exception as e:
@@ -245,16 +247,17 @@ class PerfMeas(object):
 
         for itime, kk in enumerate(kperkstp[::-1]):
             data = {}
-
-            print('solving adjoint solution for PerfMeas:', self._name, " (kper,kstp)", kk)
+            kper_start = datetime.now()
+            print(kper_start,'-->starting adjoint solve for PerfMeas:', self._name, " (kper,kstp)", kk)
             sol_key = kk_sol_map[kk]
             if sol_key in adf:
                 raise Exception("solution key '{0}' already in adjoint hdf5 file".format(sol_key))
 
+            start = datetime.now()
+            print(start,"forming rhs")
             dfdh = self._dfdh(kk, hdf[sol_key])
             data["dfdh"] = dfdh
             iss = hdf[sol_key]["iss"][0]
-
             if itime != 0:  # transient
                 # get the derv of RHS WRT head
                 drhsdh = hdf[sol_key]["drhsdh"][:]
@@ -262,16 +265,24 @@ class PerfMeas(object):
                 rhs = (drhsdh * lamb) - dfdh
             else:
                 rhs = - dfdh
+            print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
 
-
+            start = datetime.now()
+            print(start,"forming amat")
             amat = hdf[sol_key]["amat"][:]
             head = hdf[sol_key]["head"][:]
-            amat_sp = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
-            amat_sp_t = amat_sp.transpose()
-            lamb = spsolve(amat_sp_t, rhs,use_umfpack=False)
+            #amat_sp = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
+            #amat_sp_t = amat_sp.transpose()
+            amat = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
+            amat = amat.transpose()
+            print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
+            start = datetime.now()
+            print(start,"lambda solve")
+
+            lamb = spsolve(amat, rhs,use_umfpack=True)
             if np.any(np.isnan(lamb)):
                 print("WARNING: nans in adjoint states for pm {0} at kperkstp {1}".format(self._name, kk))
-
+            print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
             is_newton = hdf[sol_key].attrs["is_newton"]
             chd_nodelist = []
             if "chd6" in gwf_package_dict:
@@ -279,6 +290,9 @@ class PerfMeas(object):
                     nodelist = list(hdf[sol_key][pname]["nodelist"][:] - 1)
                     chd_nodelist.extend(nodelist)
             chd_nodelist = np.array(chd_nodelist,dtype=int)
+            start = datetime.now()
+            print(start,"lam_dresdk_h")
+
             k_sens, k33_sens = PerfMeas.lam_dresdk_h(is_newton, lamb, hdf[sol_key]["sat"][:],
                                                      head, ihc, ia, ja, jas, cl1, cl2,
                                                      hwva, top, bot, icelltype,
@@ -290,14 +304,19 @@ class PerfMeas(object):
             data["k33"] = k33_sens
             comp_k_sens += k_sens
             comp_k33_sens += k33_sens
+            print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
 
             if has_sto:
+                start = datetime.now()
+                print(start,"ss")
+
                 if iss == 0:
                     ss_sens = lamb * hdf[sol_key]["dresdss_h"][:]
                 else:
                     ss_sens = np.zeros_like(lamb)
                 data["ss"] = ss_sens
                 comp_ss_sens += ss_sens
+                print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
 
             data["wel6_q"] = lamb
             comp_welq_sens += lamb
@@ -309,6 +328,11 @@ class PerfMeas(object):
                     continue
                 if ptype in bnd_dict:
                     for pname in pnames:
+                        if pname not in hdf[sol_key]:
+                            continue
+                        start = datetime.now()
+                        print(start,"{0},{1}".format(ptype,pname))
+
                         sp_bnd_dict = {"bound": hdf[sol_key][pname]["bound"][:],
                                        "node": hdf[sol_key][pname]["nodelist"][:]}
                         #print(pname,ptype)
@@ -319,16 +343,18 @@ class PerfMeas(object):
                         if len(bnd_dict[ptype]) > 1:
                             comp_bnd_results[pname+"_"+bnd_dict[ptype][1]] += sens_cond
                             data[pname + "_" + bnd_dict[ptype][1]] = sens_cond
+                        print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
 
             data["lambda"] = lamb
             data["head"] = hdf[sol_key]["head"][:]
+            print(datetime.now(),"-->took ",(datetime.now() - kper_start).total_seconds()," seconds to solve adjoint solution for PerfMeas:", self._name, " (kper,kstp)", kk)
 
             if self.verbose_level > 2:
                 data["amat"] = amat
                 data["rhs"] = rhs
-
+            print("...save")
             PerfMeas.write_group_to_hdf(adf, sol_key, data, nodeuser=nodeuser, grid_shape=grid_shape,nodereduced=nodereduced)
-
+        print("...form composite sensitivities")
         data = {}
         data["k11"] = comp_k_sens
         data["k33"] = comp_k33_sens
@@ -340,7 +366,7 @@ class PerfMeas(object):
 
         for name,vals in comp_bnd_results.items():
             data[name] = vals
-
+        print("...save")
         PerfMeas.write_group_to_hdf(adf, "composite", data, nodeuser=nodeuser, grid_shape=grid_shape,nodereduced=nodereduced)
         adf.close()
         hdf.close()
@@ -355,6 +381,7 @@ class PerfMeas(object):
 
         df.index.name = "node"
         df.to_csv("adjoint_summary_{0}.csv".format(self._name))
+        print("\n\n",datetime.now(),"adjoint solve took:",(datetime.now()-adj_start).total_seconds(),"\n\n")
         return df
 
     @staticmethod
