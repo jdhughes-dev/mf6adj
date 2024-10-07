@@ -29,7 +29,7 @@ jobs:
 
     # Setup conda env
     - name: Install Conda environment using micromamba
-      uses: mamba-org/provision-with-micromamba@main
+      uses: mamba-org/setup-micromamba@main
       with:
         environment-file: environment.yml
         environment-name: mf6adj
