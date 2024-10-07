@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 import numpy as np
 import scipy.sparse as sparse
-from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import spsolve, bicgstab, spilu, LinearOperator
 import pandas as pd
 import h5py
 
@@ -138,7 +138,8 @@ class PerfMeas(object):
         return result
 
 
-    def solve_adjoint(self, hdf5_forward_solution_fname, hdf5_adjoint_solution_fname=None):
+    def solve_adjoint(self, hdf5_forward_solution_fname, hdf5_adjoint_solution_fname=None,
+                      linear_solver=None,linear_solver_kwargs={},use_precon=True):
         """Solve for the adjoint state for the performance measure.
 
         Parameters
@@ -147,7 +148,13 @@ class PerfMeas(object):
             that contains all the information needed to solve for the adjoint state
         hdf5_adjoint_solution_fname (str) : the HDF5 file to be created by the adjoint solution process.
             If None, use `"adjoint_solution_{0}_".format(self._name) + hdf5_forward_solution_fname`.
-
+        linear_solver (varies) : the scipy sparse linear alg solver to use.  If None, a choice is made
+            between direct and bicgstab, depending if the number of nodes is less than 50,000.  If `str`, 
+            can be "direct" or "bicgstab".  Otherwise, can be a function pointer to a solver function
+            in which the first two args are the CSR amat matrix and the dense RHS vector, respectively
+        linear_solver_kwargs (dict): dictionary of keyword args to pass to `linear_solver`.  Default is {}
+        use_precon (bool): flag to use an ILU preconditioner with iterative linear solver.
+        
         Returns
         -------
         dfs (DataFrame) : summary of composite sensitivity information
@@ -278,8 +285,55 @@ class PerfMeas(object):
             print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
             start = datetime.now()
             print(start,"lambda solve")
+            m = None
+            if linear_solver is None:
+                if head.shape[0] < 50000:
+                    _linear_solver = spsolve
+                    _linear_solver_kwargs = {"use_umfpack":True}
+                else:
+                    _linear_solver = bicgstab
+                    _linear_solver_kwargs = {"rtol":1e-5,"atol":1e-5,"maxiter":200}
+                    if use_precon:
+                        amat_ilu = spilu(amat)
+                        m = LinearOperator((head.shape[0],head.shape[0]), amat_ilu.solve)
 
-            lamb = spsolve(amat, rhs,use_umfpack=True)
+            elif isinstance(linear_solver,str):
+                if linear_solver == "direct":
+                    _linear_solver = spsolve
+                    if len(linear_solver_kwargs) == 0:
+                        _linear_solver_kwargs = {"use_umfpack":True}
+                    else:
+                        _linear_solver_kwargs = linear_solver_kwargs
+                elif linear_solver == "bicgstab":
+                    _linear_solver = bicgstab
+                    if len(linear_solver_kwargs) == 0:
+                        _linear_solver_kwargs = {"rtol":1e-5,"atol":1e-5,"maxiter":200}
+                    else:
+                        _linear_solver_kwargs = linear_solver_kwargs
+                    if use_precon:
+                        amat_ilu = spilu(amat)
+                        m = LinearOperator((head.shape[0],head.shape[0]), amat_ilu.solve)
+                else:
+                    raise Exception("unrecognized 'linear_solver' value: '{0}', should be 'direct' or 'bicgstab'".\
+                        format(linear_solver))
+            else:
+                _linear_solver = linear_solver
+                _linear_solver_kwargs = linear_solver_kwargs
+                if use_precon:
+                    amat_ilu = spilu(amat)
+                    m = LinearOperator((head.shape[0], head.shape[0]), amat_ilu.solve)
+
+            if m is not None:
+                _linear_solver_kwargs["M"] = m
+
+            print("...solving with ",str(_linear_solver))
+            print("...with options:",str(_linear_solver_kwargs))
+
+            #lamb = spsolve(amat, rhs,use_umfpack=True)
+            lamb = _linear_solver(amat,rhs,**_linear_solver_kwargs)
+            if isinstance(lamb,tuple):
+                print("solver returned:",str(lamb[1]))
+                lamb = lamb[0]
             if np.any(np.isnan(lamb)):
                 print("WARNING: nans in adjoint states for pm {0} at kperkstp {1}".format(self._name, kk))
             print(datetime.now(),"...took", (datetime.now() - start).total_seconds())

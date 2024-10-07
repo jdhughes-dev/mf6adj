@@ -858,12 +858,17 @@ class Mf6Adj(object):
         if pert_save:
             return head_dict, sp_package_data
 
-    def solve_adjoint(self):
+    def solve_adjoint(self,linear_solver=None,linear_solver_kwargs={}, use_precon=True):
         """solve for the adjoint state, one performance measure at at time
 
         Parameters
         ----------
-        None
+        linear_solver (varies) : the scipy sparse linear alg solver to use.  If None, a choice is made
+            between direct and bicgstab, depending if the number of nodes is less than 50,000.  If `str`, 
+            can be "direct" or "bicgstab".  Otherwise, can be a function pointer to a solver function
+            in which the first two args are the CSR amat matrix and the dense RHS vector, respectively
+        linear_solver_kwargs (dict): dictionary of keyword args to pass to `linear_solver`.  Default is {}
+        use_precon (bool): flag to use an ILU preconditioner with iterative linear solver.
 
         Returns
         -------
@@ -880,7 +885,9 @@ class Mf6Adj(object):
 
         dfs = {}
         for pm in self._performance_measures:
-            df = pm.solve_adjoint(self._hdf5_name)
+            df = pm.solve_adjoint(self._hdf5_name,linear_solver=linear_solver,
+                                  linear_solver_kwargs=linear_solver_kwargs,
+                                  use_precon=use_precon)
             dfs[pm.name] = df
         return dfs
 
