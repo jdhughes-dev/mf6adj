@@ -206,6 +206,8 @@ class PerfMeas(object):
         nodereduced = hdf["gwf_info"]["nodereduced"][:]
         if len(nodeuser) == 1:
             nodeuser = np.arange(nnodes[0],dtype=int)
+        if len(nodereduced) == 1:
+            nodereduced = None
         lamb = np.zeros(nnodes)
 
         grid_shape = None
