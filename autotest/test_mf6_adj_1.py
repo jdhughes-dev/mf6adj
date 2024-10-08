@@ -178,7 +178,10 @@ def setup_xd_box_model(new_d,sp_len=1.0,nper=1,hk=1.0,k33=1.0,q=-0.1,ss=1.0e-5,
         #wel_rec = [(nlay - 1, int(nrow / 2), int(ncol / 2), q)]
    #     wspd ={kper:[(nlay - 1, int(nrow / 2), int(ncol / 2), q*(kper+1))] for kper in range(nper)}
     wspd = {}
-    for kper in range(1,nper):
+    start_well = 1
+    if nper == 1:
+        start_well = 0
+    for kper in range(start_well,nper):
         wel_rec = []
         for k in range(nlay):
             for i in range(nrow):
@@ -830,13 +833,20 @@ def test_xd_box_unstruct_1():
     if wel is not None:
         f_wel = open(os.path.join(new_d, "{0}_disv.wel".format(name)), 'w')
         f_wel.write("begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n")
-
+        mxbnd = -999
+        for kper in range(sim.tdis.nper.data):
+            if kper in wel.stress_period_data.data:
+                mxbnd = max(mxbnd,wel.stress_period_data.data[kper].shape[0])
         f_wel.write(
-            "begin dimensions\nmaxbound {0}\nend dimensions\n\n".format(wel.stress_period_data.data[0].shape[0]))
+            "begin dimensions\nmaxbound {0}\nend dimensions\n\n".format(mxbnd))
 
         wel_spd = {}
         for kper in range(sim.tdis.nper.data):
+            if kper not in wel.stress_period_data.data:
+                continue
             rarray = wel.stress_period_data.data[kper]
+
+
             print(rarray.dtype)
             xs = [xcc[cid[1], cid[2]] for cid in rarray.cellid]
             ys = [ycc[cid[1], cid[2]] for cid in rarray.cellid]
@@ -2224,12 +2234,12 @@ def test_ie_nomaw_1sp():
 
 if __name__ == "__main__":
 
-    test_ie_nomaw_1sp()
+    #test_ie_nomaw_1sp()
 
-    # test_xd_box_unstruct_1()
+    #test_xd_box_unstruct_1()
 
 
-    # new_d = test_xd_box_ss()
+    new_d = test_xd_box_ss()
     # new_d = test_xd_box_chd()
     #new_d = test_xd_box_drn()
     #new_d = test_xd_box_1()
