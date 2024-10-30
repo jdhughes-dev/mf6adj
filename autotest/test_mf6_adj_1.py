@@ -2231,15 +2231,65 @@ def test_ie_nomaw_1sp():
     duration = (datetime.now() - start).total_seconds()
     print("took:", duration)
 
+def test_ie_1sp():
+    prep = True
+    if os.path.exists('mf6adj'):
+        shutil.rmtree('mf6adj')
+    #shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
+    sys.path.insert(0,os.path.join(".."))
+    import mf6adj
+
+    org_d = os.path.join("ie_1sp")
+    new_d = "ie_1sp_test1"
+
+    adj_file = os.path.join(new_d,"test.adj")
+    if prep:
+        if os.path.exists(new_d):
+            shutil.rmtree(new_d)
+        shutil.copytree(org_d,new_d)
+        shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
+        shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
+        shutil.copy2(gg_bin, os.path.join(new_d, os.path.split(gg_bin)[1]))
+        shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+        shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+        shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+        shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
+
+        pyemu.os_utils.run("mf6", cwd=new_d)
+
+    sim = flopy.mf6.MFSimulation.load(sim_ws=new_d, load_only=["dis", "sfr"])
+    gwf = sim.get_model()
+
+    with open(adj_file,'w') as f:
+        f.write("begin performance_measure single_all_times\n")
+        for kper in range(sim.tdis.nper.data):    
+            nstp = sim.tdis.perioddata.array[0][1]
+            print(nstp)
+            f.write("{0} {3} {1} {2} head direct 1.0 -1.0e+30\n".format(kper+1,32,1808,nstp))
+        f.write("end performance_measure\n\n")
+
+    start = datetime.now()
+    os.chdir(new_d)
+
+    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], os.path.split(local_lib_name)[1], verbose_level=2)
+
+    adj.solve_gwf()
+    adj.solve_adjoint(linear_solver="bicgstab",linear_solver_kwargs={"maxiter":500,"atol":1e-5},use_precon=True)
+    adj.finalize()
+    os.chdir("..")
+    duration = (datetime.now() - start).total_seconds()
+    print("took:", duration)
+
+
 
 if __name__ == "__main__":
-
+    test_ie_1sp()
     #test_ie_nomaw_1sp()
 
     #test_xd_box_unstruct_1()
 
 
-    new_d = test_xd_box_ss()
+    #new_d = test_xd_box_ss()
     # new_d = test_xd_box_chd()
     #new_d = test_xd_box_drn()
     #new_d = test_xd_box_1()
