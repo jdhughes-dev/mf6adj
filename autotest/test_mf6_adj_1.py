@@ -2450,10 +2450,10 @@ def test_xd_box_maw():
 
 if __name__ == "__main__":
     #invest_ie_1sp()
-    #test_ie_nomaw_1sp()
+    test_ie_nomaw_1sp()
 
     #test_xd_box_unstruct_1()
-    test_xd_box_maw()
+    #test_xd_box_maw()
 
     #new_d = test_xd_box_ss()
     #new_d = test_xd_box_chd()
@@ -2461,7 +2461,7 @@ if __name__ == "__main__":
     #new_d = test_xd_box_1()
     #xd_box_compare(new_d,True)
     # test_sagehen1()
-    #test_sanpedro1()
+    test_sanpedro1()
     #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()

@@ -930,7 +930,7 @@ class Mf6Adj(object):
         org_head, org_sp_package_data = self.solve_gwf(pert_save=True)
         tot = 0
         for d in org_sp_package_data["ghb6"][(0,0)]:
-            print(d)
+            #print(d)
             tot += d["simval"]
         base_results = {pm.name: pm.solve_forward(org_head,org_sp_package_data) for pm in self._performance_measures}
         assert len(base_results) == len(self._performance_measures)
@@ -982,7 +982,7 @@ class Mf6Adj(object):
                         pakname = infodict["packagename"]
                         pert_dict = {"kperkstp": kk, "packagename": pakname, "node": infodict["node"],
                                      pert_item: new_bound,"packagetype":paktype}
-                        print("...",pakname,pert_item,kk,org,delt,infodict["node"])
+                        #print("...",pakname,pert_item,kk,org,delt,infodict["node"])
 
                         self._gwf = self._initialize_gwf(self._lib_name, self._flow_dir)
                         pert_head, pert_sp_dict = self.solve_gwf(verbose=False, _sp_pert_dict=pert_dict,pert_save=True)
@@ -1047,7 +1047,7 @@ class Mf6Adj(object):
                 delt = org * pert_mult
                 epsilons.append(delt - pert_arr[inode])
                 pert_arr[inode] = delt
-                print("...",addr,inode,org,delt)
+                #print("...",addr,inode,org,delt)
                 pert_head, pert_sp_dict = self.solve_gwf(verbose=False, _force_k_update=True,pert_save=True)
                 pert_results = {pm.name: (pm.solve_forward(pert_head,pert_sp_dict) - base_results[pm.name]) / epsilons[-1] for pm in
                                 self._performance_measures}
@@ -1098,7 +1098,7 @@ class Mf6Adj(object):
                 org = ss[arr_node]
                 delt = org * pert_mult
                 epsilons.append(delt - pert_arr[arr_node])
-                print("...ss", inode, arr_node, org, delt)
+                #print("...ss", inode, arr_node, org, delt)
                 pert_arr[arr_node] = delt
 
                 # reset the ss property
