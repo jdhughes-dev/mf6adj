@@ -2231,7 +2231,7 @@ def test_ie_nomaw_1sp():
     duration = (datetime.now() - start).total_seconds()
     print("took:", duration)
 
-def invest_ie_1sp():
+def test_ie_1sp():
     prep = True
     if os.path.exists('mf6adj'):
         shutil.rmtree('mf6adj')
@@ -2274,7 +2274,7 @@ def invest_ie_1sp():
     adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], os.path.split(local_lib_name)[1], verbose_level=2)
 
     adj.solve_gwf()
-    adj.solve_adjoint(linear_solver="bicgstab",linear_solver_kwargs={"maxiter":500,"atol":1e-5},use_precon=True)
+    adj.solve_adjoint(linear_solver="bicgstab",linear_solver_kwargs={"maxiter":500,"atol":1e-5},use_precon=False)
     adj.finalize()
     os.chdir("..")
     duration = (datetime.now() - start).total_seconds()
@@ -2449,12 +2449,12 @@ def test_xd_box_maw():
     return new_d
 
 if __name__ == "__main__":
-    #invest_ie_1sp()
+    test_ie_1sp()
     #test_ie_nomaw_1sp()
 
     #test_xd_box_unstruct_1()
     #test_xd_box_maw()
-    test_xd_box_maw()
+    #test_xd_box_maw()
     #new_d = test_xd_box_ss()
     #new_d = test_xd_box_chd()
     #new_d = test_xd_box_drn()

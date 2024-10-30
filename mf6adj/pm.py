@@ -275,7 +275,8 @@ class PerfMeas(object):
                 rhs = (drhsdh * lamb) - dfdh
             else:
                 rhs = - dfdh
-            print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
+            if verbose:
+                print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
 
             start = datetime.now()
             if verbose:
