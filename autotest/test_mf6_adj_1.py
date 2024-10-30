@@ -2231,7 +2231,7 @@ def test_ie_nomaw_1sp():
     duration = (datetime.now() - start).total_seconds()
     print("took:", duration)
 
-def test_ie_1sp():
+def invest_ie_1sp():
     prep = True
     if os.path.exists('mf6adj'):
         shutil.rmtree('mf6adj')
@@ -2283,7 +2283,7 @@ def test_ie_1sp():
 
 
 if __name__ == "__main__":
-    test_ie_1sp()
+    invest_ie_1sp()
     #test_ie_nomaw_1sp()
 
     #test_xd_box_unstruct_1()
