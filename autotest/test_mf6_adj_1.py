@@ -657,8 +657,8 @@ def test_xd_box_1():
 
     plot_compare = False
     new_d = 'xd_box_1_test'
-    nrow = 11
-    ncol = 11
+    nrow = 5
+    ncol = 5
     nlay = 3
     nper = 3
     sp_len = 10
@@ -2062,8 +2062,8 @@ def test_xd_box_drn():
 
     plot_compare = False
     new_d = 'xd_box_1_test'
-    nrow = 11
-    ncol = 11
+    nrow = 5
+    ncol = 5
     nlay = 3
     nper = 3
     sp_len = 10
@@ -2319,8 +2319,8 @@ def test_xd_box_maw():
 
     plot_compare = False
     new_d = 'xd_box_maw_test'
-    nrow = 11
-    ncol = 11
+    nrow = 5
+    ncol = 5
     nlay = 3
     nper = 3
     sp_len = 10
@@ -2337,7 +2337,7 @@ def test_xd_box_maw():
 
     gwf = sim.get_model()
     maw_pakdata = [[0,1,botm[-1],maw_top,"THIEM",len(botm)-1]]
-    maw_conndata = [[0,i,(i+1,10,10),-999,-999,-999.,-999.] for i in range(len(botm)-1)]
+    maw_conndata = [[0,i,(i+1,1,1),-999,-999,-999.,-999.] for i in range(len(botm)-1)]
     maw_perioddata = {0:[[0,"STATUS","INACTIVE"]],1:[[0,"STATUS","ACTIVE"],[0,"RATE",-1.0]]}
     maw = flopy.mf6.ModflowGwfmaw(gwf,nmawwells=len(maw_pakdata),packagedata=maw_pakdata,
         connectiondata=maw_conndata,perioddata=maw_perioddata)
@@ -2450,18 +2450,18 @@ def test_xd_box_maw():
 
 if __name__ == "__main__":
     #invest_ie_1sp()
-    test_ie_nomaw_1sp()
+    #test_ie_nomaw_1sp()
 
     #test_xd_box_unstruct_1()
     #test_xd_box_maw()
-
+    test_xd_box_maw()
     #new_d = test_xd_box_ss()
     #new_d = test_xd_box_chd()
     #new_d = test_xd_box_drn()
     #new_d = test_xd_box_1()
     #xd_box_compare(new_d,True)
     # test_sagehen1()
-    test_sanpedro1()
+    #test_sanpedro1()
     #freyberg_structured_demo()
     #freyberg_structured_highres_demo()
     #freyberg_notional_unstruct_demo()
