@@ -282,7 +282,7 @@ class PerfMeas(object):
             head = hdf[sol_key]["head"][:]
             #amat_sp = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
             #amat_sp_t = amat_sp.transpose()
-            amat = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
+            amat = sparse.csr_matrix((amat.copy()[:ja.shape[0]], ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
             amat = amat.transpose()
             print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
             start = datetime.now()

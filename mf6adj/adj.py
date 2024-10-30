@@ -640,6 +640,8 @@ class Mf6Adj(object):
         dts = []
         kpers, kstps = [], []
 
+        nnode = self._gwf.get_value(self._gwf.get_var_address("NODES", self._gwf_name,"DIS"))[0]
+
         is_newton = self._gwf.get_value(self._gwf.get_var_address("INEWTON", self._gwf_name))[0]
         has_sto = False
         if PerfMeas.has_sto_iconvert(self._gwf):
@@ -746,12 +748,12 @@ class Mf6Adj(object):
             amat = self._gwf.get_value(self._gwf.get_var_address("AMAT", "SLN_1")).copy()
             data_dict = {"amat": amat}
 
-            head = self._gwf.get_value(self._gwf.get_var_address("X", self._gwf_name.upper()))
+            head = self._gwf.get_value(self._gwf.get_var_address("X", self._gwf_name.upper()))[:nnode]
             data_dict["head"] = head
             if pert_save:
                 head_dict[kperkstp] = head
 
-            head_old = self._gwf.get_value(self._gwf.get_var_address("XOLD", self._gwf_name.upper()))
+            head_old = self._gwf.get_value(self._gwf.get_var_address("XOLD", self._gwf_name.upper()))[:nnode]
             data_dict["head_old"] = head_old
 
             k11 = self._gwf.get_value(self._gwf.get_var_address("K11", self._gwf_name.upper(), "NPF"))
