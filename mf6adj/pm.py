@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+import logging
 import numpy as np
 import scipy.sparse as sparse
 from scipy.sparse.linalg import spsolve, bicgstab, spilu, LinearOperator
@@ -79,6 +80,8 @@ class PerfMeas(object):
         self._name = pm_name.lower().strip()
         self._entries = pm_entries
         self.verbose_level = int(verbose_level)
+        self.logger = logging.getLogger(logging.__name__)
+        logging.basicConfig(filename=self._name+".log",format='%(asctime)s %(message)s')
 
 
     @property
@@ -139,7 +142,7 @@ class PerfMeas(object):
 
 
     def solve_adjoint(self, hdf5_forward_solution_fname, hdf5_adjoint_solution_fname=None,
-                      linear_solver=None,linear_solver_kwargs={},use_precon=True,verbose=False):
+                      linear_solver=None,linear_solver_kwargs={},use_precon=True):
         """Solve for the adjoint state for the performance measure.
 
         Parameters
@@ -171,7 +174,7 @@ class PerfMeas(object):
             hdf5_adjoint_solution_fname = os.path.join(pth, "adjoint_solution_{0}_".format(self._name) + hdf5_forward_solution_fname)
 
         if os.path.exists(hdf5_adjoint_solution_fname):
-            print("WARNING: removing existing adjoint solution file '{0}'".format(hdf5_adjoint_solution_fname))
+            self.logger.warning("WARNING: removing existing adjoint solution file '{0}'".format(hdf5_adjoint_solution_fname))
             os.remove(hdf5_adjoint_solution_fname)
 
         adf = h5py.File(hdf5_adjoint_solution_fname, "w")
@@ -215,7 +218,7 @@ class PerfMeas(object):
             grid_shape = (hdf["gwf_info"]["nlay"][0],
                           hdf["gwf_info"]["nrow"][0],
                           hdf["gwf_info"]["ncol"][0])
-            print("...structured grid found, shape:", grid_shape)
+            self.logger.info("...structured grid found, shape:", grid_shape)
 
         ia = hdf["gwf_info"]["ia"][:]
         ja = hdf["gwf_info"]["ja"][:]
@@ -257,14 +260,13 @@ class PerfMeas(object):
         for itime, kk in enumerate(kperkstp[::-1]):
             data = {}
             kper_start = datetime.now()
-            print(kper_start,'-->starting adjoint solve for PerfMeas:', self._name, " (kper,kstp)", kk)
+            self.logger.info(kper_start,'-->starting adjoint solve for PerfMeas:', self._name, " (kper,kstp)", kk)
             sol_key = kk_sol_map[kk]
             if sol_key in adf:
                 raise Exception("solution key '{0}' already in adjoint hdf5 file".format(sol_key))
 
             start = datetime.now()
-            if verbose:
-                print(start,"forming rhs")
+            self.logger.info("forming rhs")
             dfdh = self._dfdh(kk, hdf[sol_key])
             data["dfdh"] = dfdh
             iss = hdf[sol_key]["iss"][0]
@@ -275,23 +277,18 @@ class PerfMeas(object):
                 rhs = (drhsdh * lamb) - dfdh
             else:
                 rhs = - dfdh
-            if verbose:
-                print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
+                self.logger.info("...took:{0}".format((datetime.now() - start).total_seconds()))
 
             start = datetime.now()
-            if verbose:
-                print(start,"forming amat")
+
+            self.logger.info("forming amat")
             amat = hdf[sol_key]["amat"][:]
             head = hdf[sol_key]["head"][:]
-            #amat_sp = sparse.csr_matrix((amat.copy(), ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
-            #amat_sp_t = amat_sp.transpose()
             amat = sparse.csr_matrix((amat.copy()[:ja.shape[0]], ja.copy(), ia.copy()), shape=(len(ia) - 1, len(ia) - 1))
             amat = amat.transpose()
-            if verbose:
-                print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
+            self.logger.info("...took:{0}".format((datetime.now() - start).total_seconds()))
             start = datetime.now()
-            if verbose:
-                print(start,"lambda solve")
+            self.logger.info("lambda solve")
             m = None
             if linear_solver is None:
                 if head.shape[0] < 50000:
@@ -332,20 +329,19 @@ class PerfMeas(object):
 
             if m is not None:
                 _linear_solver_kwargs["M"] = m
-            if verbose:
-                print("...solving with ",str(_linear_solver))
-                print("...with options:",str(_linear_solver_kwargs))
+
+            self.logger.info("...solving with "+str(_linear_solver))
+            self.logger.info("...with options:"+str(_linear_solver_kwargs))
 
             #lamb = spsolve(amat, rhs,use_umfpack=True)
             lamb = _linear_solver(amat,rhs,**_linear_solver_kwargs)
             if isinstance(lamb,tuple):
-                if verbose:
-                    print("solver returned:",str(lamb[1]))
+
+                self.logger.info("solver returned:"+str(lamb[1]))
                 lamb = lamb[0]
             if np.any(np.isnan(lamb)):
-                print("WARNING: nans in adjoint states for pm {0} at kperkstp {1}".format(self._name, kk))
-            if verbose:
-                print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
+                self.logger.warning("WARNING: nans in adjoint states for pm {0} at kperkstp {1}".format(self._name, kk))
+            self.logger.info("...took:{0}".format((datetime.now() - start).total_seconds()))
             is_newton = hdf[sol_key].attrs["is_newton"]
             chd_nodelist = []
             if "chd6" in gwf_package_dict:
@@ -354,9 +350,7 @@ class PerfMeas(object):
                     chd_nodelist.extend(nodelist)
             chd_nodelist = np.array(chd_nodelist,dtype=int)
             start = datetime.now()
-            if verbose:
-                print(start,"lam_dresdk_h")
-
+            self.logger.info("lam_dresdk_h")
             k_sens, k33_sens = PerfMeas.lam_dresdk_h(is_newton, lamb, hdf[sol_key]["sat"][:],
                                                      head, ihc, ia, ja, jas, cl1, cl2,
                                                      hwva, top, bot, icelltype,
@@ -368,13 +362,12 @@ class PerfMeas(object):
             data["k33"] = k33_sens
             comp_k_sens += k_sens
             comp_k33_sens += k33_sens
-            if verbose:
-                print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
+            self.logger.info("...took:{0}".format((datetime.now() - start).total_seconds()))
 
             if has_sto:
                 start = datetime.now()
-                if verbose:
-                    print(start,"ss")
+
+                self.logger.info("ss")
 
                 if iss == 0:
                     ss_sens = lamb * hdf[sol_key]["dresdss_h"][:]
@@ -382,8 +375,7 @@ class PerfMeas(object):
                     ss_sens = np.zeros_like(lamb)
                 data["ss"] = ss_sens
                 comp_ss_sens += ss_sens
-                if verbose:
-                    print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
+                self.logger.info("...took:{0}".format((datetime.now() - start).total_seconds()))
 
             data["wel6_q"] = lamb
             comp_welq_sens += lamb
@@ -398,8 +390,8 @@ class PerfMeas(object):
                         if pname not in hdf[sol_key]:
                             continue
                         start = datetime.now()
-                        if verbose:
-                            print(start,"{0},{1}".format(ptype,pname))
+
+                        self.logger.info("{0},{1}".format(ptype,pname))
 
                         sp_bnd_dict = {"bound": hdf[sol_key][pname]["bound"][:],
                                        "node": hdf[sol_key][pname]["nodelist"][:]}
@@ -411,21 +403,18 @@ class PerfMeas(object):
                         if len(bnd_dict[ptype]) > 1:
                             comp_bnd_results[pname+"_"+bnd_dict[ptype][1]] += sens_cond
                             data[pname + "_" + bnd_dict[ptype][1]] = sens_cond
-                        if verbose:
-                            print(datetime.now(),"...took", (datetime.now() - start).total_seconds())
+                        self.logger.info("...took:{0}".format((datetime.now() - start).total_seconds()))
 
             data["lambda"] = lamb
             data["head"] = hdf[sol_key]["head"][:]
-            print(datetime.now(),"-->took ",(datetime.now() - kper_start).total_seconds()," seconds to solve adjoint solution for PerfMeas:", self._name, " (kper,kstp)", kk)
+            self.logger.info("-->took:"+str((datetime.now() - kper_start).total_seconds())," seconds to solve adjoint solution for PerfMeas:"+self._name+" (kper,kstp)"+str(kk))
 
             if self.verbose_level > 2:
                 data["amat"] = amat
                 data["rhs"] = rhs
-            if verbose:
-                print("...save")
+            self.logger.info("...save")
             PerfMeas.write_group_to_hdf(adf, sol_key, data, nodeuser=nodeuser, grid_shape=grid_shape,nodereduced=nodereduced)
-        if verbose:
-            print("...form composite sensitivities")
+        self.logger.info("...form composite sensitivities")
         data = {}
         data["k11"] = comp_k_sens
         data["k33"] = comp_k33_sens
@@ -437,8 +426,7 @@ class PerfMeas(object):
 
         for name,vals in comp_bnd_results.items():
             data[name] = vals
-        if verbose:
-            print("...save")
+        self.logger.info("...save")
         PerfMeas.write_group_to_hdf(adf, "composite", data, nodeuser=nodeuser, grid_shape=grid_shape,nodereduced=nodereduced)
         adf.close()
         hdf.close()
@@ -453,7 +441,9 @@ class PerfMeas(object):
 
         df.index.name = "node"
         df.to_csv("adjoint_summary_{0}.csv".format(self._name))
-        print("\n\n",datetime.now(),"adjoint solve took:",(datetime.now()-adj_start).total_seconds(),"\n\n")
+
+        print(datetime.now(),"adjoint solve took: " + str((datetime.now()-adj_start).total_seconds())+" for pm {0} at kperkstp {1}".format(self._name, kk))
+        self.logger.info("adjoint solve took: " + str((datetime.now()-adj_start).total_seconds())+" for pm {0} at kperkstp {1}".format(self._name, kk))
         return df
 
     @staticmethod

@@ -1,11 +1,13 @@
 import os
 import shutil
 from datetime import datetime
+import logging
 import numpy as np
 import pandas as pd
 import h5py
 import modflowapi
 import flopy
+
 
 from .pm import PerfMeasRecord, PerfMeas
 
@@ -33,7 +35,8 @@ class Mf6Adj(object):
         if not os.path.exists(adj_filename):
             raise Exception("adj_filename '{0}' not found".format(adj_filename))
         self.adj_filename = adj_filename
-
+        self.logger = logging.getLogger(logging.__name__)
+        logging.basicConfig(filename=adj_filename+".log",format='%(asctime)s %(message)s')
         # process the flow model
         # make sure the lib exists
         if not os.path.exists(lib_name):
@@ -49,10 +52,10 @@ class Mf6Adj(object):
             raise Exception("model is not a gwf6 type: {0}". \
                             format(self._gwf_model_dict[self._gwf_name]))
         if "dis6" in self._gwf_package_dict:
-            print("...structured grid found")
+            self.logger.info("...structured grid found")
             is_structured = True
         else:
-            print("...unstructured grid found")
+            self.logger.info("...unstructured grid found")
             is_structured = False
         self._gwf = None
         self._lib_name = lib_name
@@ -203,10 +206,10 @@ class Mf6Adj(object):
 
                         raw = line2.lower().strip().split()
                         if self.is_structured and len(raw) != 9:
-                            print("parsed line",raw)
+                            self.logger.info("parsed line: "+raw)
                             raise Exception("performance measure entry on line {0} has the wrong number of items, found {1}, should have 9".format(count,len(raw)))
                         elif not self.is_structured and len(raw) != 8:
-                            print("parsed line", raw)
+                            self.logger.info("parsed line: "+raw)
                             raise Exception(
                                 "performance measure entry on line {0} has the wrong number of items, found {1}, should have 8".format(
                                     count, len(raw)))
@@ -232,9 +235,9 @@ class Mf6Adj(object):
                             if len(nuser) > 1:
                                 nn = np.where(nuser == inode)[0]
                                 if nn.shape[0] != 1:
-                                    print(n, nn)
+                                    self.logger.info(str(n)+" "+str(nn))
                                     if self.is_structured:
-                                        print(kij)
+                                        self.logger.info(str(kij))
                                     raise Exception("node num {0} not in reduced node num".format(n))
 
                                 inode = nn[0]
@@ -272,7 +275,7 @@ class Mf6Adj(object):
                                     break
                                 ppnames.extend(pnames)
                             if not found:
-                                print(ppnames)
+                                self.logger.info(str(ppnames))
                                 raise Exception("`pm_type` {0} names a GWF package instance that was not found".format(pm_type))
 
                         pm_entries.append(PerfMeasRecord(kper,kstp,inode,pm_type,pm_form,weight,obsval,k,i,j))
@@ -427,7 +430,7 @@ class Mf6Adj(object):
                     iitem = item["bound"]
                     dset = grp.create_dataset(tag, iitem.shape, dtype=iitem.dtype, data=iitem)
                 else:
-                    print("Mf6Adj._write_group_to_hdf(): unused data_dict item {0}".format(tag))
+                    self.logger.info("Mf6Adj._write_group_to_hdf(): unused data_dict item {0}".format(tag))
             else:
                 raise Exception("unrecognized data_dict entry: {0},type:{1}".format(tag, type(item)))
 
@@ -623,8 +626,8 @@ class Mf6Adj(object):
             self._hdf5_name = hdf5_name
         fhd = self._open_hdf(self._hdf5_name)
         sim_start = datetime.now()
-        if verbose:
-            print("...starting flow solution at {0}".format(sim_start.strftime(DT_FMT)))
+
+        self.logger.info("...starting flow solution at {0}".format(sim_start.strftime(DT_FMT)))
         # get current sim time
         ctime = self._gwf.get_current_time()
         # get ending sim time
@@ -682,7 +685,7 @@ class Mf6Adj(object):
                 if _sp_pert_dict["kperkstp"] == kperkstp:
                     for pert_item in self._gwf_boundary_attr_dict[_sp_pert_dict["packagetype"]]:
                         if pert_item not in _sp_pert_dict:
-                            print("pert_item '{0}' not in _sp_pert_dict".format(pert_item))
+                            self.logger.info("pert_item '{0}' not in _sp_pert_dict".format(pert_item))
                             continue
                         addr = [pert_item.upper(), self._gwf_name, _sp_pert_dict["packagename"].upper()]
                         wbaddr = self._gwf.get_var_address(*addr)
@@ -711,7 +714,7 @@ class Mf6Adj(object):
                 if convg:
                     td = (datetime.now() - sol_start).total_seconds() / 60.0
                     if verbose:
-                        print(
+                        self.logger.info(
                             "flow stress period,time step {0},{1} converged with {2} iters, took {3:10.5G} mins".format(
                                 stress_period, time_step, kiter, td))
                     break
@@ -720,7 +723,7 @@ class Mf6Adj(object):
             if not convg:
                 td = (datetime.now() - sol_start).total_seconds() / 60.0
                 if verbose:
-                    print(
+                    self.logger.info(
                         "flow stress period,time step {0},{1} did not converge, {2} iters, took {3:10.5G} mins".format(
                             stress_period, time_step, kiter, td))
                 num_fails += 1
@@ -849,10 +852,9 @@ class Mf6Adj(object):
         sim_end = datetime.now()
         td = (sim_end - sim_start).total_seconds() / 60.0
         if verbose:
-            print("\n...flow solution finished at {0}, took: {1:10.5G} mins".format(sim_end.strftime(DT_FMT), td))
+            self.logger.info("\n...flow solution finished at {0}, took: {1:10.5G} mins".format(sim_end.strftime(DT_FMT), td))
             if num_fails > 0:
-                print("...failed to converge {0} times".format(num_fails))
-            print("\n")
+                self.logger.info("...failed to converge {0} times".format(num_fails))
 
         PerfMeas.write_group_to_hdf(fhd, "aux", {"totime": ctimes, "dt": dts, "kper": kpers, "kstp": kstps})
         self._add_gwf_info_to_hdf(fhd)
@@ -967,7 +969,7 @@ class Mf6Adj(object):
             nodes = []
             names = []
             pert_results_dict = {pm.name: [] for pm in self._performance_measures}
-            print("running perturbations for ", paktype)
+            self.logger.info("running perturbations for ", paktype)
             for kk, infolist in pdict.items():
                 for ibnd,infodict in enumerate(infolist):
                     #bnd_items = infodict["bound"].shape[0]
@@ -1034,7 +1036,7 @@ class Mf6Adj(object):
         inodes = self._gwf.get_value_ptr(wbaddr).shape[0]
 
         for addr in address:
-            print("running perturbations for ", addr)
+            self.logger.info("running perturbations for ", addr)
             pert_results_dict = {pm.name: [] for pm in self._performance_measures}
             wbaddr = self._gwf.get_var_address(*addr)
 
@@ -1088,7 +1090,7 @@ class Mf6Adj(object):
             if os.path.exists(os.path.join(self._flow_dir,self._lib_name)):
                 shutil.copy2(os.path.join(self._flow_dir,self._lib_name),os.path.join(test_dir,self._lib_name))
 
-            print("running manual flopy based perturbations for sto ss")
+            self.logger.info("running manual flopy based perturbations for sto ss")
             pert_results_dict = {pm.name: [] for pm in self._performance_measures}
             epsilons = []
 
