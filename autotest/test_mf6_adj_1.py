@@ -736,7 +736,7 @@ def test_xd_box_1():
                         ghb = gwf.get_package("ghb_0").stress_period_data.array[kper]
                         if ghb is None:
                             continue
-                        print(ghb)
+                        #print(ghb)
                         
                         kijs = [g[0] for g in ghb if g[0][0] == k]
                     
@@ -2453,13 +2453,13 @@ if __name__ == "__main__":
     #test_ie_nomaw_1sp()
 
     #test_xd_box_unstruct_1()
-    test_xd_box_maw()
+    #new_d = test_xd_box_maw()
     #test_xd_box_maw()
     #new_d = test_xd_box_ss()
     #new_d = test_xd_box_chd()
     #new_d = test_xd_box_drn()
-    #new_d = test_xd_box_1()
-    #xd_box_compare(new_d,True)
+    new_d = test_xd_box_1()
+    xd_box_compare(new_d,True)
     # test_sagehen1()
     #test_sanpedro1()
     #freyberg_structured_demo()

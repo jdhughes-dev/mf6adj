@@ -80,7 +80,7 @@ class PerfMeas(object):
         self._name = pm_name.lower().strip()
         self._entries = pm_entries
         self.verbose_level = int(verbose_level)
-        self.logger = logging.getLogger(logging.__name__)
+        self.logger = logging.getLogger(logging.__name__+self._name)
         logging.basicConfig(filename=self._name+".log",format='%(asctime)s %(message)s')
 
 

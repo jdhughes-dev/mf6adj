@@ -35,7 +35,7 @@ class Mf6Adj(object):
         if not os.path.exists(adj_filename):
             raise Exception("adj_filename '{0}' not found".format(adj_filename))
         self.adj_filename = adj_filename
-        self.logger = logging.getLogger(logging.__name__)
+        self.logger = logging.getLogger(logging.__name__+".Mf6Adj")
         logging.basicConfig(filename=adj_filename+".log",format='%(asctime)s %(message)s')
         # process the flow model
         # make sure the lib exists
@@ -123,7 +123,7 @@ class Mf6Adj(object):
         """
         # clear any existing PMs
         self._performance_measures = []
-
+        self.logger.info("processing adjoint file: "+str(self.adj_filename))
         addr = ["NODEUSER", self._gwf_name.upper(), "DIS"]
         wbaddr = self._gwf.get_var_address(*addr)
         nuser = self._gwf.get_value(wbaddr) - 1
