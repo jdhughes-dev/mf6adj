@@ -768,8 +768,6 @@ def test_xd_box_1():
                     pdf.savefig()
                     plt.close(fig)
                     print(afile,i,len(afiles_to_plot))
-
-
         os.chdir(bd)
 
     #if run_pert:
@@ -780,7 +778,6 @@ def test_xd_box_1():
 
 
 def test_xd_box_unstruct_1():
-
     # workflow flags
     include_id0 = True  # include an idomain = cell - has to be false for unstructured...
     include_sto = True
@@ -2448,7 +2445,115 @@ def test_xd_box_maw():
     xd_box_compare(new_d,plot_compare)
     return new_d
 
+
+def invest_ie_1sp():
+    prep = False
+    if os.path.exists('mf6adj'):
+        shutil.rmtree('mf6adj')
+    #shutil.copytree(os.path.join('..','mf6adj'),os.path.join('mf6adj'))
+    sys.path.insert(0,os.path.join(".."))
+    import mf6adj
+
+    org_d = os.path.join("IE_temp1")
+    new_d = "ie_1sp_test_notvk_notvs_noats_tighter"
+
+    adj_file = os.path.join(new_d,"test.adj")
+    if prep:
+        if os.path.exists(new_d):
+            shutil.rmtree(new_d)
+        shutil.copytree(org_d,new_d)
+        shutil.copy2(lib_name, os.path.join(new_d, os.path.split(lib_name)[1]))
+        shutil.copy2(mf6_bin, os.path.join(new_d, os.path.split(mf6_bin)[1]))
+        shutil.copy2(gg_bin, os.path.join(new_d, os.path.split(gg_bin)[1]))
+        shutil.copytree(os.path.join('xmipy'), os.path.join(new_d, 'xmipy'))
+        shutil.copytree(os.path.join('bmipy'), os.path.join(new_d, 'bmipy'))
+        shutil.copytree(os.path.join('modflowapi'), os.path.join(new_d, 'modflowapi'))
+        shutil.copytree(os.path.join('flopy'), os.path.join(new_d, 'flopy'))
+
+        pyemu.os_utils.run("mf6", cwd=new_d)
+
+    sim = flopy.mf6.MFSimulation.load(sim_ws=new_d, load_only=["dis", "sfr"])
+    gwf = sim.get_model()
+
+    adj_file = "drn_perfmeas.dat"
+
+    start = datetime.now()
+    os.chdir(new_d)
+
+    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], os.path.split(local_lib_name)[1], verbose_level=2)
+
+    adj.solve_gwf()
+    #adj._hdf5_name = "flow.hd5"
+    adj.solve_adjoint(linear_solver="bicgstab",linear_solver_kwargs={"maxiter":50000,"atol":1e-8},use_precon=False)
+    adj.finalize()
+    os.chdir("..")
+    duration = (datetime.now() - start).total_seconds()
+    print("took:", duration)
+
+def invest_ie():
+    new_d = "ie_1sp_test_notvk_notvs_noats"
+    #new_d = "ie_1sp_test_notvk_notvs_noats_tighter"
+    flow_h5_fname = "flow_2024-12-27_14-49-28.hd5"
+    adj_h5_fname = "adjoint_solution_drn_flow_2024-12-27_14-49-28.hd5"
+
+    import h5py
+    adj_hdf = h5py.File(os.path.join(new_d,adj_h5_fname),'r')
+    keys = list(adj_hdf.keys())
+    keys.remove("composite")
+    keys.sort()
+    keys = keys[::-1]
+    lambs = {}
+    heads = {}
+    for key in keys:
+        sol = adj_hdf[key]
+        #print(sol.keys())
+        lam = sol["lambda"][:]
+        head = sol["head"][:]
+        
+        nodeuser = sol["nodeuser"][:]
+        #print(lam.shape)
+        #print(nodeuser)
+        ser = pd.Series(lam,index=nodeuser)
+        kper = int(key.split("_")[1].split(":")[1])
+        kstp = int(key.split("_")[2].split(":")[1])
+        num = float(kper) + float(kstp/1000)
+        #print(ser)
+        if num in lambs:
+            raise Exception()
+        lambs[num] = lam
+        heads[num] = head
+    df = pd.DataFrame(lambs,index=nodeuser).T
+    hdf = pd.DataFrame(heads,index=nodeuser).T
+    
+    #print(df)
+
+    
+    maxnode = df.idxmax(skipna=True,axis=1)
+
+    #print(maxnode)
+    #print(df.loc[df.index[0],:].idxmax())
+    #return
+    fig = plt.Figure(figsize=(10,10))
+    desc = df.T.describe().T.apply(np.log10)
+    #desc.loc[:,"maxnode"] = maxnode
+    axes = desc.loc[:,"max"].plot(subplots=True,fig=fig)
+    hdesc = hdf.T.describe()
+    
+    twinaxes = []
+    for i,ax in enumerate(axes):
+        ax.set_ylabel("$log_{10}$ lambda")
+        ax.set_xlabel("nper minus kper")
+        #axt = ax.twinx()
+        #hdesc.iloc[i,:].plot(ax=axt)
+    plt.tight_layout()
+    plt.savefig("lamb_summary.pdf")
+
+    plt.close(fig)
+
+
 if __name__ == "__main__":
+    invest_ie()    
+    #invest_ie_1sp()
     #test_ie_1sp()
     #test_ie_nomaw_1sp()
 
@@ -2458,8 +2563,8 @@ if __name__ == "__main__":
     #new_d = test_xd_box_ss()
     #new_d = test_xd_box_chd()
     #new_d = test_xd_box_drn()
-    new_d = test_xd_box_1()
-    xd_box_compare(new_d,True)
+    #new_d = test_xd_box_1()
+    #xd_box_compare(new_d,True)
     # test_sagehen1()
     #test_sanpedro1()
     #freyberg_structured_demo()

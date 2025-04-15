@@ -30,6 +30,8 @@ class PerfMeasRecord(object):
         self._kper = int(kper)
         self._kstp = int(kstp)
         self.kperkstp = (self._kper, self._kstp)
+        if isinstance(inode,np.ndarray):
+            inode = inode[0]
         self.inode = int(inode)
         self._k = None
         if k is not None:
