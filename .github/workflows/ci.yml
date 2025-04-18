@@ -6,6 +6,10 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   mf6adjCI:
     name: autotest
@@ -44,7 +48,7 @@ jobs:
       run: |
         cd autotest
         ls
-        pytest -v -s --durations=0
+        pytest -v -n=auto --durations=0
       #env:
       #  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

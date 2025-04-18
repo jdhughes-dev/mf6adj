@@ -127,3 +127,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# MacOS files
+.DS_Store
+
+# Examples result directories
+examples/ex-gwf-zaidel/
+examples/freyberg/
+examples/sanpedro/
+autotest/*_test*/
