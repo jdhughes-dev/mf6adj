@@ -139,9 +139,9 @@ def setup_xd_box_model(
         steady_state = [False]
         transient = [True]
         if len(tdis_pd) > 1:
-            steady_state = {kper: False for kper in range(len(tdis_pd))}
+            steady_state = dict.fromkeys(range(len(tdis_pd)), False)
             steady_state[0] = True
-            transient = {kper: True for kper in range(len(tdis_pd))}
+            transient = dict.fromkeys(range(len(tdis_pd)), True)
             transient[0] = False
 
         flopy.mf6.ModflowGwfsto(
@@ -181,15 +181,15 @@ def setup_xd_box_model(
 
         if alt_bnd == "riv":
             _ = flopy.mf6.ModflowGwfriv(
-                gwf, stress_period_data={kper: alt_rec for kper in bnd_nper}
+                gwf, stress_period_data=dict.fromkeys(bnd_nper, alt_rec)
             )
         elif alt_bnd == "drn":
             _ = flopy.mf6.ModflowGwfdrn(
-                gwf, stress_period_data={kper: alt_rec for kper in bnd_nper}
+                gwf, stress_period_data=dict.fromkeys(bnd_nper, alt_rec)
             )
         elif alt_bnd == "chd":
             _ = flopy.mf6.ModflowGwfchd(
-                gwf, stress_period_data={kper: alt_rec for kper in bnd_nper}
+                gwf, stress_period_data=dict.fromkeys(bnd_nper, alt_rec)
             )
         elif alt_bnd is None:
             pass
@@ -203,9 +203,9 @@ def setup_xd_box_model(
     for k in [0]:
         for i in range(nrow):
             ghb_rec.append(((k, i, ncol - 1), ghb_stage, 1000.0))
-    ghb_spd = {kper: ghb_rec for kper in range(nper)}
+    ghb_spd = dict.fromkeys(range(nper), ghb_rec)
     if alt_bnd is None:
-        ghb_spd.update({kper: alt_rec for kper in bnd_nper})
+        ghb_spd.update(dict.fromkeys(bnd_nper, alt_rec))
     flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_spd)
 
     wspd = {}
@@ -378,7 +378,10 @@ def run_xd_box_pert(
             current_time = mf6api.get_current_time()
             end_time = mf6api.get_end_time()
             max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
-            # condsat = mf6api.get_value_ptr(mf6api.get_var_address("CONDSAT", name, "NPF"))
+            # condsat = mf6api.get_value_ptr(
+            #     mf6api.get_var_address("CONDSAT", name, "NPF")
+            #     )
+
             kper = 0
             while current_time < end_time:
                 dt = mf6api.get_time_step()
@@ -484,12 +487,14 @@ def run_xd_box_pert(
                             loc="left",
                         )
                     np.savetxt(
-                        f"pert-direct_kper{kper:03d}_pk{pk:03d}_pi{pi:03d}_pj{pj:03d}_comp_sens_{tag}_k{k:03d}.dat",
+                        f"pert-direct_kper{kper:03d}_pk{pk:03d}_pi{pi:03d}" + 
+                        f"_pj{pj:03d}_comp_sens_{tag}_k{k:03d}.dat",
                         dsens_plot[k, :, :],
                         fmt="%15.6E",
                     )
                     np.savetxt(
-                        f"pert-phi_kper{kper:03d}_pk{pk:03d}_pi{pi:03d}_pj{pj:03d}_comp_sens_{tag}_k{k:03d}.dat",
+                        f"pert-phi_kper{kper:03d}_pk{pk:03d}_pi{pi:03d}" + 
+                        f"_pj{pj:03d}_comp_sens_{tag}_k{k:03d}.dat",
                         ssens_plot[k, :, :],
                         fmt="%15.6E",
                     )
@@ -548,7 +553,8 @@ def xd_box_compare(new_d, plot_compare=False, dif_thres=1e-6,):
             pertdf = pert_summary.loc[pert_summary.addr.str.contains(col), :].copy()
             if pertdf.shape[0] == 0:
                 print(
-                    f"...WARNING: no values to compare for pm {pm_name} and parameter {col}"
+                    f"...WARNING: no values to compare for pm {pm_name} " + 
+                    f"and parameter {col}"
                 )
                 continue
             # print(pm_name,col)
@@ -559,13 +565,12 @@ def xd_box_compare(new_d, plot_compare=False, dif_thres=1e-6,):
 
             demon = pertdf[pm_name].max() - pertdf[pm_name].min()
 
-            # print(pm_name,col,demon,pertdf[pm_name].max(),pertdf[pm_name].min())
             if demon < 0.0:
                 raise Exception()
             elif demon == 0:
                 pertdf[pm_name].max()
                 # demon = plt_zero_thres
-            # abs_max_dif_percent = 100. * np.abs(dif)/max(np.abs(pertdf[pm_name].values).max(),np.abs(adjdf.values).max())
+
             if demon == 0:
                 demon = 1.0
             absdif = np.abs(dif)
@@ -669,7 +674,7 @@ def xd_box_compare(new_d, plot_compare=False, dif_thres=1e-6,):
 
     if plot_compare:
         pdf.close()
-        fig, ax = plt.subplots(1, 1, figsize=[d for d in df.shape[::-1]])
+        fig, ax = plt.subplots(1, 1, figsize=list(df.shape[::-1]))
         mx = np.log10(df.values).max()
         cb = ax.imshow(np.log10(df.values), vmax=mx, vmin=0, cmap="plasma", alpha=0.5)
         for i, row in enumerate(df.index):
@@ -709,7 +714,8 @@ def test_xd_box():
      - ncol == 1 or not
      - has/has not id 0
      - spatially varying props
-     - multiple kper (including mix of ss and tr, stresses turning on and off, different lengths, with and without multiple timesteps)
+     - multiple kper (including mix of ss and tr, stresses turning on and off, 
+       different lengths, with and without multiple timesteps)
      - newton/nonnewton
      - newton with dry cells/upstream weighting - possibly with turning off pumping well
      - unit/nonunit delrowcol
@@ -810,7 +816,8 @@ def test_xd_box():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head direct {weight} -1e+30\n"
+                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} " + 
+                        f"head direct {weight} -1e+30\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -818,7 +825,8 @@ def test_xd_box():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head residual {weight} {obsval}\n"
+                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} " + 
+                        f"head residual {weight} {obsval}\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -837,7 +845,8 @@ def test_xd_box():
 
                         for k, i, j in kijs:
                             lines.append(
-                                f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} ghb_0 direct 1.0 -1.0e+30\n"
+                                f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} " + 
+                                "ghb_0 direct 1.0 -1.0e+30\n"
                             )
 
                     lines.append("end performance_measure\n\n")
@@ -988,7 +997,8 @@ def test_xd_box_unstruct():
         )
 
         f_ghb.write(
-            f"begin dimensions\nmaxbound {ghb.stress_period_data.data[0].shape[0]}\nend dimensions\n\n"
+            "begin dimensions\nmaxbound " + 
+            f"{ghb.stress_period_data.data[0].shape[0]}\nend dimensions\n\n"
         )
 
         ghb_spd = {}
@@ -1061,7 +1071,8 @@ def test_xd_box_unstruct():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {inode + 1} head direct {weight} -1.0e+30\n"
+                        f"{kper + 1} 1 {k + 1} {inode + 1} head direct " + 
+                        f"{weight} -1.0e+30\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -1069,7 +1080,8 @@ def test_xd_box_unstruct():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {inode + 1} head direct {weight} {obsval}\n"
+                        f"{kper + 1} 1 {k + 1} {inode + 1} head direct " + 
+                        f"{weight} {obsval}\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -1190,7 +1202,8 @@ def test_xd_box_chd():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head direct {weight} -1e+30\n"
+                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head direct " + 
+                        f"{weight} -1e+30\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -1198,7 +1211,8 @@ def test_xd_box_chd():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head residual {weight} {obsval}\n"
+                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head residual " + 
+                        f"{weight} {obsval}\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -1217,7 +1231,8 @@ def test_xd_box_chd():
 
                         for k, i, j in kijs:
                             lines.append(
-                                f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} ghb_0 direct 1.0 -1.0e+30\n"
+                                f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} " + 
+                                "ghb_0 direct 1.0 -1.0e+30\n"
                             )
 
                     lines.append("end performance_measure\n\n")
@@ -1251,9 +1266,6 @@ def test_xd_box_chd():
                     print(afile, i, len(afiles_to_plot))
 
         os.chdir(bd)
-
-    # if run_pert:
-    #    run_xd_box_pert(new_d,p_kijs,plot_pert_results,weight,pert_mult,obsval=obsval,pm_locs=pm_locs)
 
     xd_box_compare(new_d, plot_compare)
     return
@@ -1345,7 +1357,8 @@ def test_xd_box_ss():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head direct {weight} -1e+30\n"
+                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head direct " + 
+                        f"{weight} -1e+30\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -1353,7 +1366,8 @@ def test_xd_box_ss():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head residual {weight} {obsval}\n"
+                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head residual " + 
+                        f"{weight} {obsval}\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -1372,7 +1386,8 @@ def test_xd_box_ss():
 
                         for k, i, j in kijs:
                             lines.append(
-                                f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} ghb_0 direct 1.0 -1.0e+30\n"
+                                f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} " + 
+                                "ghb_0 direct 1.0 -1.0e+30\n"
                             )
 
                     lines.append("end performance_measure\n\n")
@@ -1499,7 +1514,8 @@ def test_xd_box_drn():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head direct {weight} -1e+30\n"
+                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head direct " + 
+                        f"{weight} -1e+30\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -1507,7 +1523,8 @@ def test_xd_box_drn():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head residual {weight} {obsval}\n"
+                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head residual " + 
+                        f"{weight} {obsval}\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -1526,7 +1543,8 @@ def test_xd_box_drn():
 
                         for k, i, j in kijs:
                             lines.append(
-                                f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} ghb_0 direct 1.0 -1.0e+30\n"
+                                f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} " + 
+                                "ghb_0 direct 1.0 -1.0e+30\n"
                             )
 
                     lines.append("end performance_measure\n\n")
@@ -1576,7 +1594,8 @@ def test_xd_box_maw():
      - ncol == 1 or not
      - has/has not id 0
      - spatially varying props
-     - multiple kper (including mix of ss and tr, stresses turning on and off, different lengths, with and without multiple timesteps)
+     - multiple kper (including mix of ss and tr, stresses turning on and off, 
+       different lengths, with and without multiple timesteps)
      - newton/nonnewton
      - newton with dry cells/upstream weighting - possibly with turning off pumping well
      - unit/nonunit delrowcol
@@ -1696,7 +1715,8 @@ def test_xd_box_maw():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head direct {weight} -1e+30\n"
+                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head direct " + 
+                        f"{weight} -1e+30\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -1704,7 +1724,8 @@ def test_xd_box_maw():
                 f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
                     f.write(
-                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head residual {weight} {obsval}\n"
+                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head residual " + 
+                        f"{weight} {obsval}\n"
                     )
                 f.write("end performance_measure\n\n")
 
@@ -1723,7 +1744,8 @@ def test_xd_box_maw():
 
                         for k, i, j in kijs:
                             lines.append(
-                                f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} ghb_0 direct 1.0 -1.0e+30\n"
+                                f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} " + 
+                                "ghb_0 direct 1.0 -1.0e+30\n"
                             )
 
                     lines.append("end performance_measure\n\n")
