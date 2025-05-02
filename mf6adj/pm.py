@@ -818,7 +818,6 @@ class PerfMeas(object):
         icelltype,
         k11,
         k33,
-
     ):
         """adjoint state times the partial of residual with respect to k times head
 

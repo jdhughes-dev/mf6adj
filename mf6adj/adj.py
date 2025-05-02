@@ -1040,7 +1040,6 @@ class Mf6Adj(object):
                                     if fill_bound:
                                         bound[:, i] = vals
 
-                            
                             if package_type == "sfr6":
                                 tag = self._gwf_package_dict[package_type][0]
                                 stage = self._gwf.get_value(
