@@ -41,7 +41,6 @@ class Mf6Adj(object):
         # process the flow model
         # make sure the lib exists
         if not os.path.exists(lib_name):
-            #raise Exception(f"MODFLOW-6 shared library  '{lib_name}' not found")
             print(f"WARNING: lib_name '{lib_name}' not found...continuing...")
         # find the model name
         self._gwf_model_dict, namfile_dict = Mf6Adj.get_model_names_from_mfsim(".")

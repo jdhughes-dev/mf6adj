@@ -469,7 +469,6 @@ class PerfMeas(object):
                 icelltype,
                 hdf[sol_key]["k11"][:],
                 hdf[sol_key]["k33"][:],
-
             )
 
             data["k11"] = k_sens
@@ -819,6 +818,7 @@ class PerfMeas(object):
         icelltype,
         k11,
         k33,
+
     ):
         """adjoint state times the partial of residual with respect to k times head
 

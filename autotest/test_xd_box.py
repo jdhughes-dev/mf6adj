@@ -63,6 +63,7 @@ def setup_xd_box_model(
         shutil.rmtree(new_d)
     os.mkdir(new_d)
 
+
     sim = flopy.mf6.MFSimulation(
         sim_name=name,
         exe_name=mf6_bin,
@@ -1148,7 +1149,11 @@ def test_xd_box_chd():
             delc=delc,
             full_sat_bnd=False,
             botm=botm,
+<<<<<<< HEAD
             alt_bnd="chd",
+=======
+            alt_bnd="riv",
+>>>>>>> origin
             sp_len=sp_len,
         )
     else:
@@ -1779,6 +1784,9 @@ def test_xd_box_maw():
 
     xd_box_compare(new_d, plot_compare)
     return
+<<<<<<< HEAD
 
 if __name__ == "__main__":
     test_xd_box_chd()
+=======
+>>>>>>> origin
