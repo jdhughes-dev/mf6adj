@@ -63,9 +63,6 @@ def setup_xd_box_model(
         shutil.rmtree(new_d)
     os.mkdir(new_d)
 
-    org_mh_dir = "mh_org_codes"
-    for f in os.listdir(org_mh_dir):
-        shutil.copy2(os.path.join(org_mh_dir, f), os.path.join(new_d, f))
 
     sim = flopy.mf6.MFSimulation(
         sim_name=name,
@@ -1152,7 +1149,7 @@ def test_xd_box_chd():
             delc=delc,
             full_sat_bnd=False,
             botm=botm,
-            alt_bnd="riv",
+            alt_bnd="chd",
             sp_len=sp_len,
         )
     else:
@@ -1783,3 +1780,6 @@ def test_xd_box_maw():
 
     xd_box_compare(new_d, plot_compare)
     return
+
+if __name__ == "__main__":
+    test_xd_box_chd()

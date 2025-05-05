@@ -41,7 +41,7 @@ class Mf6Adj(object):
         # process the flow model
         # make sure the lib exists
         if not os.path.exists(lib_name):
-            raise Exception(f"MODFLOW-6 shared library  '{lib_name}' not found")
+            print(f"WARNING: lib_name '{lib_name}' not found...continuing...")
         # find the model name
         self._gwf_model_dict, namfile_dict = Mf6Adj.get_model_names_from_mfsim(".")
         if len(self._gwf_model_dict) != 1:
@@ -1040,10 +1040,7 @@ class Mf6Adj(object):
                                     if fill_bound:
                                         bound[:, i] = vals
 
-                            if package_type == "chd6":
-                                data_dict["drhsdh"][nodelist - 1] = 0.0
-
-                            elif package_type == "sfr6":
+                            if package_type == "sfr6":
                                 tag = self._gwf_package_dict[package_type][0]
                                 stage = self._gwf.get_value(
                                     self._gwf.get_var_address(

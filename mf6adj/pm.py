@@ -440,12 +440,16 @@ class PerfMeas(object):
                 )
             self.logger.info(f"...took:{(datetime.now() - start).total_seconds()}")
             is_newton = hdf[sol_key].attrs["is_newton"]
+
+            # zero out the adj state for chd nodes
             chd_nodelist = []
             if "chd6" in gwf_package_dict:
                 for pname in gwf_package_dict["chd6"]:
                     nodelist = list(hdf[sol_key][pname]["nodelist"][:] - 1)
                     chd_nodelist.extend(nodelist)
             chd_nodelist = np.array(chd_nodelist, dtype=int)
+            lamb[chd_nodelist] = 0.0
+
             start = datetime.now()
             self.logger.info("lam_dresdk_h")
             k_sens, k33_sens = PerfMeas.lam_dresdk_h(
@@ -465,7 +469,6 @@ class PerfMeas(object):
                 icelltype,
                 hdf[sol_key]["k11"][:],
                 hdf[sol_key]["k33"][:],
-                chd_nodelist,
             )
 
             data["k11"] = k_sens
@@ -815,7 +818,6 @@ class PerfMeas(object):
         icelltype,
         k11,
         k33,
-        chd_nodelist,
     ):
         """adjoint state times the partial of residual with respect to k times head
 
@@ -837,7 +839,6 @@ class PerfMeas(object):
         icelltype (ndarray) : the convertible cell type indicator array
         k11 (ndarray) : the k11 array
         k33 (ndarray) : the k33 array
-        chd_nodelist (ndarray) : zero-based index of chd nodes
 
         Returns
         -------
@@ -856,8 +857,6 @@ class PerfMeas(object):
         result = np.zeros_like(head)
 
         for node, (offset, ncon) in enumerate(zip(ia, iac)):
-            if node in chd_nodelist:
-                continue
             sum1 = 0.0
             sum2 = 0.0
             height1 = height[node]
