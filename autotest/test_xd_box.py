@@ -1268,6 +1268,129 @@ def test_xd_box_chd():
     return
 
 
+def test_xd_box_chd_ana():
+
+    
+    # workflow flags
+    include_id0 = True  # include idomain = 0 cells
+    include_sto = True
+
+    include_ghb_flux_pm = False
+
+    clean = True
+
+    run_adj = True
+    plot_adj_results = False # plot adj result
+
+    plot_compare = False
+    new_d = 'xd_box_chd_ana'
+    nrow = 80
+    ncol = 100
+    nlay = 1
+    nper = 1
+    sp_len = 1
+    delr = 5.0
+    delc = 5.0
+    botm = [-1]#,-100]
+    if clean:
+        sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
+                                 nlay=nlay,q=-0.0, hk=10.0,k33=10.0, icelltype=1, iconvert=0, newton=True, delr=delr, delc=delc,
+                                 full_sat_bnd=False,botm=botm,alt_bnd="chd",sp_len=sp_len)
+    else:
+        sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
+
+    gwf = sim.get_model()
+    id = gwf.dis.idomain.array
+    nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
+    obsval = 1.0
+
+    pert_mult = 1.01
+    weight = 1.0
+
+    p_kijs = []
+
+    for k in range(nlay):
+        for i in range(nrow):
+            for j in range(ncol):
+                p_kijs.append((k, i, j))
+
+    pm_locs = []
+    for k in range(nlay):
+        for i in range(nrow):
+            pm_locs.append((k, i, i+2))
+
+    pm_locs = [(0, int(nrow / 2), int(ncol / 5))]
+    pm_locs = list(set(pm_locs))
+    pm_locs.sort()
+    
+
+    assert len(pm_locs) > 0
+    sys.path.insert(0,os.path.join(".."))
+    import mf6adj
+    if run_adj:
+        bd = os.getcwd()
+        os.chdir(new_d)
+        sys.path.append(os.path.join("..",".."))
+
+        print('calculating mf6adj sensitivity')
+
+        with open("test.adj",'w') as f:
+            f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
+            for p_kij in pm_locs:
+                k, i, j = p_kij
+                if id[k, i, j] <= 0:
+                    continue
+                pm_name = "direct_pk{1:03d}_pi{2:03d}_pj{3:03d}".format("0", k, i, j)
+                f.write("begin performance_measure {0}\n".format(pm_name))
+                for kper in range(sim.tdis.nper.data):
+                    f.write("{0} 1 {1} {2} {3} head direct {4} -1e+30\n".format(kper + 1, k + 1, i + 1, j + 1, weight))
+                f.write("end performance_measure\n\n")
+            
+        adj = mf6adj.Mf6Adj("test.adj", lib_name,verbose_level=1)
+        adj.solve_gwf()
+        df_dict = adj.solve_adjoint()
+        print(df_dict[list(df_dict.keys())[0]].columns)
+        lamb = df_dict[list(df_dict.keys())[0]]["wel6_q"]
+        
+
+        os.chdir(bd)
+
+        lambana = pd.Series(np.loadtxt(os.path.join("testing_files","lamb_Analytical.txt")))
+        lamb = lamb.reindex(np.arange(nrow*ncol,dtype=int))
+        lamb.loc[:] *= -1
+        lambana.loc[pd.isna(lamb)] = np.nan
+        
+        arrana = lambana.values.reshape(nrow,ncol)
+        arr = lamb.values.reshape(nrow,ncol)
+        vmin = min(arrana.min(),arr.min())
+        vmax = min(arrana.max(),arr.max())
+
+        diff = 100. * (arrana - arr) / arrana
+        diff[np.abs(diff)<1] = np.nan
+        mx = np.nanmax(np.abs(diff))
+
+        fig,axes = plt.subplots(1,3,figsize=(8.5,2))
+        cb = axes[0].imshow(arrana,vmin=vmin,vmax=vmax)
+        plt.colorbar(cb,ax=axes[0],label="adjoint state")
+        axes[0].set_title("analytical adjoint state")
+        cb = axes[1].imshow(arr,vmin=vmin,vmax=vmax)
+        plt.colorbar(cb,ax=axes[1],label="adjoint state")
+        axes[1].set_title("mf6adj adjoint state")
+
+        cb = axes[2].imshow(diff,vmin=-mx,vmax=mx,cmap="coolwarm")
+        plt.colorbar(cb,ax=axes[2],label="percent difference")
+        axes[2].set_title("difference")
+
+        for ax in axes:
+            ax.set_xticks([])
+            ax.set_yticks([])
+        plt.tight_layout()
+        plt.show()
+
+    
+#    xd_box_compare(new_d,plot_compare)
+    return new_d
+
 def test_xd_box_ss():
     # workflow flags
     include_id0 = True  # include idomain = 0 cells
@@ -1782,4 +1905,4 @@ def test_xd_box_maw():
     return
 
 if __name__ == "__main__":
-    test_xd_box_chd()
+    test_xd_box_chd_ana()
