@@ -55,6 +55,7 @@ def setup_xd_box_model(
     name="xdbox",
     full_sat_bnd=True,
     alt_bnd=None,
+    is_anatest=False,
 ):
     tdis_pd = [(sp_len, 1, 1.0) for _ in range(nper)]
     if botm is None:
@@ -123,6 +124,17 @@ def setup_xd_box_model(
 
     # ### Create the initial conditions (`IC`) Package
     start = top * np.ones((nlay, nrow, ncol))
+    if is_anatest:
+        L1 = delr * ncol
+        H1 = 1001.
+        H2 = 1000.
+        start = np.ones((nlay, nrow, ncol))
+        for kk in range(nlay):
+            for j in range(nrow):
+                for i in range(ncol):
+                    start[kk][j][i] = H1 + (H2 - H1) * \
+                     gwf.modelgrid.xcellcenters[j][i] / L1
+                    # start[kk][j][i] = H2
     flopy.mf6.ModflowGwfic(gwf, pname="ic", strt=start)
 
     # ### Create the storage (`STO`) Package
@@ -132,14 +144,23 @@ def setup_xd_box_model(
         geo.extend(botm)
         for k in range(nlay):
             t, b = geo[k], geo[k + 1]
-            sy.append(ss * (t - b))
+            if is_anatest:
+                sy.append(0.15)
+            else:
+                sy.append(ss * (t - b))
         steady_state = [False]
         transient = [True]
         if len(tdis_pd) > 1:
-            steady_state = dict.fromkeys(range(len(tdis_pd)), False)
-            steady_state[0] = True
-            transient = dict.fromkeys(range(len(tdis_pd)), True)
-            transient[0] = False
+            if is_anatest:
+                steady_state = dict.fromkeys(range(len(tdis_pd)), False)
+                steady_state[0] = True
+                transient = dict.fromkeys(range(len(tdis_pd)), True)
+                transient[0] = False
+            else:
+                steady_state = dict.fromkeys(range(len(tdis_pd)), False)
+                steady_state[0] = True
+                transient = dict.fromkeys(range(len(tdis_pd)), True)
+                transient[0] = False
 
         flopy.mf6.ModflowGwfsto(
             gwf,
@@ -161,7 +182,12 @@ def setup_xd_box_model(
     if ncol > 1:
         stage = top
         if not full_sat_bnd:
-            stage = botm[0] + ((top - botm[0]) / 4.0)
+            if is_anatest:
+                stage = botm[0] + ((top-botm[0])/4.0)
+                stageL = 1001.0
+                stageR = 1000.0
+            else:
+                stage = botm[0] + ((top - botm[0]) / 4.0)
 
         for k in [nlay - 1]:
             for i in range(nrow):
@@ -170,7 +196,11 @@ def setup_xd_box_model(
                 elif alt_bnd == "drn":
                     alt_rec.append(((k, i, 0), stage, 1000.0))
                 elif alt_bnd == "chd":
-                    alt_rec.append(((k, i, 0), stage))
+                    if is_anatest:
+                        alt_rec.append(((k, i, 0), stageL))
+                        alt_rec.append(((k, i, ncol-1), stageR)) 
+                    else:
+                        alt_rec.append(((k, i, 0), stage))
                 elif alt_bnd is None:
                     alt_rec.append(((k, i, 0), stage, 1000.0))
                 else:
@@ -193,17 +223,18 @@ def setup_xd_box_model(
         else:
             raise Exception()
 
-    ghb_rec = []
-    ghb_stage = top + 1
-    if not full_sat_bnd:
-        ghb_stage = botm[0] + (3.0 * (top - botm[0]) / 4.0)
-    for k in [0]:
-        for i in range(nrow):
-            ghb_rec.append(((k, i, ncol - 1), ghb_stage, 1000.0))
-    ghb_spd = dict.fromkeys(range(nper), ghb_rec)
-    if alt_bnd is None:
-        ghb_spd.update(dict.fromkeys(bnd_nper, alt_rec))
-    flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_spd)
+    if not is_anatest:
+        ghb_rec = []
+        ghb_stage = top + 1
+        if not full_sat_bnd:
+            ghb_stage = botm[0] + (3.0 * (top - botm[0]) / 4.0)
+        for k in [0]:
+            for i in range(nrow):
+                ghb_rec.append(((k, i, ncol - 1), ghb_stage, 1000.0))
+        ghb_spd = dict.fromkeys(range(nper), ghb_rec)
+        if alt_bnd is None:
+            ghb_spd.update(dict.fromkeys(bnd_nper, alt_rec))
+        flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_spd)
 
     wspd = {}
     start_well = 1
@@ -236,8 +267,9 @@ def setup_xd_box_model(
 
     flopy.mf6.ModflowGwfnpf(gwf, icelltype=icelltype, k=hk, k33=k33)
 
-    rech = {kper: np.zeros((nrow, ncol)) + 0.0000001 for kper in range(nper)}
-    flopy.mf6.ModflowGwfrcha(gwf, recharge=rech)
+    if not is_anatest:
+        rech = {kper: np.zeros((nrow, ncol)) + 0.0000001 for kper in range(nper)}
+        flopy.mf6.ModflowGwfrcha(gwf, recharge=rech)
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
@@ -1272,7 +1304,7 @@ def test_xd_box_chd_ana():
 
     
     # workflow flags
-    include_id0 = True  # include idomain = 0 cells
+    include_id0 = False  # include idomain = 0 cells
     include_sto = True
 
     include_ghb_flux_pm = False
@@ -1297,8 +1329,9 @@ def test_xd_box_chd_ana():
                              include_id0=include_id0, nrow=nrow, ncol=ncol,
                              nlay=nlay,q=-0.0, hk=10.0,k33=10.0, 
                              icelltype=1, iconvert=0, newton=True, 
-                             delr=delr, delc=delc,
-                             full_sat_bnd=False,botm=botm,alt_bnd="chd",sp_len=sp_len)
+                             delr=delr, delc=delc,top=0,
+                             full_sat_bnd=False,botm=botm,alt_bnd="chd",sp_len=sp_len,
+                             is_anatest=True)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -1358,6 +1391,9 @@ def test_xd_box_chd_ana():
         
 
         os.chdir(bd)
+        X = gwf.modelgrid.xcellcenters
+        Y = gwf.modelgrid.ycellcenters
+        
         lambana = np.loadtxt(os.path.join("testing_files",
                                   "lamb_Analytical.txt"))
         lambana = pd.Series(lambana)
@@ -1365,32 +1401,47 @@ def test_xd_box_chd_ana():
         lamb.loc[:] *= -1
         lambana.loc[pd.isna(lamb)] = np.nan
         
+        
         arrana = lambana.values.reshape(nrow,ncol)
         arr = lamb.values.reshape(nrow,ncol)
-        vmin = min(arrana.min(),arr.min())
-        vmax = min(arrana.max(),arr.max())
+        vmin = min(np.nanmin(arrana),np.nanmin(arr))
+        vmax = max(np.nanmax(arrana),np.nanmax(arr))
+        levels = np.linspace(vmin,vmax,10)
 
-        diff = 100. * (arrana - arr) / arrana
-        diff[np.abs(diff)<1] = np.nan
+        diff = (arrana - arr)
+        #diff[np.abs(diff)<1] = np.nan
+        diff[np.abs(arrana)<1e-3] = np.nan
+        diff[np.abs(arr)<1e-3] = np.nan
+        
         mx = np.nanmax(np.abs(diff))
-
-        fig,axes = plt.subplots(1,3,figsize=(8.5,2))
-        cb = axes[0].imshow(arrana,vmin=vmin,vmax=vmax)
+        assert mx < 0.04
+        
+        fig,axes = plt.subplots(1,2,figsize=(8.5,3))
+        cb = axes[0].pcolormesh(X,Y,arrana,vmin=vmin,vmax=vmax)
         plt.colorbar(cb,ax=axes[0],label="adjoint state")
-        axes[0].set_title("analytical adjoint state")
-        cb = axes[1].imshow(arr,vmin=vmin,vmax=vmax)
+        axes[0].contour(X,Y,arrana,vmin=vmin,vmax=vmax,levels=levels,
+                        colors="k",linewidths=0.5,linestyles="-")
+        axes[0].set_title("A) analytical",loc="left")
+        cb = axes[1].pcolormesh(X,Y,arr,vmin=vmin,vmax=vmax)
         plt.colorbar(cb,ax=axes[1],label="adjoint state")
-        axes[1].set_title("mf6adj adjoint state")
+        axes[1].contour(X,Y,arr,vmin=vmin,vmax=vmax,levels=levels,
+                        colors="k",linewidths=0.5,linestyles="-")
+        axes[1].set_title("B) MF6ADJ",loc="left")
 
-        cb = axes[2].imshow(diff,vmin=-mx,vmax=mx,cmap="coolwarm")
-        plt.colorbar(cb,ax=axes[2],label="percent difference")
-        axes[2].set_title("difference")
+        # cb = axes[2].pcolormesh(X,Y,diff,vmin=-mx,vmax=mx,cmap="coolwarm")
+        # levels = np.linspace(-mx,mx,10)
+        # plt.colorbar(cb,ax=axes[2],label="difference")
+        # axes[2].contour(X,Y,diff,vmin=-mx,vmax=mx,levels=levels,
+        #                colors="k",linewidths=0.5,linestyles="-")
+        # axes[2].set_title("difference")
 
         for ax in axes:
-            ax.set_xticks([])
-            ax.set_yticks([])
+            ax.set_aspect("equal")
+            ax.set_xlabel("X (m)")
+            ax.set_ylabel("Y (m)")
         plt.tight_layout()
-        plt.show()
+        plt.savefig(os.path.join(new_d,"compare.png"),dpi=500)
+        plt.close()
 
     
 #    xd_box_compare(new_d,plot_compare)
