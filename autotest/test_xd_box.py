@@ -1293,9 +1293,12 @@ def test_xd_box_chd_ana():
     delc = 5.0
     botm = [-1]#,-100]
     if clean:
-        sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto, include_id0=include_id0, nrow=nrow, ncol=ncol,
-                                 nlay=nlay,q=-0.0, hk=10.0,k33=10.0, icelltype=1, iconvert=0, newton=True, delr=delr, delc=delc,
-                                 full_sat_bnd=False,botm=botm,alt_bnd="chd",sp_len=sp_len)
+        sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto,
+                             include_id0=include_id0, nrow=nrow, ncol=ncol,
+                             nlay=nlay,q=-0.0, hk=10.0,k33=10.0, 
+                             icelltype=1, iconvert=0, newton=True, 
+                             delr=delr, delc=delc,
+                             full_sat_bnd=False,botm=botm,alt_bnd="chd",sp_len=sp_len)
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
@@ -1340,22 +1343,24 @@ def test_xd_box_chd_ana():
                 k, i, j = p_kij
                 if id[k, i, j] <= 0:
                     continue
-                pm_name = "direct_pk{1:03d}_pi{2:03d}_pj{3:03d}".format("0", k, i, j)
+                pm_name = "direct_pk{0:03d}_pi{1:03d}_pj{2:03d}".format(k, i, j)
                 f.write("begin performance_measure {0}\n".format(pm_name))
                 for kper in range(sim.tdis.nper.data):
-                    f.write("{0} 1 {1} {2} {3} head direct {4} -1e+30\n".format(kper + 1, k + 1, i + 1, j + 1, weight))
+                    f.write("{0} 1 {1} {2} {3} head direct {4} -1e+30\n".\
+                        format(kper + 1, k + 1, i + 1, j + 1, weight))
                 f.write("end performance_measure\n\n")
             
         adj = mf6adj.Mf6Adj("test.adj", lib_name,verbose_level=1)
         adj.solve_gwf()
         df_dict = adj.solve_adjoint()
-        print(df_dict[list(df_dict.keys())[0]].columns)
-        lamb = df_dict[list(df_dict.keys())[0]]["wel6_q"]
+        
+        lamb = df_dict[pm_name]["wel6_q"]
         
 
         os.chdir(bd)
-
-        lambana = pd.Series(np.loadtxt(os.path.join("testing_files","lamb_Analytical.txt")))
+        lambana = np.loadtxt(os.path.join("testing_files",
+                                  "lamb_Analytical.txt"))
+        lambana = pd.Series(lambana)
         lamb = lamb.reindex(np.arange(nrow*ncol,dtype=int))
         lamb.loc[:] *= -1
         lambana.loc[pd.isna(lamb)] = np.nan
