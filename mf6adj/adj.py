@@ -1193,10 +1193,10 @@ class Mf6Adj(object):
         gwf_name = self._gwf_name.upper()
 
         org_head, org_sp_package_data = self.solve_gwf(pert_save=True)
-        tot = 0
-        for d in org_sp_package_data["ghb6"][(0, 0)]:
-            # print(d)
-            tot += d["simval"]
+        # tot = 0
+        # for d in org_sp_package_data["ghb6"][(0, 0)]:
+        #     # print(d)
+        #     tot += d["simval"]
         base_results = {
             pm.name: pm.solve_forward(org_head, org_sp_package_data)
             for pm in self._performance_measures
@@ -1431,3 +1431,4 @@ class Mf6Adj(object):
         df.index.name = "node"
         df.sort_index(inplace=True)
         df.to_csv("pert_results.csv")
+        return df

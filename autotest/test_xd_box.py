@@ -1979,10 +1979,24 @@ def nested_test():
 
     adj = mf6adj.Mf6Adj("test.adj", lib_name, False)
     adj.solve_gwf()
-    adj.solve_adjoint()
+    adjdf = adj.solve_adjoint()["pm1"]
+    pertdf1 = adj._perturbation_test(pert_mult=1.1)
     adj.finalize()
 
     os.chdir(b_d)
+
+    #pertdf = pd.read_csv(os.path.join("testing_files","sensitivity_nested_hetero.dat"),skiprows=2,header=None,names=["pert","mf6adj"],sep="\\s+")
+    #print(pertdf)
+    print(adjdf["ss"])
+    #print(pertdf1.columns)
+    pertssdf = pertdf1.loc[pertdf1.addr.str.contains("ss"),"pm1"]
+    diff = 100.0 * (adjdf["ss"] - pertssdf) / pertssdf
+    print(diff[~np.isnan(diff)].shape)
+    assert diff[~np.isnan(diff)].shape[0] == 107
+    print(np.nanmax(np.abs(diff)))
+    assert np.nanmax(np.abs(diff)) < 0.1
+
+
 
 if __name__ == "__main__":
     #test_xd_box_chd_ana()
