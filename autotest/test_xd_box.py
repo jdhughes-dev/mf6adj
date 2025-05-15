@@ -1960,5 +1960,30 @@ def test_xd_box_maw():
     xd_box_compare(new_d, plot_compare)
     return
 
+
+def nested_test():
+    org_d = "nested"
+    new_d = "nested_test"
+    if os.path.exists(new_d):
+        shutil.rmtree(new_d)
+    shutil.copytree(org_d,new_d)
+
+    with open(os.path.join(new_d,"test.adj"),'w') as f:
+        f.write("\nbegin options\n\nend options\n\n")
+        f.write("begin performance_measure pm1\n")
+        f.write("1 1 1 80 head direct 1.0 -1.0e30 \n")
+        f.write("end performance_measure\n\n")
+
+    b_d = os.getcwd()
+    os.chdir(new_d)
+
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, False)
+    adj.solve_gwf()
+    adj.solve_adjoint()
+    adj.finalize()
+
+    os.chdir(b_d)
+
 if __name__ == "__main__":
-    test_xd_box_chd_ana()
+    #test_xd_box_chd_ana()
+    nested_test()

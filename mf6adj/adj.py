@@ -244,7 +244,7 @@ class Mf6Adj(object):
 
                         raw = line2.lower().strip().split()
                         if self.is_structured and len(raw) != 9:
-                            self.logger.info("parsed line: " + raw)
+                            self.logger.info("parsed line: " + str(raw))
                             raise Exception(
                                 (
                                     f"performance measure entry on line {count} has "
@@ -253,7 +253,7 @@ class Mf6Adj(object):
                                 )
                             )
                         elif not self.is_structured and len(raw) != 8:
-                            self.logger.info("parsed line: " + raw)
+                            self.logger.info("parsed line: " + str(raw))
                             raise Exception(
                                 (
                                     f"performance measure entry on line {count} has "

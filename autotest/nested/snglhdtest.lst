@@ -1,0 +1,279 @@
+                                   MODFLOW 6
+                U.S. GEOLOGICAL SURVEY MODULAR HYDROLOGIC MODEL
+                          GROUNDWATER FLOW MODEL (GWF)
+                            VERSION 6.6.1 02/10/2025
+
+        MODFLOW 6 compiled Feb 14 2025 13:38:00 with GCC version 12.4.0
+
+This software has been approved for release by the U.S. Geological 
+Survey (USGS). Although the software has been subjected to rigorous 
+review, the USGS reserves the right to update the software as needed 
+pursuant to further analysis and review. No warranty, expressed or 
+implied, is made by the USGS or the U.S. Government as to the 
+functionality of the software and related material nor shall the 
+fact of release constitute any such warranty. Furthermore, the 
+software is released on condition that neither the USGS nor the U.S. 
+Government shall be held liable for any damages resulting from its 
+authorized or unauthorized use. Also refer to the USGS Water 
+Resources Software User Rights Notice for complete use, copyright, 
+and distribution information.
+
+
+As a work of the United States Government, this USGS product is 
+in the public domain within the United States. You can copy, 
+modify, distribute, and perform the work, even for commercial 
+purposes, all without asking permission. Additionally, USGS 
+waives copyright and related rights in the work worldwide 
+through CC0 1.0 Universal Public Domain Dedication 
+(https://creativecommons.org/publicdomain/zero/1.0/).
+
+The following GNU Lesser General Public License (LGPL) libraries
+are used in this USGS product:
+
+    SPARSKIT version 2.0
+      ilut, luson, and qsplit 
+      (https://www-users.cse.umn.edu/~saad/software/SPARSKIT/)
+
+    RCM - Reverse Cuthill McKee Ordering
+      (https://people.math.sc.edu/Burkardt/f_src/rcm/rcm.html)
+
+    BLAS - Basic Linear Algebra Subprograms Level 1
+      (https://people.math.sc.edu/Burkardt/f_src/blas1_d/blas1_d.html)
+
+    SPARSEKIT - Sparse Matrix Utility Package
+      amux, dperm, dvperm, rperm, and cperm
+      (https://people.sc.fsu.edu/~jburkardt/f77_src/sparsekit/sparsekit.html)
+
+The following BSD-3 License libraries are used in this USGS product:
+
+    Modern Fortran DAG Library
+      Copyright (c) 2018, Jacob Williams
+      All rights reserved.
+      (https://github.com/jacobwilliams/daglib)
+
+MODFLOW 6 compiler options: -cpp -I macarm/obj_mf6 -iprefix
+/opt/homebrew/Cellar/gcc@12/12.4.0/bin/../lib/gcc/12/gcc/aarch64-apple-darwin2
+3/12/ -D__DYNAMIC__ -D __APPLE__ -fPIC -mmacosx-version-min=14.0.0
+-mcpu=apple-m1 -mlittle-endian -mabi=lp64 -O2 -Wpedantic
+-Wcharacter-truncation -Wtabs -Wline-truncation -Wunused-label
+-Wunused-variable -std=f2008 -fbacktrace -ffpe-summary=overflow
+-ffpe-trap=overflow,zero,invalid -fall-intrinsics -J macarm/mod_mf6
+
+System command used to initiate simulation:
+/Users/jwhite/mambaforge/envs/mf6adj/bin/mf6
+
+MODFLOW was compiled using uniform precision.
+
+Real Variables
+  KIND: 8
+  TINY (smallest non-zero value):    2.225074-308
+  HUGE (largest value):    1.797693+308
+  PRECISION: 15
+  SIZE IN BITS: 64
+
+Integer Variables
+  KIND: 4
+  HUGE (largest value): 2147483647
+  SIZE IN BITS: 32
+
+Long Integer Variables
+  KIND: 8
+  HUGE (largest value): 9223372036854775807
+  SIZE IN BITS: 64
+
+Logical Variables
+  KIND: 4
+  SIZE IN BITS: 32
+
+ NAMEFILE OPTIONS:
+    NEWTON-RAPHSON method enabled for the model.
+    NEWTON-RAPHSON UNDER-RELAXATION based on the bottom elevation of the model will be applied to the model.
+    FLOWS WILL BE SAVED TO BUDGET FILE SPECIFIED IN OUTPUT CONTROL
+ END NAMEFILE OPTIONS:
+
+ DISV -- VERTEX GRID DISCRETIZATION PACKAGE, VERSION 1 : 12/23/2015 - INPUT READ FROM MEMPATH: __INPUT__/SNGLHDTEST/DISV                         
+
+
+ Setting Discretization Options
+    Model length unit [0=UND, 1=FEET, 2=METERS, 3=CENTIMETERS] set as 2
+ End Setting Discretization Options
+
+ Setting Discretization Dimensions
+    NLAY = 1
+    NCPL = 121
+    NVERT = 148
+ End Setting Discretization Dimensions
+
+ Setting Discretization Griddata
+    TOP set from input file
+    BOTM set from input file
+ End Setting Discretization Griddata
+
+ Discretization Vertex data loaded
+ Discretization Cell2d data loaded
+
+ NPF -- NODE PROPERTY FLOW PACKAGE, VERSION 1, 3/30/2015 INPUT READ FROM MEMPATH: __INPUT__/SNGLHDTEST/NPF                          
+
+
+ IC -- Initial Conditions Package, Version 8, 3/28/2015 input read from mempath: __INPUT__/SNGLHDTEST/IC                           
+
+
+ Setting NPF Options
+ End Setting NPF Options
+
+ Setting NPF Griddata
+    ICELLTYPE set from input file
+    K set from input file
+    K33 not provided.  Setting K33 = K.
+    K22 not provided.  Setting K22 = K.
+ End Setting NPF Griddata
+
+
+ WEL   -- WEL PACKAGE, VERSION 8, 2/22/2014 INPUT READ FROM MEMPATH: __INPUT__/SNGLHDTEST/WEL_0                        
+
+ PROCESSING WEL BASE OPTIONS
+ END OF WEL BASE OPTIONS
+
+ PROCESSING WEL OPTIONS
+ END OF WEL OPTIONS
+
+ PROCESSING WEL BASE DIMENSIONS
+    MAXBOUND =       1
+ END OF WEL BASE DIMENSIONS
+
+ CHD   -- CHD PACKAGE, VERSION 8, 2/22/2014 INPUT READ FROM MEMPATH: __INPUT__/SNGLHDTEST/CHD_0                        
+
+ PROCESSING CHD BASE OPTIONS
+ END OF CHD BASE OPTIONS
+
+ PROCESSING CHD BASE DIMENSIONS
+    MAXBOUND =       7
+ END OF CHD BASE DIMENSIONS
+
+ CHD   -- CHD PACKAGE, VERSION 8, 2/22/2014 INPUT READ FROM MEMPATH: __INPUT__/SNGLHDTEST/CHD_1                        
+
+ PROCESSING CHD BASE OPTIONS
+ END OF CHD BASE OPTIONS
+
+ PROCESSING CHD BASE DIMENSIONS
+    MAXBOUND =       7
+ END OF CHD BASE DIMENSIONS
+    STRT set from input file
+
+ STO -- STORAGE PACKAGE, VERSION 1, 5/19/2014 INPUT READ FROM MEMPATH: __INPUT__/SNGLHDTEST/STO                          
+
+
+ PROCESSING STORAGE OPTIONS
+ END OF STORAGE OPTIONS
+    BINARY GRID INFORMATION WILL BE WRITTEN TO:
+      UNIT NUMBER: 1014
+      FILE NAME: snglhdtest.disv.grb
+
+ OPENED snglhdtest.disv.grb
+ FILE TYPE:DATA(BINARY)   UNIT 1014   STATUS:REPLACE             
+ FORMAT:UNFORMATTED            ACCESS:STREAM              
+ ACTION:READWRITE           
+
+      THE LAST TIME STEP WILL BE PRINTED
+      THE LAST TIME STEP WILL BE PRINTED
+ # File generated by Flopy version 3.9.2 on 05/15/2025 at 11:19:59.
+
+ PROCESSING OC OPTIONS
+
+    BUDGET INFORMATION WILL BE WRITTEN TO:
+      UNIT NUMBER: 1015
+      FILE NAME: snglhdtest.cbb
+
+ OPENED snglhdtest.cbb
+ FILE TYPE:DATA(BINARY)   UNIT 1015   STATUS:REPLACE             
+ FORMAT:UNFORMATTED            ACCESS:STREAM              
+ ACTION:READWRITE           
+
+    HEAD INFORMATION WILL BE WRITTEN TO:
+      UNIT NUMBER: 1016
+      FILE NAME: snglhdtest.hds
+
+ OPENED snglhdtest.hds
+ FILE TYPE:DATA(BINARY)   UNIT 1016   STATUS:REPLACE             
+ FORMAT:UNFORMATTED            ACCESS:STREAM              
+ ACTION:READWRITE           
+
+ END OF OC OPTIONS
+
+start timestep kper="1" kstp="1" mode="normal"
+
+
+ BEGIN READING OUTPUT CONTROL FOR STRESS PERIOD 1
+      ALL TIME STEPS WILL BE SAVED
+      ALL TIME STEPS WILL BE SAVED
+      ALL TIME STEPS WILL BE PRINTED
+
+ END READING OUTPUT CONTROL FOR STRESS PERIOD 1
+ UBDSV1 SAVING           STO-SS ON UNIT   1015 AT TIME STEP      1, STRESS PERIOD      1
+ UBDSV1 SAVING     FLOW-JA-FACE ON UNIT   1015 AT TIME STEP      1, STRESS PERIOD      1
+ UBDSV06 SAVING              WEL IN MODEL SNGLHDTEST       PACKAGE SNGLHDTEST      CONNECTED TO MODEL SNGLHDTEST       PACKAGE WEL_0            ON UNIT   1015 AT TIME STEP      1, STRESS PERIOD      1
+ UBDSV06 SAVING              CHD IN MODEL SNGLHDTEST       PACKAGE SNGLHDTEST      CONNECTED TO MODEL SNGLHDTEST       PACKAGE CHD_0            ON UNIT   1015 AT TIME STEP      1, STRESS PERIOD      1
+ UBDSV06 SAVING              CHD IN MODEL SNGLHDTEST       PACKAGE SNGLHDTEST      CONNECTED TO MODEL SNGLHDTEST       PACKAGE CHD_1            ON UNIT   1015 AT TIME STEP      1, STRESS PERIOD      1
+1
+  HEAD IN LAYER   1 AT END OF TIME STEP   1 IN STRESS PERIOD    1
+  ---------------------------------------------------------------------------
+
+ ........................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+   1    0.000       16.21       31.81       47.80       64.10       80.22       100.0       0.000       16.49       30.43    
+        45.91       63.16       81.55       100.0       0.000       16.02       81.31       100.0       0.000       15.40    
+        82.15       100.0       0.000       15.32       81.88       100.0       0.000       14.50       29.15       45.70    
+        62.88       81.43       100.0       0.000       14.38       28.13       44.13       62.31       82.23       100.0    
+        26.28       30.22       34.62       41.22       46.11       51.19       58.21       63.23       68.51       25.53    
+        30.50       35.24       40.30       45.97       51.60       57.74       63.73       69.63       25.15       30.66    
+        35.66       40.50       45.57       51.18       57.98       64.30       69.96       25.23       30.43       35.42    
+        40.54       45.75       51.31       57.70       64.38       70.60       24.94       30.21       35.35       40.29    
+        45.89       51.71       57.69       64.43       70.92       25.23       30.08       35.48       40.65       45.58    
+        51.80       57.94       64.20       70.65       25.44       30.54       35.72       40.90       45.57       51.71    
+        57.72       63.45       70.31       25.86       30.54       35.31       40.82       46.06       51.47       57.79    
+        63.46       69.27       26.24       30.52       34.66       41.34       46.46       51.24       57.65       62.93    
+        68.38    
+
+ HEAD WILL BE SAVED ON UNIT 1016 AT END OF TIME STEP    1, STRESS PERIOD    1
+
+
+  VOLUME BUDGET FOR ENTIRE MODEL AT END OF TIME STEP    1, STRESS PERIOD   1
+  ---------------------------------------------------------------------------------------------------
+
+     CUMULATIVE VOLUME      L**3       RATES FOR THIS TIME STEP      L**3/T          PACKAGE NAME    
+     ------------------                 ------------------------                     ----------------
+
+           IN:                                      IN:
+           ---                                      ---
+              STO-SS =           0.0000                STO-SS =           0.0000     STORAGE                          
+                 WEL =           0.0000                   WEL =           0.0000     WEL_0                            
+                 CHD =           0.0000                   CHD =           0.0000     CHD_0                            
+                 CHD =      126855.7081                   CHD =      126855.7081     CHD_1                            
+
+            TOTAL IN =      126855.7081              TOTAL IN =      126855.7081
+
+          OUT:                                     OUT:
+          ----                                     ----
+              STO-SS =       16553.5894                STO-SS =       16553.5894     STORAGE                          
+                 WEL =         300.0000                   WEL =         300.0000     WEL_0                            
+                 CHD =      110002.4932                   CHD =      110002.4932     CHD_0                            
+                 CHD =           0.0000                   CHD =           0.0000     CHD_1                            
+
+           TOTAL OUT =      126856.0826             TOTAL OUT =      126856.0826
+
+            IN - OUT =          -0.3745              IN - OUT =          -0.3745
+
+ PERCENT DISCREPANCY =          -0.00     PERCENT DISCREPANCY =          -0.00
+
+
+
+
+         TIME SUMMARY AT END OF TIME STEP    1 IN STRESS PERIOD    1
+                    SECONDS     MINUTES      HOURS       DAYS        YEARS
+                    -----------------------------------------------------------
+   TIME STEP LENGTH  86400.      1440.0      24.000      1.0000     2.73785E-03
+ STRESS PERIOD TIME  86400.      1440.0      24.000      1.0000     2.73785E-03
+         TOTAL TIME  86400.      1440.0      24.000      1.0000     2.73785E-03
+
+
+end timestep
+
