@@ -1985,9 +1985,7 @@ def nested_test():
 
     os.chdir(b_d)
 
-    #pertdf = pd.read_csv(os.path.join("testing_files","sensitivity_nested_hetero.dat"),skiprows=2,header=None,names=["pert","mf6adj"],sep="\\s+")
-    #print(pertdf)
-    print(adjdf["ss"])
+    #print(adjdf["ss"])
     #print(pertdf1.columns)
     pertssdf = pertdf1.loc[pertdf1.addr.str.contains("ss"),"pm1"]
     diff = 100.0 * (adjdf["ss"] - pertssdf) / pertssdf
