@@ -1315,7 +1315,7 @@ def test_xd_box_chd_ana():
     plot_adj_results = False # plot adj result
 
     plot_compare = False
-    new_d = 'xd_box_chd_ana'
+    new_d = 'xd_box_chd_ana2'
     nrow = 80
     ncol = 100
     nlay = 1

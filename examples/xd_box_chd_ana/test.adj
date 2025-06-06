@@ -1,0 +1,9 @@
+
+begin options
+hdf5_name out.h5
+end options
+
+begin performance_measure direct_pk000_pi040_pj020
+1 1 1 41 21 head direct 1.0 -1e+30
+end performance_measure
+
