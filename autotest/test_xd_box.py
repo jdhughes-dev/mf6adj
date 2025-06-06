@@ -1445,7 +1445,6 @@ def test_xd_box_chd_ana():
 
     
 #    xd_box_compare(new_d,plot_compare)
-    return new_d
 
 def test_xd_box_ss():
     # workflow flags
