@@ -55,6 +55,7 @@ def setup_xd_box_model(
     name="xdbox",
     full_sat_bnd=True,
     alt_bnd=None,
+    is_anatest=False,
 ):
     tdis_pd = [(sp_len, 1, 1.0) for _ in range(nper)]
     if botm is None:
@@ -123,6 +124,17 @@ def setup_xd_box_model(
 
     # ### Create the initial conditions (`IC`) Package
     start = top * np.ones((nlay, nrow, ncol))
+    if is_anatest:
+        L1 = delr * ncol
+        H1 = 1001.
+        H2 = 1000.
+        start = np.ones((nlay, nrow, ncol))
+        for kk in range(nlay):
+            for j in range(nrow):
+                for i in range(ncol):
+                    start[kk][j][i] = H1 + (H2 - H1) * \
+                     gwf.modelgrid.xcellcenters[j][i] / L1
+                    # start[kk][j][i] = H2
     flopy.mf6.ModflowGwfic(gwf, pname="ic", strt=start)
 
     # ### Create the storage (`STO`) Package
@@ -132,14 +144,23 @@ def setup_xd_box_model(
         geo.extend(botm)
         for k in range(nlay):
             t, b = geo[k], geo[k + 1]
-            sy.append(ss * (t - b))
+            if is_anatest:
+                sy.append(0.15)
+            else:
+                sy.append(ss * (t - b))
         steady_state = [False]
         transient = [True]
         if len(tdis_pd) > 1:
-            steady_state = dict.fromkeys(range(len(tdis_pd)), False)
-            steady_state[0] = True
-            transient = dict.fromkeys(range(len(tdis_pd)), True)
-            transient[0] = False
+            if is_anatest:
+                steady_state = dict.fromkeys(range(len(tdis_pd)), False)
+                steady_state[0] = True
+                transient = dict.fromkeys(range(len(tdis_pd)), True)
+                transient[0] = False
+            else:
+                steady_state = dict.fromkeys(range(len(tdis_pd)), False)
+                steady_state[0] = True
+                transient = dict.fromkeys(range(len(tdis_pd)), True)
+                transient[0] = False
 
         flopy.mf6.ModflowGwfsto(
             gwf,
@@ -161,7 +182,12 @@ def setup_xd_box_model(
     if ncol > 1:
         stage = top
         if not full_sat_bnd:
-            stage = botm[0] + ((top - botm[0]) / 4.0)
+            if is_anatest:
+                stage = botm[0] + ((top-botm[0])/4.0)
+                stageL = 1001.0
+                stageR = 1000.0
+            else:
+                stage = botm[0] + ((top - botm[0]) / 4.0)
 
         for k in [nlay - 1]:
             for i in range(nrow):
@@ -170,7 +196,11 @@ def setup_xd_box_model(
                 elif alt_bnd == "drn":
                     alt_rec.append(((k, i, 0), stage, 1000.0))
                 elif alt_bnd == "chd":
-                    alt_rec.append(((k, i, 0), stage))
+                    if is_anatest:
+                        alt_rec.append(((k, i, 0), stageL))
+                        alt_rec.append(((k, i, ncol-1), stageR)) 
+                    else:
+                        alt_rec.append(((k, i, 0), stage))
                 elif alt_bnd is None:
                     alt_rec.append(((k, i, 0), stage, 1000.0))
                 else:
@@ -193,17 +223,18 @@ def setup_xd_box_model(
         else:
             raise Exception()
 
-    ghb_rec = []
-    ghb_stage = top + 1
-    if not full_sat_bnd:
-        ghb_stage = botm[0] + (3.0 * (top - botm[0]) / 4.0)
-    for k in [0]:
-        for i in range(nrow):
-            ghb_rec.append(((k, i, ncol - 1), ghb_stage, 1000.0))
-    ghb_spd = dict.fromkeys(range(nper), ghb_rec)
-    if alt_bnd is None:
-        ghb_spd.update(dict.fromkeys(bnd_nper, alt_rec))
-    flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_spd)
+    if not is_anatest:
+        ghb_rec = []
+        ghb_stage = top + 1
+        if not full_sat_bnd:
+            ghb_stage = botm[0] + (3.0 * (top - botm[0]) / 4.0)
+        for k in [0]:
+            for i in range(nrow):
+                ghb_rec.append(((k, i, ncol - 1), ghb_stage, 1000.0))
+        ghb_spd = dict.fromkeys(range(nper), ghb_rec)
+        if alt_bnd is None:
+            ghb_spd.update(dict.fromkeys(bnd_nper, alt_rec))
+        flopy.mf6.ModflowGwfghb(gwf, stress_period_data=ghb_spd)
 
     wspd = {}
     start_well = 1
@@ -236,8 +267,9 @@ def setup_xd_box_model(
 
     flopy.mf6.ModflowGwfnpf(gwf, icelltype=icelltype, k=hk, k33=k33)
 
-    rech = {kper: np.zeros((nrow, ncol)) + 0.0000001 for kper in range(nper)}
-    flopy.mf6.ModflowGwfrcha(gwf, recharge=rech)
+    if not is_anatest:
+        rech = {kper: np.zeros((nrow, ncol)) + 0.0000001 for kper in range(nper)}
+        flopy.mf6.ModflowGwfrcha(gwf, recharge=rech)
 
     # # ### Write the datasets and run to make sure it works
     sim.write_simulation()
@@ -1268,6 +1300,152 @@ def test_xd_box_chd():
     return
 
 
+def test_xd_box_chd_ana():
+
+    
+    # workflow flags
+    include_id0 = False  # include idomain = 0 cells
+    include_sto = True
+
+    include_ghb_flux_pm = False
+
+    clean = True
+
+    run_adj = True
+    plot_adj_results = False # plot adj result
+
+    plot_compare = False
+    new_d = 'xd_box_chd_ana2'
+    nrow = 80
+    ncol = 100
+    nlay = 1
+    nper = 1
+    sp_len = 1
+    delr = 5.0
+    delc = 5.0
+    botm = [-1]#,-100]
+    if clean:
+        sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto,
+                             include_id0=include_id0, nrow=nrow, ncol=ncol,
+                             nlay=nlay,q=-0.0, hk=10.0,k33=10.0, 
+                             icelltype=1, iconvert=0, newton=True, 
+                             delr=delr, delc=delc,top=0,
+                             full_sat_bnd=False,botm=botm,alt_bnd="chd",sp_len=sp_len,
+                             is_anatest=True)
+    else:
+        sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
+
+    gwf = sim.get_model()
+    id = gwf.dis.idomain.array
+    nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
+    obsval = 1.0
+
+    pert_mult = 1.01
+    weight = 1.0
+
+    p_kijs = []
+
+    for k in range(nlay):
+        for i in range(nrow):
+            for j in range(ncol):
+                p_kijs.append((k, i, j))
+
+    pm_locs = []
+    for k in range(nlay):
+        for i in range(nrow):
+            pm_locs.append((k, i, i+2))
+
+    pm_locs = [(0, int(nrow / 2), int(ncol / 5))]
+    pm_locs = list(set(pm_locs))
+    pm_locs.sort()
+    
+
+    assert len(pm_locs) > 0
+    sys.path.insert(0,os.path.join(".."))
+    import mf6adj
+    if run_adj:
+        bd = os.getcwd()
+        os.chdir(new_d)
+        sys.path.append(os.path.join("..",".."))
+
+        print('calculating mf6adj sensitivity')
+
+        with open("test.adj",'w') as f:
+            f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
+            for p_kij in pm_locs:
+                k, i, j = p_kij
+                if id[k, i, j] <= 0:
+                    continue
+                pm_name = "direct_pk{0:03d}_pi{1:03d}_pj{2:03d}".format(k, i, j)
+                f.write("begin performance_measure {0}\n".format(pm_name))
+                for kper in range(sim.tdis.nper.data):
+                    f.write("{0} 1 {1} {2} {3} head direct {4} -1e+30\n".\
+                        format(kper + 1, k + 1, i + 1, j + 1, weight))
+                f.write("end performance_measure\n\n")
+            
+        adj = mf6adj.Mf6Adj("test.adj", lib_name,verbose_level=1)
+        adj.solve_gwf()
+        df_dict = adj.solve_adjoint()
+        
+        lamb = df_dict[pm_name]["wel6_q"]
+        
+
+        os.chdir(bd)
+        X = gwf.modelgrid.xcellcenters
+        Y = gwf.modelgrid.ycellcenters
+        
+        lambana = np.loadtxt(os.path.join("testing_files",
+                                  "lamb_Analytical.txt"))
+        lambana = pd.Series(lambana)
+        lamb = lamb.reindex(np.arange(nrow*ncol,dtype=int))
+        lamb.loc[:] *= -1
+        lambana.loc[pd.isna(lamb)] = np.nan
+        
+        
+        arrana = lambana.values.reshape(nrow,ncol)
+        arr = lamb.values.reshape(nrow,ncol)
+        vmin = min(np.nanmin(arrana),np.nanmin(arr))
+        vmax = max(np.nanmax(arrana),np.nanmax(arr))
+        levels = np.linspace(vmin,vmax,10)
+
+        diff = (arrana - arr)
+        #diff[np.abs(diff)<1] = np.nan
+        diff[np.abs(arrana)<1e-3] = np.nan
+        diff[np.abs(arr)<1e-3] = np.nan
+        
+        mx = np.nanmax(np.abs(diff))
+        assert mx < 0.04
+        
+        fig,axes = plt.subplots(1,2,figsize=(8.5,3))
+        cb = axes[0].pcolormesh(X,Y,arrana,vmin=vmin,vmax=vmax)
+        plt.colorbar(cb,ax=axes[0],label="adjoint state")
+        axes[0].contour(X,Y,arrana,vmin=vmin,vmax=vmax,levels=levels,
+                        colors="k",linewidths=0.5,linestyles="-")
+        axes[0].set_title("A) analytical",loc="left")
+        cb = axes[1].pcolormesh(X,Y,arr,vmin=vmin,vmax=vmax)
+        plt.colorbar(cb,ax=axes[1],label="adjoint state")
+        axes[1].contour(X,Y,arr,vmin=vmin,vmax=vmax,levels=levels,
+                        colors="k",linewidths=0.5,linestyles="-")
+        axes[1].set_title("B) MF6ADJ",loc="left")
+
+        # cb = axes[2].pcolormesh(X,Y,diff,vmin=-mx,vmax=mx,cmap="coolwarm")
+        # levels = np.linspace(-mx,mx,10)
+        # plt.colorbar(cb,ax=axes[2],label="difference")
+        # axes[2].contour(X,Y,diff,vmin=-mx,vmax=mx,levels=levels,
+        #                colors="k",linewidths=0.5,linestyles="-")
+        # axes[2].set_title("difference")
+
+        for ax in axes:
+            ax.set_aspect("equal")
+            ax.set_xlabel("X (m)")
+            ax.set_ylabel("Y (m)")
+        plt.tight_layout()
+        plt.savefig(os.path.join(new_d,"compare.png"),dpi=500)
+        plt.close()
+
+    
+#    xd_box_compare(new_d,plot_compare)
+
 def test_xd_box_ss():
     # workflow flags
     include_id0 = True  # include idomain = 0 cells
@@ -1781,5 +1959,42 @@ def test_xd_box_maw():
     xd_box_compare(new_d, plot_compare)
     return
 
+
+def nested_test():
+    org_d = "nested"
+    new_d = "nested_test"
+    if os.path.exists(new_d):
+        shutil.rmtree(new_d)
+    shutil.copytree(org_d,new_d)
+
+    with open(os.path.join(new_d,"test.adj"),'w') as f:
+        f.write("\nbegin options\n\nend options\n\n")
+        f.write("begin performance_measure pm1\n")
+        f.write("1 1 1 80 head direct 1.0 -1.0e30 \n")
+        f.write("end performance_measure\n\n")
+
+    b_d = os.getcwd()
+    os.chdir(new_d)
+
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, False)
+    adj.solve_gwf()
+    adjdf = adj.solve_adjoint()["pm1"]
+    pertdf1 = adj._perturbation_test(pert_mult=1.1)
+    adj.finalize()
+
+    os.chdir(b_d)
+
+    #print(adjdf["ss"])
+    #print(pertdf1.columns)
+    pertssdf = pertdf1.loc[pertdf1.addr.str.contains("ss"),"pm1"]
+    diff = 100.0 * (adjdf["ss"] - pertssdf) / pertssdf
+    print(diff[~np.isnan(diff)].shape)
+    assert diff[~np.isnan(diff)].shape[0] == 107
+    print(np.nanmax(np.abs(diff)))
+    assert np.nanmax(np.abs(diff)) < 0.1
+
+
+
 if __name__ == "__main__":
-    test_xd_box_chd()
+    #test_xd_box_chd_ana()
+    nested_test()

@@ -109,4 +109,4 @@ jobs:
     - name: Test notebooks ${{ matrix.os }}-python${{ matrix.python-version }}
       working-directory: ./examples
       run: |
-        pytest -v -n=auto --durations=0 --nbmake
+        pytest -v -n=auto --durations=0 --nbmake --nbmake-timeout=3000

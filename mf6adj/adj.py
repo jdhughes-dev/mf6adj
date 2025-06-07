@@ -244,7 +244,7 @@ class Mf6Adj(object):
 
                         raw = line2.lower().strip().split()
                         if self.is_structured and len(raw) != 9:
-                            self.logger.info("parsed line: " + raw)
+                            self.logger.info("parsed line: " + str(raw))
                             raise Exception(
                                 (
                                     f"performance measure entry on line {count} has "
@@ -253,7 +253,7 @@ class Mf6Adj(object):
                                 )
                             )
                         elif not self.is_structured and len(raw) != 8:
-                            self.logger.info("parsed line: " + raw)
+                            self.logger.info("parsed line: " + str(raw))
                             raise Exception(
                                 (
                                     f"performance measure entry on line {count} has "
@@ -1193,10 +1193,10 @@ class Mf6Adj(object):
         gwf_name = self._gwf_name.upper()
 
         org_head, org_sp_package_data = self.solve_gwf(pert_save=True)
-        tot = 0
-        for d in org_sp_package_data["ghb6"][(0, 0)]:
-            # print(d)
-            tot += d["simval"]
+        # tot = 0
+        # for d in org_sp_package_data["ghb6"][(0, 0)]:
+        #     # print(d)
+        #     tot += d["simval"]
         base_results = {
             pm.name: pm.solve_forward(org_head, org_sp_package_data)
             for pm in self._performance_measures
@@ -1431,3 +1431,4 @@ class Mf6Adj(object):
         df.index.name = "node"
         df.sort_index(inplace=True)
         df.to_csv("pert_results.csv")
+        return df
