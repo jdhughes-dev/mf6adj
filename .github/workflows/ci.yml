@@ -5,16 +5,71 @@ on:
     - cron: '0 8 * * *' # run at 8 AM UTC (12 AM PST, 8 PM NZST)
   push:
   pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+
+      - name: Build package
+        run: uv build
+
+      - name: Check package
+        run: uvx twine check --strict dist/*
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+
+      - name: Lint
+        run: uvx ruff check
+
+      - name: Check format
+        run: uvx ruff format --check
+
+      - name: Check spelling
+        run: uvx codespell
+
   mf6adjCI:
     name: autotest
+    needs: lint
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest] # , macos-latest] 
+        os: [ubuntu-latest, windows-latest, macos-latest] 
         #python-version: [3.8, 3.9, "3.10", "3.11"]
         python-version: ["3.10"]
         run-type: [std]
@@ -22,7 +77,10 @@ jobs:
         #include:
         #  - os: macos-latest
         #    python-version: 3.9
-
+    defaults:
+      run:
+        shell: bash -l {0}
+    
     steps:
     - name: Checkout repo
       uses:  actions/checkout@v3 # checksout this repo
@@ -34,35 +92,21 @@ jobs:
         environment-file: environment.yml
         environment-name: mf6adj
         cache-downloads: false
-        cache-env: false
-        extra-specs: |
+        create-args: |
           python=${{ matrix.python-version }}
 
-    - name: ${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.test-path }}
-      shell: bash -l {0}
-      #working-directory: ./autotest
+    - name: Install executables
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}    
       run: |
-        cd autotest
-        ls
-        pytest -v -s --durations=0
-      #env:
-      #  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        get-modflow --subset mf6,libmf6,gridgen :python
 
-    # - name: Coveralls
-    #   uses: coverallsapp/github-action@master
-    #   with:
-    #     github-token: ${{ secrets.GITHUB_TOKEN }}
-    #     flag-name: ${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.test-path }}
-    #     parallel: true
-    #     path-to-lcov: autotest/coverage.lcov
+    - name: Autotest ${{ matrix.os }}-python${{ matrix.python-version }}
+      working-directory: ./autotest
+      run: |
+        pytest -v -n=auto --durations=0
 
-  # coveralls_finish:
-  #   needs: pyemuCI
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - name: Coveralls Finished
-  #     uses: coverallsapp/github-action@master
-  #     with:
-  #       github-token: ${{ secrets.GITHUB_TOKEN }}
-  #       parallel-finished: true
-  #       path-to-lcov: autotest/coverage.lcov
+    - name: Test notebooks ${{ matrix.os }}-python${{ matrix.python-version }}
+      working-directory: ./examples
+      run: |
+        pytest -v -n=auto --durations=0 --nbmake --nbmake-timeout=3000
