@@ -221,7 +221,7 @@ def build_model(ws, name="disv"):
     
     sim.write_simulation()
 
-    pm_fname = f"perfmeas.dat"
+    pm_fname = "perfmeas.dat"
     with open(ws / pm_fname, "w") as fpm:
         for bnd in ("river", "drain"):
             if bnd == "river":
@@ -237,7 +237,10 @@ def build_model(ws, name="disv"):
                 for cellid in cellids:
                     if name == "disv":
                         k, node = cellid
-                        line = f"{kper + 1} 1 {k + 1} {node + 1} {pak} direct 1.0 -1.0e+30\n"
+                        line = (
+                            f"{kper + 1} 1 {k + 1} {node + 1} {pak} "
+                            + "direct 1.0 -1.0e+30\n"
+                            )
                     else:
                         node = cellid[0]
                         line = f"{kper + 1} 1 {node + 1} {pak} direct 1.0 -1.0e+30\n"
@@ -254,8 +257,8 @@ def solve_adjoint(ws, pm_fname):
     start = datetime.now()
 
     adj = mf6adj.Mf6Adj(pm_fname, lib_name, logging_level="INFO")
-    adj.solve_gwf(hdf5_name=forward_hdf5_name)  # solve the standard forward solution
-    dfsum = adj.solve_adjoint(linear_solver="cg")  # solve the adjoint state for each performance measure
+    adj.solve_gwf(hdf5_name=forward_hdf5_name)  
+    dfsum = adj.solve_adjoint(linear_solver="cg")  
     adj.finalize()  # release components
     duration = (datetime.now() - start).total_seconds()
     print("adjoint took:", duration)    

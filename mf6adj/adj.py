@@ -96,7 +96,7 @@ class Mf6Adj(object):
             unstructured_type = "disu"
         else:
             raise Exception(
-                f"gwf6 model discretization is not dis, disu, or disv."
+                "gwf6 model discretization is not dis, disu, or disv."
             )
 
         self._gwf = None
@@ -301,18 +301,18 @@ class Mf6Adj(object):
                                 self.logger.info("parsed line: " + str(raw))
                                 raise Exception(
                                     (
-                                        f"performance measure entry on line {count} has "
-                                        + f"the wrong number of items, found {len(raw)}, "
-                                        + "should have 8"
+                                        "performance measure entry on line "
+                                        + f"{count} has the wrong number of items, "
+                                        + f"found {len(raw)}, should have 8"
                                     )
                                 )
                             elif self.unstructured_type == "disu" and len(raw) != 7:
                                 self.logger.info("parsed line: " + str(raw))
                                 raise Exception(
                                     (
-                                        f"performance measure entry on line {count} has "
-                                        + f"the wrong number of items, found {len(raw)}, "
-                                        + "should have 7"
+                                        "performance measure entry on line "
+                                        + f"{count} has the wrong number of items, " +
+                                        f"found {len(raw)}, should have 7"
                                     )
                                 )
 
@@ -835,7 +835,7 @@ class Mf6Adj(object):
         sim_start = datetime.now()
 
         self.logger.info("starting flow solution")
-        
+
         # get current sim time
         ctime = self._gwf.get_current_time()
         # get ending sim time

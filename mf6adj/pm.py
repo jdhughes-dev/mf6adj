@@ -1,14 +1,23 @@
 import logging
 import os
+import types
 from datetime import datetime
 from typing import List, Optional, Union
-import types
 
 import h5py
 import numpy as np
 import pandas as pd
 import scipy.sparse as sparse
-from scipy.sparse.linalg import LinearOperator, cg, bicgstab, gmres, lgmres, spilu, spsolve
+from scipy.sparse.linalg import (
+    LinearOperator,
+    bicgstab,
+    cg,
+    gmres,
+    lgmres,
+    spilu,
+    spsolve,
+)
+
 
 class solver_counter(object):
     def __init__(self, disp=False):
@@ -394,7 +403,9 @@ class PerfMeas(object):
                 rhs = (drhsdh * lamb) - dfdh
             else:
                 rhs = -dfdh
-            self.logger.debug(f"rhs took: {(datetime.now() - start).total_seconds()} seconds")
+            self.logger.debug(
+                f"rhs took: {(datetime.now() - start).total_seconds()} seconds"
+                )
 
             start = datetime.now()
 
@@ -523,7 +534,7 @@ class PerfMeas(object):
 
                 residual = rhs - amat @ lamb
                 residual_2norm = np.linalg.norm(residual)
-                residual_infnorm = np.linalg.norm(residual, ord=np.inf)                    
+                residual_infnorm = np.linalg.norm(residual, ord=np.inf)
                 self.logger.info(
                     (
                         f"solver return code: {info} "
@@ -656,7 +667,7 @@ class PerfMeas(object):
             data["head"] = hdf[sol_key]["head"][:]
             msg = (
                 "adjoint solve took: " 
-                + f"{str((datetime.now() - kper_start).total_seconds())} "
+                + f"{(datetime.now() - kper_start).total_seconds()!s} "
                 + f"seconds to solve adjoint solution for PerfMeas: {self._name} "
                 + f"(kper, kstp) ({int(kk[0] + 1)}, {int(kk[1] + 1)})"
             )
