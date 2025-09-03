@@ -109,7 +109,7 @@ def test_freyberg_structured():
 
     start = datetime.now()
     os.chdir(new_d)
-    adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=2)
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="INFO")
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -206,7 +206,7 @@ def test_freyberg_quadtree():
 
         start = datetime.now()
         os.chdir(new_d)
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=2)
+        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="INFO")
         adj.solve_gwf()
         adj.solve_adjoint()
         adj.finalize()
@@ -318,7 +318,7 @@ def freyberg_structured_highres():
 
     start = datetime.now()
     os.chdir(new_d)
-    adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=2)
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="INFO")
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -539,7 +539,7 @@ def test_freyberg_notional_unstruct():
 
     start = datetime.now()
     os.chdir(new_d)
-    adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=2)
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="INFO")
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()

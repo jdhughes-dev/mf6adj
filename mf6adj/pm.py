@@ -1,14 +1,23 @@
 import logging
 import os
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Union
+import types
 
 import h5py
 import numpy as np
 import pandas as pd
 import scipy.sparse as sparse
-from scipy.sparse.linalg import LinearOperator, bicgstab, spilu, spsolve
+from scipy.sparse.linalg import LinearOperator, cg, bicgstab, gmres, lgmres, spilu, spsolve
 
+class solver_counter(object):
+    def __init__(self, disp=False):
+        self._disp = disp
+        self.niter = 0
+    def __call__(self, rk=None):
+        self.niter += 1
+        if self._disp:
+            print('iter %3i\trk = %s' % (self.niter, str(rk)))
 
 class PerfMeasRecord(object):
     """A performance measure record class - an instance for each row in the
@@ -90,7 +99,7 @@ class PerfMeas(object):
     ----------
     pm_name (str) : name of the performance measure
     pm_entries (list(PerfMeasRec)) : container of performance measure entries
-    verbose_level (int) : how much stdout
+    logging_level (str) : logging levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
 
     todo: preprocess all the connectivity in to faster look dict containers,
@@ -108,14 +117,36 @@ class PerfMeas(object):
     """
 
     def __init__(
-        self, pm_name: str, pm_entries: List[PerfMeasRecord], verbose_level: int = 1
+        self, 
+        pm_name: str, 
+        pm_entries: List[PerfMeasRecord], 
+        logging_level: Union[int, str] = "INFO",
     ):
         self._name = pm_name.lower().strip()
         self._entries = pm_entries
-        self.verbose_level = int(verbose_level)
+
+        if isinstance(logging_level, str):
+            if logging_level.upper() == "INFO":
+                self.logging_level = logging.INFO
+            elif logging_level.upper() == "DEBUG":
+                self.logging_level = logging.DEBUG
+            elif logging_level.upper() == "WARNING":
+                self.logging_level = logging.WARNING
+            elif logging_level.upper() == "ERROR":
+                self.logging_level = logging.ERROR
+            else:
+                self.logging_level = logging.CRITICAL
+        else:
+            if logging_level < 0:
+                logging_level = 0
+            self.logging_level = logging_level
+
         self.logger = logging.getLogger(logging.__name__ + self._name)
         logging.basicConfig(
-            filename=self._name + ".log", format="%(asctime)s %(message)s"
+            filename=self._name + ".log", 
+            filemode="w",
+            format="%(asctime)s %(levelname)s %(message)s",
+            level=self.logging_level,
         )
 
     @property
@@ -181,6 +212,7 @@ class PerfMeas(object):
                                             pfr.weight * (kk_d["simval"] - pfr.obsval)
                                         ) ** 2
         return result
+    
 
     def solve_adjoint(
         self,
@@ -189,6 +221,7 @@ class PerfMeas(object):
         linear_solver=None,
         linear_solver_kwargs: dict = {},
         use_precon: bool = True,
+        precon_kwargs: dict = {},
     ):
         """Solve for the adjoint state for the performance measure.
 
@@ -210,12 +243,16 @@ class PerfMeas(object):
             `linear_solver`.  Default is {}
         use_precon (bool): flag to use an ILU preconditioner with iterative
             linear solver.
+        precon_kwargs (dict): dictionary of keyword args to pass to the ilu 
+            preconditioner.  Default is {}
 
         Returns
         -------
         dfs (DataFrame) : summary of composite sensitivity information
 
         """
+        supported_iterative_solvers = ("cg", "gmres", "lgmres", "bicgstab",)
+
         adj_start = datetime.now()
         try:
             hdf = h5py.File(hdf5_forward_solution_fname, "r")
@@ -236,7 +273,7 @@ class PerfMeas(object):
         if os.path.exists(hdf5_adjoint_solution_fname):
             self.logger.warning(
                 (
-                    "WARNING: removing existing adjoint solution "
+                    "removing existing adjoint solution "
                     + f"file '{hdf5_adjoint_solution_fname}'"
                 )
             )
@@ -331,13 +368,14 @@ class PerfMeas(object):
         for itime, kk in enumerate(kperkstp[::-1]):
             data = {}
             kper_start = datetime.now()
-            self.logger.info(
-                kper_start,
-                "-->starting adjoint solve for PerfMeas:",
-                self._name,
-                " (kper,kstp)",
-                kk,
-            )
+            msg = (
+                "starting adjoint solve for PerfMeas: " 
+                + f"{self._name} (kper, kstp) ({int(kk[0] + 1)}, {int(kk[1] + 1)})"
+                )
+            self.logger.info(msg)
+            if itime == 0:
+                print(f"starting adjoint solve for PerfMeas: {self._name}")
+
             sol_key = kk_sol_map[kk]
             if sol_key in adf:
                 raise Exception(
@@ -345,7 +383,7 @@ class PerfMeas(object):
                 )
 
             start = datetime.now()
-            self.logger.info("forming rhs")
+            self.logger.debug("forming rhs")
             dfdh = self._dfdh(kk, hdf[sol_key])
             data["dfdh"] = dfdh
             iss = hdf[sol_key]["iss"][0]
@@ -356,11 +394,11 @@ class PerfMeas(object):
                 rhs = (drhsdh * lamb) - dfdh
             else:
                 rhs = -dfdh
-                self.logger.info(f"...took:{(datetime.now() - start).total_seconds()}")
+            self.logger.debug(f"rhs took: {(datetime.now() - start).total_seconds()} seconds")
 
             start = datetime.now()
 
-            self.logger.info("forming amat")
+            self.logger.debug("forming amat transpose")
             amat = hdf[sol_key]["amat"][:]
             head = hdf[sol_key]["head"][:]
             amat = sparse.csr_matrix(
@@ -368,77 +406,151 @@ class PerfMeas(object):
                 shape=(len(ia) - 1, len(ia) - 1),
             )
             amat = amat.transpose()
-            self.logger.info(f"...took:{(datetime.now() - start).total_seconds()}")
+            self.logger.debug(
+                    (
+                        "amat transpose took: "
+                        + f"{(datetime.now() - start).total_seconds()} seconds"
+                    )
+                )
+
             start = datetime.now()
             self.logger.info("lambda solve")
-            m = None
+            # m = None
+
+            is_newton = hdf[sol_key].attrs["is_newton"]
+
             if linear_solver is None:
                 if head.shape[0] < 50000:
-                    _linear_solver = spsolve
+                    linear_solver = "direct"
+                else:
+                    linear_solver = "bicgstab"
+
+            if linear_solver == "direct":
+                _linear_solver = spsolve
+                if len(linear_solver_kwargs) == 0:
                     _linear_solver_kwargs = {"use_umfpack": True}
                 else:
-                    _linear_solver = bicgstab
-                    _linear_solver_kwargs = {"rtol": 1e-5, "atol": 1e-5, "maxiter": 200}
-                    if use_precon:
-                        amat_ilu = spilu(amat)
-                        m = LinearOperator(
-                            (head.shape[0], head.shape[0]), amat_ilu.solve
-                        )
+                    _linear_solver_kwargs = linear_solver_kwargs
+            elif linear_solver in supported_iterative_solvers:
+                if len(linear_solver_kwargs) == 0:
+                    _linear_solver_kwargs = {
+                        "rtol": 1e-6,
+                        "atol": 1e-6,
+                        "maxiter": 200,
+                    }
+                else:
+                    _linear_solver_kwargs = linear_solver_kwargs
 
-            elif isinstance(linear_solver, str):
-                if linear_solver == "direct":
-                    _linear_solver = spsolve
-                    if len(linear_solver_kwargs) == 0:
-                        _linear_solver_kwargs = {"use_umfpack": True}
-                    else:
-                        _linear_solver_kwargs = linear_solver_kwargs
-                elif linear_solver == "bicgstab":
+                if linear_solver == "bicgstab":
                     _linear_solver = bicgstab
-                    if len(linear_solver_kwargs) == 0:
-                        _linear_solver_kwargs = {
-                            "rtol": 1e-5,
-                            "atol": 1e-5,
-                            "maxiter": 200,
-                        }
-                    else:
-                        _linear_solver_kwargs = linear_solver_kwargs
-                    if use_precon:
-                        amat_ilu = spilu(amat)
-                        m = LinearOperator(
-                            (head.shape[0], head.shape[0]), amat_ilu.solve
+                elif linear_solver == "cg":
+                    if is_newton:
+                        self.logger.warning(
+                            "GWF model is using the Newton-Raphson formulation. "
+                            + f"Switching from '{linear_solver}' to 'bicgstab' "
+                            + "linear solver."
                         )
+                        linear_solver = "bicgstab"
+                        _linear_solver = bicgstab
+                    else:
+                        _linear_solver = cg
+                elif linear_solver == "lgmres":
+                    _linear_solver = lgmres
+                elif linear_solver == "gmres":
+                    _linear_solver = gmres
                 else:
                     raise Exception(
-                        "unrecognized 'linear_solver' value: "
+                        "unrecognized iterative 'linear_solver' value: "
                         + f"'{linear_solver}', "
-                        + "should be 'direct' or 'bicgstab'"
+                        + f"should be ({', '.join(supported_iterative_solvers)})."
                     )
             else:
+                if not isinstance(linear_solver, types.FunctionType):
+                    raise Exception(
+                        f"specified linear_solver ('{linear_solver}') must be a "
+                        + " function if it not a supported iterative solver type. "
+                        + "Supported iterative solver types are "
+                        + f"({', '.join(supported_iterative_solvers)})."
+                    )
+
                 _linear_solver = linear_solver
                 _linear_solver_kwargs = linear_solver_kwargs
+
+            # set up preconditioner
+            m = None
+            if linear_solver != "direct":
                 if use_precon:
-                    amat_ilu = spilu(amat)
+                    if len(precon_kwargs) == 0:
+                        _precon_kwargs = {
+                            "drop_tol": 1e-4,
+                            "fill_factor": 10,
+                            "drop_rule": "basic,area",
+                            }
+                    else:
+                        _precon_kwargs = precon_kwargs
+                    amat_ilu = spilu(amat, **_precon_kwargs)
                     m = LinearOperator((head.shape[0], head.shape[0]), amat_ilu.solve)
+                    _linear_solver_kwargs["M"] = m                
 
-            if m is not None:
-                _linear_solver_kwargs["M"] = m
+            self.logger.info(f"solving with {linear_solver}")
+            self.logger.info(f"with solver options: {_linear_solver_kwargs}")
+            
+            # solve the system of equations
+            if linear_solver == "direct":
+                lamb = _linear_solver(amat, rhs, **_linear_solver_kwargs)
+            else:
+                counter = solver_counter()
+                if linear_solver == "gmres":
+                    lamb = _linear_solver(
+                        amat, 
+                        rhs, 
+                        callback=counter, 
+                        callback_type="x",
+                        **_linear_solver_kwargs,
+                        )
+                else:
+                    lamb = _linear_solver(
+                        amat, 
+                        rhs, 
+                        callback=counter, 
+                        **_linear_solver_kwargs,
+                        )
 
-            self.logger.info("...solving with " + str(_linear_solver))
-            self.logger.info("...with options:" + str(_linear_solver_kwargs))
 
-            # lamb = spsolve(amat, rhs,use_umfpack=True)
-            lamb = _linear_solver(amat, rhs, **_linear_solver_kwargs)
-            if isinstance(lamb, tuple):
-                self.logger.info("solver returned:" + str(lamb[1]))
+            if linear_solver in supported_iterative_solvers:
+                info = lamb[1]
                 lamb = lamb[0]
+
+                residual = rhs - amat @ lamb
+                residual_2norm = np.linalg.norm(residual)
+                residual_infnorm = np.linalg.norm(residual, ord=np.inf)                    
+                self.logger.info(
+                    (
+                        f"solver return code: {info} "
+                        + f"iterations: {counter.niter + 1} "
+                        + f"solver norms: L2 ({residual_2norm}) "
+                        + f"infinity ({residual_infnorm})"
+                    )
+                )
+                if info < 0:
+                    self.logger.error("solver parameter breakdown")
+                elif info > 0:
+                    self.logger.warning("solver convergence not achieved")
+
+
             if np.any(np.isnan(lamb)):
                 self.logger.warning(
                     (
-                        f"WARNING: nans in adjoint states for pm {self.name} "
-                        + f"at kperkstp {kk}"
+                        f"nans in adjoint states for pm {self.name} "
+                        + f"at (kper,kstp) ({int(kk[0]+1)}, {int(kk[1]+1)})"
                     )
                 )
-            self.logger.info(f"...took:{(datetime.now() - start).total_seconds()}")
+            self.logger.info(
+                    (
+                    "lambda solve took: "
+                    + f"{(datetime.now() - start).total_seconds()} seconds"
+                    )
+                )
             is_newton = hdf[sol_key].attrs["is_newton"]
 
             # zero out the adj state for chd nodes
@@ -451,7 +563,7 @@ class PerfMeas(object):
             lamb[chd_nodelist] = 0.0
 
             start = datetime.now()
-            self.logger.info("lam_dresdk_h")
+            self.logger.debug("forming lam_dresdk_h")
             k_sens, k33_sens = PerfMeas.lam_dresdk_h(
                 is_newton,
                 lamb,
@@ -475,12 +587,17 @@ class PerfMeas(object):
             data["k33"] = k33_sens
             comp_k_sens += k_sens
             comp_k33_sens += k33_sens
-            self.logger.info(f"...took:{(datetime.now() - start).total_seconds()}")
+            self.logger.debug(
+                    (
+                        "lam_dresdk_h took: "
+                        + f"{(datetime.now() - start).total_seconds()} seconds"
+                    )
+                )
 
             if has_sto:
                 start = datetime.now()
 
-                self.logger.info("ss")
+                self.logger.debug("storage")
 
                 if iss == 0:
                     ss_sens = lamb * hdf[sol_key]["dresdss_h"][:]
@@ -488,7 +605,12 @@ class PerfMeas(object):
                     ss_sens = np.zeros_like(lamb)
                 data["ss"] = ss_sens
                 comp_ss_sens += ss_sens
-                self.logger.info(f"...took:{(datetime.now() - start).total_seconds()}")
+                self.logger.debug(
+                        (
+                            "storage took: "
+                            + f"{(datetime.now() - start).total_seconds()} seconds"
+                        )
+                    )
 
             data["wel6_q"] = lamb
             comp_welq_sens += lamb
@@ -504,7 +626,7 @@ class PerfMeas(object):
                             continue
                         start = datetime.now()
 
-                        self.logger.info(f"{ptype},{pname}")
+                        self.logger.debug(f"{ptype}, {pname}")
 
                         sp_bnd_dict = {
                             "bound": hdf[sol_key][pname]["bound"][:],
@@ -522,24 +644,28 @@ class PerfMeas(object):
                                 sens_cond
                             )
                             data[pname + "_" + bnd_dict[ptype][1]] = sens_cond
-                        self.logger.info(
-                            f"...took:{(datetime.now() - start).total_seconds()}"
-                        )
+                        self.logger.debug(
+                                    (
+                                        f"{ptype}, {pname} took: "
+                                        + f"{(datetime.now() - start).total_seconds()} "
+                                        + "seconds"
+                                    )
+                                )
 
             data["lambda"] = lamb
             data["head"] = hdf[sol_key]["head"][:]
-            self.logger.info(
-                "-->took:" + str((datetime.now() - kper_start).total_seconds()),
-                " seconds to solve adjoint solution for PerfMeas:"
-                + self._name
-                + " (kper,kstp)"
-                + str(kk),
+            msg = (
+                "adjoint solve took: " 
+                + f"{str((datetime.now() - kper_start).total_seconds())} "
+                + f"seconds to solve adjoint solution for PerfMeas: {self._name} "
+                + f"(kper, kstp) ({int(kk[0] + 1)}, {int(kk[1] + 1)})"
             )
+            self.logger.info(msg)
 
-            if self.verbose_level > 2:
+            if self.logging_level == logging.DEBUG:
                 data["amat"] = amat
                 data["rhs"] = rhs
-            self.logger.info("...save")
+            self.logger.info("write group to hdf file")
             PerfMeas.write_group_to_hdf(
                 adf,
                 sol_key,
@@ -548,7 +674,7 @@ class PerfMeas(object):
                 grid_shape=grid_shape,
                 nodereduced=nodereduced,
             )
-        self.logger.info("...form composite sensitivities")
+        self.logger.info("form composite sensitivities")
         data = {}
         data["k11"] = comp_k_sens
         data["k33"] = comp_k33_sens
@@ -560,7 +686,7 @@ class PerfMeas(object):
 
         for name, vals in comp_bnd_results.items():
             data[name] = vals
-        self.logger.info("...save")
+        self.logger.info("writing composite sensitivities")
         PerfMeas.write_group_to_hdf(
             adf,
             "composite",
@@ -590,17 +716,15 @@ class PerfMeas(object):
         df.index.name = "node"
         df.to_csv(f"adjoint_summary_{self._name}.csv")
 
-        print(
-            datetime.now(),
+        kper, kstp = kk
+        dtsec = (datetime.now() - adj_start).total_seconds()
+        line = (
             "adjoint solve took: "
-            + str((datetime.now() - adj_start).total_seconds())
-            + f" for pm {self._name} at kperkstp {kk}",
-        )
-        self.logger.info(
-            "adjoint solve took: "
-            + str((datetime.now() - adj_start).total_seconds())
-            + f" for pm {self._name} at kperkstp {kk}"
-        )
+            + f"{dtsec:10.5g} seconds "
+            + f"for pm '{self._name}' at (kper,kstp) ({int(kper + 1)}, {int(kstp + 1)})"
+            )
+        self.logger.info(line)
+        print(f"adjoint solve took: {dtsec:10.5g} seconds for pm '{self._name}'")
         return df
 
     @staticmethod
