@@ -5,7 +5,7 @@ begin options
   print_flows
   obs6  filein  freyberg6.sfr.obs
   maximum_depth_change  1.00000000e-04
-  unit_conversion   86400.00000000
+  time_conversion   86400.00000000
 end options
 
 begin dimensions

@@ -251,7 +251,7 @@ def solve_adjoint(ws, pm_fname):
 
     adj = mf6adj.Mf6Adj(pm_fname, lib_name, logging_level="INFO")
     adj.solve_gwf(hdf5_name=forward_hdf5_name)
-    dfsum = adj.solve_adjoint(linear_solver="cg")
+    dfsum = adj.solve_adjoint()
     adj.finalize()  # release components
     duration = (datetime.now() - start).total_seconds()
     print("adjoint took:", duration)

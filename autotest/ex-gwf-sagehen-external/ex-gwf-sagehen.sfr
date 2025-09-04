@@ -4,7 +4,7 @@ BEGIN options
   SAVE_FLOWS
   BUDGET  FILEOUT  ex-gwf-sagehen.sfr.bud
   MOVER
-  UNIT_CONVERSION   86400.00000000
+  TIME_CONVERSION   86400.00000000
 END options
 
 BEGIN dimensions
