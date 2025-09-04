@@ -991,6 +991,11 @@ class Mf6Adj(object):
             ).copy()
             data_dict = {"amat": amat}
 
+            residual = self._gwf.get_value(
+                self._gwf.get_var_address("D", "SLN_1", "IMSLINEAR")
+            ).copy()
+            data_dict["residual"] = residual
+
             head = self._gwf.get_value(
                 self._gwf.get_var_address("X", self._gwf_name.upper())
             )[:nnode]

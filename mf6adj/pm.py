@@ -418,6 +418,7 @@ class PerfMeas(object):
             self.logger.debug("forming amat transpose")
             amat = hdf[sol_key]["amat"][:]
             head = hdf[sol_key]["head"][:]
+            residual = hdf[sol_key]["residual"][:]
             amat = sparse.csr_matrix(
                 (amat.copy()[: ja.shape[0]], ja.copy(), ia.copy()),
                 shape=(len(ia) - 1, len(ia) - 1),
@@ -680,6 +681,7 @@ class PerfMeas(object):
             if self.logging_level == logging.DEBUG:
                 data["amat"] = amat
                 data["rhs"] = rhs
+                data["residual"] = residual
             self.logger.info("write group to hdf file")
             PerfMeas.write_group_to_hdf(
                 adf,
@@ -1104,6 +1106,7 @@ class PerfMeas(object):
 
         """
         head = sol_dataset["head"][:]
+        residual = sol_dataset["residual"][:]
         dfdh = np.zeros_like(head)
         for pfr in self._entries:
             if pfr.kperkstp == kk:
