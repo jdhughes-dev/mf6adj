@@ -60,7 +60,7 @@ def test_ie_nomaw_1sp():
     start = datetime.now()
     os.chdir(new_d)
 
-    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], lib_name, verbose_level=2)
+    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], lib_name, logging_level="INFO")
 
     adj.solve_gwf()
     adj.solve_adjoint(
@@ -101,7 +101,7 @@ def test_ie_1sp():
     start = datetime.now()
     os.chdir(new_d)
 
-    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], lib_name, verbose_level=2)
+    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], lib_name, logging_level="INFO")
 
     adj.solve_gwf()
     adj.solve_adjoint(

@@ -3,6 +3,7 @@ import os
 import shutil
 from collections.abc import Callable
 from datetime import datetime
+from typing import Union
 
 import flopy
 import h5py
@@ -22,26 +23,52 @@ class Mf6Adj(object):
     ----------
     adj_filename (str): the adjoint input filename
     lib_name (str): the MODFLOW6 shared library file
-    verbose_level (int): flag to control output.  Default is 1
+    logging_level (str, int) : logging levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
 
 
     """
 
-    def __init__(self, adj_filename: str, lib_name: str, verbose_level: int = 1):
+    def __init__(
+        self,
+        adj_filename: str,
+        lib_name: str,
+        logging_level: Union[int, str] = "INFO",
+    ):
         """ """
-        self.verbose_level = int(verbose_level)
+        if isinstance(logging_level, str):
+            if logging_level.upper() == "INFO":
+                self.logging_level = logging.INFO
+            elif logging_level.upper() == "DEBUG":
+                self.logging_level = logging.DEBUG
+            elif logging_level.upper() == "WARNING":
+                self.logging_level = logging.WARNING
+            elif logging_level.upper() == "ERROR":
+                self.logging_level = logging.ERROR
+            else:
+                self.logging_level = logging.CRITICAL
+        else:
+            if logging_level < 0:
+                logging_level = 0
+            self.logging_level = logging_level
+
         if not os.path.exists(adj_filename):
             raise Exception(f"adj_filename '{adj_filename}' not found")
         self.adj_filename = adj_filename
         self.logger = logging.getLogger(logging.__name__ + ".Mf6Adj")
         logging.basicConfig(
-            filename=adj_filename + ".log", format="%(asctime)s %(message)s"
+            filename=adj_filename + ".log",
+            filemode="w",
+            format="%(asctime)s %(levelname)s %(message)s",
+            level=self.logging_level,
         )
+
+        self.logger.info(f"Running from {os.getcwd()}")
+
         # process the flow model
         # make sure the lib exists
         if not os.path.exists(lib_name):
-            print(f"WARNING: lib_name '{lib_name}' not found...continuing...")
+            self.logger.warning(f"lib_name '{lib_name}' not found...continuing...")
         # find the model name
         self._gwf_model_dict, namfile_dict = Mf6Adj.get_model_names_from_mfsim(".")
         if len(self._gwf_model_dict) != 1:
@@ -56,11 +83,20 @@ class Mf6Adj(object):
                 f"model is not a gwf6 type: {self._gwf_model_dict[self._gwf_name]}"
             )
         if "dis6" in self._gwf_package_dict:
-            self.logger.info("...structured grid found")
+            self.logger.info("structured grid found")
             is_structured = True
-        else:
-            self.logger.info("...unstructured grid found")
+            unstructured_type = None
+        elif "disv6" in self._gwf_package_dict:
+            self.logger.info("unstructured disv grid found")
             is_structured = False
+            unstructured_type = "disv"
+        elif "disu6" in self._gwf_package_dict:
+            self.logger.info("unstructured disu grid found")
+            is_structured = False
+            unstructured_type = "disu"
+        else:
+            raise Exception("gwf6 model discretization is not dis, disu, or disv.")
+
         self._gwf = None
         self._lib_name = lib_name
         self._flow_dir = "."
@@ -69,6 +105,7 @@ class Mf6Adj(object):
 
         self._structured_mg = None
         self.is_structured = is_structured
+        self.unstructured_type = unstructured_type
         self._shape = None
         if self.is_structured:
             nlay = self._gwf.get_value(
@@ -157,11 +194,16 @@ class Mf6Adj(object):
 
         ncpl = None
         if not self.is_structured:
-            addr = ["NCPL", self._gwf_name.upper(), "DIS"]
-            wbaddr = self._gwf.get_var_address(*addr)
-            ncpl = self._gwf.get_value(wbaddr)
-            addr = ["NLAY", self._gwf_name.upper(), "DIS"]
-            wbaddr = self._gwf.get_var_address(*addr)
+            if self.unstructured_type == "disv":
+                addr = ["NCPL", self._gwf_name.upper(), "DIS"]
+                wbaddr = self._gwf.get_var_address(*addr)
+                ncpl = self._gwf.get_value(wbaddr)
+                addr = ["NLAY", self._gwf_name.upper(), "DIS"]
+                wbaddr = self._gwf.get_var_address(*addr)
+            elif self.unstructured_type == "disu":
+                addr = ["NODES", self._gwf_name.upper(), "DIS"]
+                wbaddr = self._gwf.get_var_address(*addr)
+                ncpl = self._gwf.get_value(wbaddr)
 
         with open(self.adj_filename, "r") as f:
             count = 0
@@ -252,15 +294,26 @@ class Mf6Adj(object):
                                     + "should have 9"
                                 )
                             )
-                        elif not self.is_structured and len(raw) != 8:
-                            self.logger.info("parsed line: " + str(raw))
-                            raise Exception(
-                                (
-                                    f"performance measure entry on line {count} has "
-                                    + f"the wrong number of items, found {len(raw)}, "
-                                    + "should have 8"
+                        elif not self.is_structured:
+                            if self.unstructured_type == "disv" and len(raw) != 8:
+                                self.logger.info("parsed line: " + str(raw))
+                                raise Exception(
+                                    (
+                                        "performance measure entry on line "
+                                        + f"{count} has the wrong number of items, "
+                                        + f"found {len(raw)}, should have 8"
+                                    )
                                 )
-                            )
+                            elif self.unstructured_type == "disu" and len(raw) != 7:
+                                self.logger.info("parsed line: " + str(raw))
+                                raise Exception(
+                                    (
+                                        "performance measure entry on line "
+                                        + f"{count} has the wrong number of items, "
+                                        + f"found {len(raw)}, should have 7"
+                                    )
+                                )
+
                         kper = int(raw[0]) - 1
                         kstp = int(raw[1]) - 1
                         if kper > nper - 1:
@@ -270,7 +323,7 @@ class Mf6Adj(object):
                                 f"kstp > nstp[kper] -1 on line number {count}"
                             )
 
-                        i, j = None, None
+                        i, j, k = None, None, None
                         if self.is_structured:
                             kij = []
                             for i in range(3):
@@ -298,32 +351,50 @@ class Mf6Adj(object):
                                 inode = nn[0]
 
                         else:
-                            try:
-                                lay = int(raw[2])
-                            except Exception as e:
-                                print(
-                                    f"{e}\n\nerror casting layer info info on "
-                                    + f"line {count}: '{line2}'"
-                                )
-                            k = lay - 1
-                            try:
-                                node = int(raw[3])
-                            except Exception as e:
-                                print(
-                                    f"{e}\n\nerror casting layer info info on "
-                                    + f"line {count}: '{line2}'"
-                                )
-
-                            inode = ((ncpl * (lay - 1)) + node) - 1
-
-                            # if there is a reduced node scheme
-                            if len(nuser) > 1:
-                                nn = np.where(nuser == inode)[0]
-                                if nn.shape[0] != 1:
-                                    raise Exception(
-                                        f"node num {nuser} not in reduced node num"
+                            if self.unstructured_type == "disv":
+                                try:
+                                    lay = int(raw[2])
+                                except Exception as e:
+                                    print(
+                                        f"{e}\n\nerror casting layer info info on "
+                                        + f"line {count}: '{line2}'"
                                     )
-                                inode = nn[0]
+                                k = lay - 1
+                                try:
+                                    node = int(raw[3])
+                                except Exception as e:
+                                    print(
+                                        f"{e}\n\nerror casting layer info info on "
+                                        + f"line {count}: '{line2}'"
+                                    )
+
+                                inode = ((ncpl * (lay - 1)) + node) - 1
+
+                                # if there is a reduced node scheme
+                                if len(nuser) > 1:
+                                    nn = np.where(nuser == inode)[0]
+                                    if nn.shape[0] != 1:
+                                        raise Exception(
+                                            f"node num {nuser} not in reduced node num"
+                                        )
+                                    inode = nn[0]
+                            elif self.unstructured_type == "disu":
+                                try:
+                                    inode = int(raw[2]) - 1
+                                except Exception as e:
+                                    print(
+                                        f"{e}\n\nerror casting node info on "
+                                        + f"line {count}: '{line2}'"
+                                    )
+
+                                # if there is a reduced node scheme
+                                if len(nuser) > 1:
+                                    nn = np.where(nuser == inode)[0]
+                                    if nn.shape[0] != 1:
+                                        raise Exception(
+                                            f"node num {nuser} not in reduced node num"
+                                        )
+                                    inode = nn[0]
 
                         obsval = float(raw[-1])
                         weight = float(raw[-2])
@@ -382,7 +453,7 @@ class Mf6Adj(object):
                     if pm_name in [pm._name for pm in self._performance_measures]:
                         raise Exception(f"PM {pm_name} multiply defined")
                     self._performance_measures.append(
-                        PerfMeas(pm_name, pm_entries, self.verbose_level)
+                        PerfMeas(pm_name, pm_entries, self.logging_level)
                     )
 
                 else:
@@ -761,7 +832,8 @@ class Mf6Adj(object):
         fhd = self._open_hdf(self._hdf5_name)
         sim_start = datetime.now()
 
-        self.logger.info(f"...starting flow solution at {sim_start.strftime(DT_FMT)}")
+        self.logger.info("starting flow solution")
+
         # get current sim time
         ctime = self._gwf.get_current_time()
         # get ending sim time
@@ -878,8 +950,8 @@ class Mf6Adj(object):
                     td = (datetime.now() - sol_start).total_seconds() / 60.0
                     if verbose:
                         self.logger.info(
-                            f"flow stress period,time step {stress_period},"
-                            + f"{time_step} converged with {kiter} iters, took "
+                            f"flow (stress period,time step) ({stress_period},"
+                            + f"{time_step}) converged in {kiter} iters, took "
                             + f"{td:10.5G} mins"
                         )
                     break
@@ -918,6 +990,11 @@ class Mf6Adj(object):
                 self._gwf.get_var_address("AMAT", "SLN_1")
             ).copy()
             data_dict = {"amat": amat}
+
+            residual = self._gwf.get_value(
+                self._gwf.get_var_address("D", "SLN_1", "IMSLINEAR")
+            ).copy()
+            data_dict["residual"] = residual
 
             head = self._gwf.get_value(
                 self._gwf.get_var_address("X", self._gwf_name.upper())
@@ -1098,10 +1175,7 @@ class Mf6Adj(object):
         sim_end = datetime.now()
         td = (sim_end - sim_start).total_seconds() / 60.0
         if verbose:
-            self.logger.info(
-                f"\n...flow solution finished at {sim_end.strftime(DT_FMT)}, "
-                + f"took: {td:10.5G} mins"
-            )
+            self.logger.info(f"flow solution finished and took {td:10.5G} minutes")
             if num_fails > 0:
                 self.logger.info(f"...failed to converge {num_fails} times")
 
@@ -1118,6 +1192,7 @@ class Mf6Adj(object):
         linear_solver=None,
         linear_solver_kwargs: dict = {},
         use_precon: bool = True,
+        precon_kwargs: dict = {},
     ):
         """Solve for the adjoint state, one performance measure at at time
 
@@ -1133,6 +1208,8 @@ class Mf6Adj(object):
             `linear_solver`.  Default is {}
         use_precon (bool): flag to use an ILU preconditioner with iterative
             linear solver.
+        precon_kwargs (dict): dictionary of keyword args to pass to the ilu
+            preconditioner.  Default is {}
 
         Returns
         -------
@@ -1154,6 +1231,7 @@ class Mf6Adj(object):
                 linear_solver=linear_solver,
                 linear_solver_kwargs=linear_solver_kwargs,
                 use_precon=use_precon,
+                precon_kwargs=precon_kwargs,
             )
             dfs[pm.name] = df
         return dfs
@@ -1186,6 +1264,9 @@ class Mf6Adj(object):
             print(f"{e}\n\nCould not execute finalize()")
         self._gwf = None
 
+        # shut down the logger
+        logging.shutdown()
+
     def _perturbation_test(self, pert_mult: float = 1.01):
         """run the perturbation testing - this is for dev and testing only"""
 
@@ -1214,12 +1295,15 @@ class Mf6Adj(object):
         nodes = self._gwf.get_value(wbaddr)[0]
 
         kijs = None
+        nlay = None
+        if self.is_structured or self.unstructured_type == "disv":
+            addr = ["NLAY", gwf_name, "DIS"]
+            wbaddr = self._gwf.get_var_address(*addr)
+            nlay = self._gwf.get_value(wbaddr)[0]
+
         if self.is_structured:
             kijs = PerfMeas.get_lrc(self._shape, list(nuser))
             kijs = dict(zip(nuser, kijs))
-        addr = ["NLAY", gwf_name, "DIS"]
-        wbaddr = self._gwf.get_var_address(*addr)
-        nlay = self._gwf.get_value(wbaddr)[0]
 
         dfs = []
 

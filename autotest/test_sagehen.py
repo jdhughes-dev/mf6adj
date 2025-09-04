@@ -78,7 +78,7 @@ def test_sagehen():
     os.chdir(new_d)
 
     print("calculating adjoint...")
-    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], lib_name, verbose_level=2)
+    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], lib_name, logging_level="INFO")
 
     adj.solve_gwf()
     adj.solve_adjoint()

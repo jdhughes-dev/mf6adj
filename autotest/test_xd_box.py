@@ -882,7 +882,7 @@ def test_xd_box():
                 if len(lines) > 2:
                     [f.write(line) for line in lines]
 
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=1)
+        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
         adj.solve_gwf()
         adj.solve_adjoint()
         adj._perturbation_test(pert_mult=pert_mult)
@@ -1114,7 +1114,7 @@ def test_xd_box_unstruct():
                     )
                 f.write("end performance_measure\n\n")
 
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=1)
+        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
         adj.solve_gwf()
         adj.solve_adjoint()
         adj._perturbation_test(pert_mult=pert_mult)
@@ -1267,7 +1267,7 @@ def test_xd_box_chd():
                     lines.append("end performance_measure\n\n")
                 if len(lines) > 2:
                     [f.write(line) for line in lines]
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=1)
+        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
         adj.solve_gwf()
         adj.solve_adjoint()
         adj._perturbation_test(pert_mult=pert_mult)
@@ -1315,7 +1315,7 @@ def test_xd_box_chd_ana():
     plot_adj_results = False # plot adj result
 
     plot_compare = False
-    new_d = 'xd_box_chd_ana2'
+    new_d = 'xd_box_chd_ana2_test'
     nrow = 80
     ncol = 100
     nlay = 1
@@ -1383,7 +1383,7 @@ def test_xd_box_chd_ana():
                         format(kper + 1, k + 1, i + 1, j + 1, weight))
                 f.write("end performance_measure\n\n")
             
-        adj = mf6adj.Mf6Adj("test.adj", lib_name,verbose_level=1)
+        adj = mf6adj.Mf6Adj("test.adj", lib_name,logging_level="WARNING")
         adj.solve_gwf()
         df_dict = adj.solve_adjoint()
         
@@ -1569,7 +1569,7 @@ def test_xd_box_ss():
                 if len(lines) > 2:
                     [f.write(line) for line in lines]
 
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=1)
+        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
         adj.solve_gwf()
         adj.solve_adjoint()
         adj._perturbation_test(pert_mult=pert_mult)
@@ -1726,7 +1726,7 @@ def test_xd_box_drn():
                 if len(lines) > 2:
                     [f.write(line) for line in lines]
 
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=1)
+        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
         adj.solve_gwf()
         adj.solve_adjoint()
         adj._perturbation_test(pert_mult=pert_mult)
@@ -1927,7 +1927,7 @@ def test_xd_box_maw():
                 if len(lines) > 2:
                     [f.write(line) for line in lines]
 
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=1)
+        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
         adj.solve_gwf()
         adj.solve_adjoint()
         adj._perturbation_test(pert_mult=pert_mult)

@@ -4,13 +4,13 @@ begin options
 end options
 
 begin nonlinear
-  outer_maximum  100
-  outer_hclose 0.01
+  outer_maximum  250
+  outer_dvclose 0.01
 end nonlinear
 
 begin linear
   inner_maximum  100
   linear_acceleration  bicgstab
-  inner_hclose 0.01
+  inner_dvclose 0.001
 end linear
 
