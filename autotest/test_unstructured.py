@@ -38,7 +38,7 @@ perioddata = [(1.0, 1, 1.0), (1.0, 1, 1.0)]
 nper = len(perioddata)
 
 ncol, nrow = 3, 3
-nlay, ncpl = 1, ncol*nrow
+nlay, ncpl = 1, ncol * nrow
 nodes = ncpl
 delr = delc = 1.0
 
@@ -60,10 +60,10 @@ yc = []
 idx = 0
 y = float(nrow) * delc - 0.5 * delc
 for i in range(nrow):
-    istart =irow_starts[i]
+    istart = irow_starts[i]
     x = 0.5 * delr
     for j in range(ncol):
-        iverts.append([idx, istart, istart+1, istart+5, istart+4])
+        iverts.append([idx, istart, istart + 1, istart + 5, istart + 4])
         xc.append(x)
         yc.append(y)
         idx += 1
@@ -125,33 +125,32 @@ riv_disv = {
         ((0, 0), 1.0, 1.0, 0.5, "riv"),
         ((0, 3), 1.0, 1.0, 0.5, "riv"),
         ((0, 6), 1.0, 1.0, 0.5, "riv"),
-        ]
-        }
+    ]
+}
 drn_disv = {
     0: [
         ((0, 2), 0.25, 1.0, "drn"),
         ((0, 5), 0.25, 1.0, "drn"),
         ((0, 8), 0.25, 1.0, "drn"),
-        ]
-    }
+    ]
+}
 riv_disu = {
     0: [
         ((0,), 1.0, 1.0, 0.5, "riv"),
         ((3,), 1.0, 1.0, 0.5, "riv"),
         ((6,), 1.0, 1.0, 0.5, "riv"),
-        ]
-        }
+    ]
+}
 drn_disu = {
     0: [
         ((2,), 0.25, 1.0, "drn"),
         ((5,), 0.25, 1.0, "drn"),
         ((8,), 0.25, 1.0, "drn"),
-        ]
-    }
+    ]
+}
+
 
 def build_model(ws, name="disv"):
-
-
     sim = flopy.mf6.MFSimulation(sim_name=name, sim_ws=ws, exe_name=mf6_bin)
     tdis = flopy.mf6.ModflowTdis(sim, nper=nper, perioddata=perioddata)
     ims = flopy.mf6.ModflowIms(sim, complexity="simple", linear_acceleration="bicgstab")
@@ -159,32 +158,32 @@ def build_model(ws, name="disv"):
     gwf = flopy.mf6.ModflowGwf(sim, modelname=name, newtonoptions="newton")
     if name == "disv":
         dis = flopy.mf6.ModflowGwfdisv(
-            gwf, 
-            nlay=nlay, 
-            ncpl=ncpl, 
-            top=top, 
-            botm=botm, 
+            gwf,
+            nlay=nlay,
+            ncpl=ncpl,
+            top=top,
+            botm=botm,
             nvert=len(vertices),
             vertices=vertices,
             cell2d=cell2d,
-            )
+        )
     else:
         dis = flopy.mf6.ModflowGwfdisu(
-            gwf, 
+            gwf,
             nodes=nodes,
             nja=nja,
             iac=iac,
             ja=ja_arr,
-            area=delr*delc,
+            area=delr * delc,
             ihc=ihc,
             cl12=cl12,
             hwva=hwva,
-            top=top, 
-            bot=botm, 
+            top=top,
+            bot=botm,
             nvert=len(vertices),
             vertices=vertices,
             cell2d=cell2d,
-            )
+        )
 
     npf = flopy.mf6.ModflowGwfnpf(gwf, icelltype=1)
     sto = flopy.mf6.ModflowGwfsto(gwf, iconvert=1, transient={0: True})
@@ -196,29 +195,22 @@ def build_model(ws, name="disv"):
         riv_spd = riv_disu
         drn_spd = drn_disu
     riv = flopy.mf6.ModflowGwfriv(
-        gwf, 
-        boundnames=True,
-        maxbound=nrow, 
-        stress_period_data=riv_spd)
-    obs = {f"{name}.riv.obs.csv":
-           [["riv", "riv", "riv"]]}
+        gwf, boundnames=True, maxbound=nrow, stress_period_data=riv_spd
+    )
+    obs = {f"{name}.riv.obs.csv": [["riv", "riv", "riv"]]}
     riv.obs.initialize(
         filename=f"{name}.riv.obs",
         continuous=obs,
-        )
+    )
     drn = flopy.mf6.ModflowGwfdrn(
-        gwf, 
-        boundnames=True,
-        maxbound=nrow, 
-        stress_period_data=drn_spd
-        )
-    obs = {f"{name}.drn.obs.csv":
-           [["drn", "drn", "drn"]]}
+        gwf, boundnames=True, maxbound=nrow, stress_period_data=drn_spd
+    )
+    obs = {f"{name}.drn.obs.csv": [["drn", "drn", "drn"]]}
     drn.obs.initialize(
         filename=f"{name}.drn.obs",
         continuous=obs,
-        )
-    
+    )
+
     sim.write_simulation()
 
     pm_fname = "perfmeas.dat"
@@ -240,14 +232,15 @@ def build_model(ws, name="disv"):
                         line = (
                             f"{kper + 1} 1 {k + 1} {node + 1} {pak} "
                             + "direct 1.0 -1.0e+30\n"
-                            )
+                        )
                     else:
                         node = cellid[0]
                         line = f"{kper + 1} 1 {node + 1} {pak} direct 1.0 -1.0e+30\n"
                     fpm.write(line)
-            fpm.write("end performance_measure\n\n")    
+            fpm.write("end performance_measure\n\n")
 
     return sim, pm_fname
+
 
 def solve_adjoint(ws, pm_fname):
     bd = pl.Path.cwd()
@@ -257,13 +250,14 @@ def solve_adjoint(ws, pm_fname):
     start = datetime.now()
 
     adj = mf6adj.Mf6Adj(pm_fname, lib_name, logging_level="INFO")
-    adj.solve_gwf(hdf5_name=forward_hdf5_name)  
-    dfsum = adj.solve_adjoint(linear_solver="cg")  
+    adj.solve_gwf(hdf5_name=forward_hdf5_name)
+    dfsum = adj.solve_adjoint(linear_solver="cg")
     adj.finalize()  # release components
     duration = (datetime.now() - start).total_seconds()
-    print("adjoint took:", duration)    
+    print("adjoint took:", duration)
 
     os.chdir(bd)
+
 
 def get_sensitivities(ws):
     results = {}
@@ -279,9 +273,10 @@ def get_sensitivities(ws):
             print(f"{key}: min ({arr.min()}) max ({arr.max()})")
     return results
 
+
 def get_observations(sim):
     gwf = sim.get_model()
-    
+
     pak = gwf.riv
     riv_obs = pak.output.obs().get_data()
     print(f"RIVER OBS CUMSUM: {np.cumsum(riv_obs['RIV'][::-1])}")
@@ -321,6 +316,7 @@ def test_unstructured():
         minval = float(result_disu[bnd].min())
         print(f"disu {bnd} min value: {minval}")
         # assert minval >= -1.0, f"disu min >= -1 ({minval})"
+
 
 if __name__ == "__main__":
     test_unstructured()

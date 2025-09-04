@@ -197,7 +197,6 @@ def test_freyberg_quadtree():
                 f.write(f"begin performance_measure {bname}\n")
                 for kper in range(sim.tdis.nper.data):
                     for kij in bdf.cellid.values:
-                        print(kij)
                         f.write(
                             f"{kper + 1} 1 {kij[0] + 1} {kij[1] + 1} "
                             + "sfr_0 direct 1.0 -1.0e+30\n"

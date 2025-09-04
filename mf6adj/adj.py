@@ -29,11 +29,12 @@ class Mf6Adj(object):
 
     """
 
-    def __init__(self, 
-                 adj_filename: str, 
-                 lib_name: str, 
-                 logging_level: Union[int, str] = "INFO",
-                 ):
+    def __init__(
+        self,
+        adj_filename: str,
+        lib_name: str,
+        logging_level: Union[int, str] = "INFO",
+    ):
         """ """
         if isinstance(logging_level, str):
             if logging_level.upper() == "INFO":
@@ -51,13 +52,12 @@ class Mf6Adj(object):
                 logging_level = 0
             self.logging_level = logging_level
 
-
         if not os.path.exists(adj_filename):
             raise Exception(f"adj_filename '{adj_filename}' not found")
         self.adj_filename = adj_filename
         self.logger = logging.getLogger(logging.__name__ + ".Mf6Adj")
         logging.basicConfig(
-            filename=adj_filename + ".log", 
+            filename=adj_filename + ".log",
             filemode="w",
             format="%(asctime)s %(levelname)s %(message)s",
             level=self.logging_level,
@@ -95,9 +95,7 @@ class Mf6Adj(object):
             is_structured = False
             unstructured_type = "disu"
         else:
-            raise Exception(
-                "gwf6 model discretization is not dis, disu, or disv."
-            )
+            raise Exception("gwf6 model discretization is not dis, disu, or disv.")
 
         self._gwf = None
         self._lib_name = lib_name
@@ -311,8 +309,8 @@ class Mf6Adj(object):
                                 raise Exception(
                                     (
                                         "performance measure entry on line "
-                                        + f"{count} has the wrong number of items, " +
-                                        f"found {len(raw)}, should have 7"
+                                        + f"{count} has the wrong number of items, "
+                                        + f"found {len(raw)}, should have 7"
                                     )
                                 )
 
@@ -1205,7 +1203,7 @@ class Mf6Adj(object):
             `linear_solver`.  Default is {}
         use_precon (bool): flag to use an ILU preconditioner with iterative
             linear solver.
-        precon_kwargs (dict): dictionary of keyword args to pass to the ilu 
+        precon_kwargs (dict): dictionary of keyword args to pass to the ilu
             preconditioner.  Default is {}
 
         Returns
@@ -1293,14 +1291,14 @@ class Mf6Adj(object):
 
         kijs = None
         nlay = None
+        if self.is_structured or self.unstructured_type == "disv":
+            addr = ["NLAY", gwf_name, "DIS"]
+            wbaddr = self._gwf.get_var_address(*addr)
+            nlay = self._gwf.get_value(wbaddr)[0]
+
         if self.is_structured:
             kijs = PerfMeas.get_lrc(self._shape, list(nuser))
             kijs = dict(zip(nuser, kijs))
-        else:
-            if self.unstructured_type == "disv":
-                addr = ["NLAY", gwf_name, "DIS"]
-                wbaddr = self._gwf.get_var_address(*addr)
-                nlay = self._gwf.get_value(wbaddr)[0]
 
         dfs = []
 
