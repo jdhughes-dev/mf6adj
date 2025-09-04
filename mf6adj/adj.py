@@ -377,7 +377,7 @@ class Mf6Adj(object):
                                         raise Exception(
                                             f"node num {nuser} not in reduced node num"
                                         )
-                                    inode = nn[0] - 1
+                                    inode = nn[0]
                             elif self.unstructured_type == "disu":
                                 try:
                                     inode = int(raw[2]) - 1

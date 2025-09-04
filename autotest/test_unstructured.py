@@ -316,7 +316,3 @@ def test_unstructured():
         minval = float(result_disu[bnd].min())
         print(f"disu {bnd} min value: {minval}")
         # assert minval >= -1.0, f"disu min >= -1 ({minval})"
-
-
-if __name__ == "__main__":
-    test_unstructured()
