@@ -109,7 +109,7 @@ def test_freyberg_structured():
 
     start = datetime.now()
     os.chdir(new_d)
-    adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=2)
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="INFO")
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -197,7 +197,6 @@ def test_freyberg_quadtree():
                 f.write(f"begin performance_measure {bname}\n")
                 for kper in range(sim.tdis.nper.data):
                     for kij in bdf.cellid.values:
-                        print(kij)
                         f.write(
                             f"{kper + 1} 1 {kij[0] + 1} {kij[1] + 1} "
                             + "sfr_0 direct 1.0 -1.0e+30\n"
@@ -206,7 +205,7 @@ def test_freyberg_quadtree():
 
         start = datetime.now()
         os.chdir(new_d)
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=2)
+        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="INFO")
         adj.solve_gwf()
         adj.solve_adjoint()
         adj.finalize()
@@ -318,7 +317,7 @@ def freyberg_structured_highres():
 
     start = datetime.now()
     os.chdir(new_d)
-    adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=2)
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="INFO")
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
@@ -539,7 +538,7 @@ def test_freyberg_notional_unstruct():
 
     start = datetime.now()
     os.chdir(new_d)
-    adj = mf6adj.Mf6Adj("test.adj", lib_name, verbose_level=2)
+    adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="INFO")
     adj.solve_gwf()
     adj.solve_adjoint()
     adj.finalize()
