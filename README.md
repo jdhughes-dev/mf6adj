@@ -7,7 +7,7 @@
 
 `mamba env create -f environment.yml`
 
-### Activate the environment and add the MODFLOW6 API shared library to the mamba environment bin with the following:
+Activate the environment and add the MODFLOW6 executables to the mamba environment bin with the following:
 
 `mamba activate mf6adj`
 
