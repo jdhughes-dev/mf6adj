@@ -1,12 +1,13 @@
-[project]
+[workspace]
 name = "mf6adj"
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "linux-aarch64", "osx-arm64", "osx-64"]
-version = "0.1.0.dev0"
+version = "1.0.0"
 
 [dependencies]
 appdirs = "*"
 codespell = "*"
+contextily = "*"
 coverage = "*"
 filelock = "*"
 flaky = "*"
@@ -37,9 +38,16 @@ shapely = "*"
 
 [pypi-dependencies]
 modflow-devtools = { git = "https://github.com/MODFLOW-ORG/modflow-devtools.git", extras = ["dfn"] }
+hatch-fancy-pypi-readme = "*"
 
 [tasks]
 postinstall = "pip install --no-build-isolation --no-deps --disable-pip-version-check -e ."
+
+# jupyter
+jupyter = { cmd = "jupyter lab" }
+
+# flopy
+update-flopy = { cmd = "python -m flopy.mf6.utils.generate_classes --ref develop" }
 
 # format
 check-lint = "ruff check ."
