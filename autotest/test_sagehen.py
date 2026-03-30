@@ -10,7 +10,6 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import pyemu
 from matplotlib.backends.backend_pdf import PdfPages
 
 try:
@@ -19,23 +18,7 @@ except ImportError:
     sys.path.insert(0, str(pl.Path("../").resolve()))
     import mf6adj
 
-env_path = pl.Path(os.environ.get("CONDA_PREFIX", None))
-assert env_path is not None, (
-    "autotest script must be run from the mf6adj Conda environment"
-)
-
-bin_path = "bin"
-exe_ext = ""
-if "linux" in platform.platform().lower():
-    lib_ext = ".so"
-elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
-    lib_ext = ".dylib"
-else:
-    bin_path = "Scripts"
-    lib_ext = ".dll"
-    exe_ext = ".exe"
-lib_name = env_path / f"{bin_path}/libmf6{lib_ext}"
-mf6_bin = env_path / f"{bin_path}/mf6{exe_ext}"
+mf6_bin, lib_name = mf6adj.get_conda_mf6_paths()
 
 
 def test_sagehen():
@@ -44,12 +27,12 @@ def test_sagehen():
     org_d = "ex-gwf-sagehen-external"
     new_d = "sagehen_test"
 
-    adj_file = os.path.join(new_d, "test.adj")
+    adj_file = pl.Path(new_d) / "test.adj"
     if prep:
-        if os.path.exists(new_d):
+        if pl.Path(new_d).exists():
             shutil.rmtree(new_d)
         shutil.copytree(org_d, new_d)
-        pyemu.os_utils.run("mf6", cwd=new_d)
+        flopy.run_model(exe_name=mf6_bin, namefile=None, model_ws=new_d)
 
     sim = flopy.mf6.MFSimulation.load(sim_ws=new_d, load_only=["dis", "sfr"])
     gwf = sim.get_model()
@@ -75,15 +58,18 @@ def test_sagehen():
         f.write("end performance_measure\n")
 
     start = datetime.now()
-    os.chdir(new_d)
 
     print("calculating adjoint...")
-    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], lib_name, logging_level="INFO")
-
-    adj.solve_gwf()
+    adj = mf6adj.Mf6Adj(
+        adj_file.name,
+        lib_name,
+        logging_level="INFO",
+        working_directory=new_d,
+    )
+    adj.solve_forward_model()
     adj.solve_adjoint()
     adj.finalize()
-    os.chdir("..")
+
     duration = (datetime.now() - start).total_seconds()
     print("took:", duration)
 
@@ -95,7 +81,7 @@ def test_sagehen():
     assert len(result_hdf) == 1
     result_hdf = result_hdf[0]
 
-    hdf = h5py.File(os.path.join(new_d, result_hdf), "r")
+    hdf = h5py.File(pl.Path(new_d) / result_hdf, "r")
     keys = list(hdf.keys())
     keys.sort()
 
@@ -103,7 +89,7 @@ def test_sagehen():
 
     idomain = gwf.dis.idomain.array
     thresh = 0.0001
-    with PdfPages(os.path.join(new_d, "results.pdf")) as pdf:
+    with PdfPages(pl.Path(new_d) / "results.pdf") as pdf:
         for key in keys:
             if key != "composite":
                 continue

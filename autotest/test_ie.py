@@ -6,7 +6,6 @@ import sys
 from datetime import datetime
 
 import flopy
-import pyemu
 
 try:
     import mf6adj
@@ -19,57 +18,50 @@ assert env_path is not None, (
     "autotest script must be run from the mf6adj Conda environment"
 )
 
-bin_path = "bin"
-exe_ext = ""
-if "linux" in platform.platform().lower():
-    lib_ext = ".so"
-elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
-    lib_ext = ".dylib"
-else:
-    bin_path = "Scripts"
-    lib_ext = ".dll"
-    exe_ext = ".exe"
-lib_name = env_path / f"{bin_path}/libmf6{lib_ext}"
-mf6_bin = env_path / f"{bin_path}/mf6{exe_ext}"
+mf6_bin, lib_name = mf6adj.get_conda_mf6_paths()
 
 
 def test_ie_nomaw_1sp():
     prep = True
 
-    org_d = os.path.join("ie_nomaw_1sp")
+    org_d = pl.Path("ie_nomaw_1sp")
     new_d = "ie_nomaw_1sp_test"
+    new_dir = pl.Path(new_d)
 
-    adj_file = os.path.join(new_d, "test.adj")
+    adj_file = new_dir / "test.adj"
     if prep:
-        if os.path.exists(new_d):
-            shutil.rmtree(new_d)
-        shutil.copytree(org_d, new_d)
+        if new_dir.exists():
+            shutil.rmtree(new_dir)
+        shutil.copytree(org_d, new_dir)
 
-        pyemu.os_utils.run("mf6", cwd=new_d)
+        flopy.run_model(exe_name=mf6_bin, namefile=None, model_ws=new_dir)
 
-    sim = flopy.mf6.MFSimulation.load(sim_ws=new_d, load_only=["dis", "sfr"])
+    sim = flopy.mf6.MFSimulation.load(sim_ws=new_dir, load_only=["dis", "sfr"])
+    nstp = sim.tdis.perioddata.array[0][1]
 
     with open(adj_file, "w") as f:
         f.write("begin performance_measure single_all_times\n")
         for kper in range(sim.tdis.nper.data):
-            nstp = sim.tdis.perioddata.array[0][1]
-            print(nstp)
             f.write(f"{kper + 1} {nstp} {32} {1808} head direct 1.0 -1.0e+30\n")
         f.write("end performance_measure\n\n")
 
     start = datetime.now()
-    os.chdir(new_d)
 
-    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], lib_name, logging_level="INFO")
+    adj = mf6adj.Mf6Adj(
+        adj_file.name,
+        lib_name,
+        logging_level="INFO",
+        working_directory=new_dir,
+    )
 
-    adj.solve_gwf()
+    adj.solve_forward_model()
     adj.solve_adjoint(
         linear_solver="bicgstab",
         linear_solver_kwargs={"maxiter": 500, "atol": 1e-5},
         use_precon=True,
     )
     adj.finalize()
-    os.chdir("..")
+
     duration = (datetime.now() - start).total_seconds()
     print("took:", duration)
 
@@ -77,40 +69,44 @@ def test_ie_nomaw_1sp():
 def test_ie_1sp():
     prep = True
 
-    org_d = os.path.join("ie_1sp")
+    org_d = pl.Path("ie_1sp")
     new_d = "ie_1sp_test"
+    new_dir = pl.Path(new_d)
 
-    adj_file = os.path.join(new_d, "test.adj")
+    adj_file = new_dir / "test.adj"
     if prep:
-        if os.path.exists(new_d):
-            shutil.rmtree(new_d)
-        shutil.copytree(org_d, new_d)
+        if new_dir.exists():
+            shutil.rmtree(new_dir)
+        shutil.copytree(org_d, new_dir)
 
-        pyemu.os_utils.run("mf6", cwd=new_d)
+        flopy.run_model(exe_name=mf6_bin, namefile=None, model_ws=new_dir)
 
-    sim = flopy.mf6.MFSimulation.load(sim_ws=new_d, load_only=["dis", "sfr"])
+    sim = flopy.mf6.MFSimulation.load(sim_ws=new_dir, load_only=["dis", "sfr"])
+    nstp = sim.tdis.perioddata.array[0][1]
 
     with open(adj_file, "w") as f:
         f.write("begin performance_measure single_all_times\n")
         for kper in range(sim.tdis.nper.data):
-            nstp = sim.tdis.perioddata.array[0][1]
-            print(nstp)
             f.write(f"{kper + 1} {nstp} {32} {1808} head direct 1.0 -1.0e+30\n")
         f.write("end performance_measure\n\n")
 
     start = datetime.now()
-    os.chdir(new_d)
 
-    adj = mf6adj.Mf6Adj(os.path.split(adj_file)[1], lib_name, logging_level="INFO")
+    adj = mf6adj.Mf6Adj(
+        adj_file.name,
+        lib_name,
+        logging_level="INFO",
+        working_directory=new_dir,
+    )
 
-    adj.solve_gwf()
+    adj.solve_forward_model()
     adj.solve_adjoint(
         linear_solver="bicgstab",
         linear_solver_kwargs={"maxiter": 500, "atol": 1e-5},
         use_precon=False,
     )
     adj.finalize()
-    os.chdir("..")
+
     duration = (datetime.now() - start).total_seconds()
     print("took:", duration)
 

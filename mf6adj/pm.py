@@ -1,8 +1,8 @@
 import logging
-import os
+import pathlib as pl
 import types
 from datetime import datetime
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import h5py
 import numpy as np
@@ -14,40 +14,47 @@ from scipy.sparse.linalg import (
     cg,
     gmres,
     lgmres,
+    lsqr,
     spilu,
     spsolve,
+    svds,
 )
 
+from .utils.utils import SolverCallback
+from .utils.utils_fileio import _write_group_to_hdf
+from .utils.utils_logger import _LoggerUtil
+from .utils.utils_modflow import (
+    get_mf6_bound_dict,
+)
 
-class solver_counter(object):
-    def __init__(self, disp=False):
-        self._disp = disp
-        self.niter = 0
-
-    def __call__(self, rk=None):
-        self.niter += 1
-        if self._disp:
-            print("iter %3i\trk = %s" % (self.niter, str(rk)))
+PathLike = Union[str, pl.Path]
 
 
-class PerfMeasRecord(object):
-    """A performance measure record class - an instance for each row in the
-    performance measure block
+class PerfMeasRecord:
+    """Single record from a performance-measure block.
 
     Parameters
     ----------
-    kper (int) : zero-based stress period
-    kstp (int) : zero-based time step
-    inode (int) : zero-based node number
-    pm_type (str) : either 'head' or boundary package name as shown in the GWF nam file
-    pm_form (str) : either 'direct' or 'residual'
-    weight (float) : weight value
-    obsval (float) : optional observed counterpart.  only used if 'pm_form' is residual
-    k (int) : optional zero-based layer (for structured grids - only for reporting)
-    i (int) : optional zero-based row (for structured grids - only for reporting)
-    j (int) : optional zero-based column (for structured grids - only for reporting)
-
-
+    kper : int
+        Zero-based stress period.
+    kstp : int
+        Zero-based time step.
+    inode : int
+        Zero-based node number.
+    pm_type : str
+        Either `head` or a boundary package name from the GWF name file.
+    pm_form : str
+        Either `direct` or `residual`.
+    weight : float
+        Weight value.
+    obsval : float
+        Observed counterpart; used only for `residual` form.
+    k : int, optional
+        Zero-based layer index for structured-grid reporting.
+    i : int, optional
+        Zero-based row index for structured-grid reporting.
+    j : int, optional
+        Zero-based column index for structured-grid reporting.
     """
 
     def __init__(
@@ -63,6 +70,31 @@ class PerfMeasRecord(object):
         i: Optional[int] = None,
         j: Optional[int] = None,
     ):
+        """Initialize a performance-measure record.
+
+        Parameters
+        ----------
+        kper : int
+            Zero-based stress period.
+        kstp : int
+            Zero-based time step.
+        inode : int
+            Zero-based node number.
+        pm_type : str
+            Performance-measure type.
+        pm_form : str
+            Performance-measure form.
+        weight : float
+            Weight value.
+        obsval : float
+            Observed value used for residual measures.
+        k : int, optional
+            Zero-based layer index for structured-grid reporting.
+        i : int, optional
+            Zero-based row index for structured-grid reporting.
+        j : int, optional
+            Zero-based column index for structured-grid reporting.
+        """
         self._kper = int(kper)
         self._kstp = int(kstp)
         self.kperkstp = (self._kper, self._kstp)
@@ -91,7 +123,14 @@ class PerfMeasRecord(object):
                 + f"not '{self.pm_form}'"
             )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
+        """Return a compact string representation of the record.
+
+        Returns
+        -------
+        str
+            Summary string containing time-step, node, type, and form fields.
+        """
         s = (
             f"kperkstp:{self.kperkstp}, inode:{self.inode}, "
             + f"k:{self._k}, type:{self.pm_type}, form:{self.pm_form}"
@@ -103,28 +142,19 @@ class PerfMeasRecord(object):
         return s
 
 
-class PerfMeas(object):
-    """Performance measures for adjoint solves
+class PerfMeas:
+    """Performance-measure container and adjoint-solve helper.
 
     Parameters
     ----------
-    pm_name (str) : name of the performance measure
-    pm_entries (list(PerfMeasRec)) : container of performance measure entries
-    logging_level (str) : logging levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-
-
-    todo: preprocess all the connectivity in to faster look dict containers,
-        including nnode to kij info for structured grids
-
-        todo: convert several class methods to static methods - this might make
-              testing easier
-
-        todo: add a no-data value var to fill empty spots in output arrays.
-              Currently using zero :(
-
-        todo: check that each entry's kperkstp is in the dicts being passed to
-              solve_adjoint()
-
+    pm_name : str
+        Name of the performance measure.
+    pm_entries : list[PerfMeasRecord]
+        Performance-measure entries.
+    logging_level : str or int, optional
+        Logging level.
+    logger : logging.Logger, optional
+        Logger instance. If omitted, a new logger is created.
     """
 
     def __init__(
@@ -132,69 +162,67 @@ class PerfMeas(object):
         pm_name: str,
         pm_entries: List[PerfMeasRecord],
         logging_level: Union[int, str] = "INFO",
+        logger: Optional[_LoggerUtil] = None,
     ):
+        """Initialize a performance-measure container.
+
+        Parameters
+        ----------
+        pm_name : str
+            Name of the performance measure.
+        pm_entries : list[PerfMeasRecord]
+            Performance-measure entries.
+        logging_level : int or str, optional
+            Logging level to use when creating a new logger.
+        logger : logging.Logger, optional
+            Existing logger utility. If omitted, a new logger is created.
+        """
         self._name = pm_name.lower().strip()
         self._entries = pm_entries
 
-        if isinstance(logging_level, str):
-            if logging_level.upper() == "INFO":
-                self.logging_level = logging.INFO
-            elif logging_level.upper() == "DEBUG":
-                self.logging_level = logging.DEBUG
-            elif logging_level.upper() == "WARNING":
-                self.logging_level = logging.WARNING
-            elif logging_level.upper() == "ERROR":
-                self.logging_level = logging.ERROR
-            else:
-                self.logging_level = logging.CRITICAL
+        if logger is None:
+            logger_name = f"{self.__class__.__name__}-{self.name}"
+            logger_filename = f"{self.name}.log"
+            self.logger = _LoggerUtil(
+                logger_name,
+                logging_level,
+                logger_filename,
+            )
         else:
-            if logging_level < 0:
-                logging_level = 0
-            self.logging_level = logging_level
-
-        self.logger = logging.getLogger(logging.__name__ + self._name)
-        logging.basicConfig(
-            filename=self._name + ".log",
-            filemode="w",
-            format="%(asctime)s %(levelname)s %(message)s",
-            level=self.logging_level,
-        )
+            self.new_logger = False
+            self.logger = logger
 
     @property
-    def name(self):
-        """get self._name
+    def name(self) -> str:
+        """Return the performance measure name.
 
         Returns
         -------
-        name (str) : performance measure name
-
+        str
+            Performance-measure name.
         """
         return str(self._name)
 
-    @staticmethod
-    def get_mf6_bound_dict():
-        """get a container of information about which axes of the 'bound'
-        array from MODFLOW6 has the quantities for calculating the sensitivity to
+    def _performance_measure_forward(self, head_dict, sp_package_dict) -> float:
+        """Calculate the forward value of the performance measure.
+
+        This helper is used during perturbation testing to evaluate the
+        forward-response value associated with the configured entries.
+
+        Parameters
+        ----------
+        head_dict : dict
+            Mapping from ``(kper, kstp)`` tuples to simulated head arrays.
+        sp_package_dict : dict
+            Nested mapping of stress-package results produced by
+            :meth:`Mf6Adj.solve_forward_model` when ``pert_save=True``.
 
         Returns
         -------
-        d (dict) : dict of boundary info
-
-        """
-        d = {
-            "ghb6": {0: "bhead", 1: "cond"},
-            "drn6": {0: "elev", 1: "cond"},
-            "riv6": {0: "stage", 1: "cond"},
-            "sfr6": {0: "stage", 1: "cond"},
-        }  # ,
-        # "chd6":{0:"head"}}
-        return d
-
-    def solve_forward(self, head_dict, sp_package_dict):
-        """calculate forward solution for the performance measure.
-        Thjs is only for the perturbation testing process
-
-
+        float
+            Scalar forward value for the performance measure. Direct measures
+            are accumulated linearly and residual measures are accumulated as
+            weighted squared residuals.
         """
         result = 0.0
         for pfr in self._entries:
@@ -226,49 +254,85 @@ class PerfMeas(object):
 
     def solve_adjoint(
         self,
-        hdf5_forward_solution_fname: str,
-        hdf5_adjoint_solution_fname: Optional[str] = None,
+        hdf5_forward_solution_fname: PathLike,
+        hdf5_adjoint_solution_fname: Optional[PathLike] = None,
+        skip_solve: bool = False,
+        csv_summary: bool = False,
         linear_solver=None,
-        linear_solver_kwargs: dict = {},
+        linear_solver_kwargs: Optional[dict] = None,
         use_precon: bool = True,
-        precon_kwargs: dict = {},
-    ):
+        precon_kwargs: Optional[dict] = None,
+        singular_test: bool = False,
+        tikhonov: float = 0.0,
+        dvclose: Optional[float] = 1e-6,
+        rclose: Optional[float] = 1e-3,
+        dvscale: bool = False,
+    ) -> pd.DataFrame:
         """Solve for the adjoint state for the performance measure.
+
+        This method writes an adjoint-solution HDF5 file and, when requested,
+        writes a CSV summary file.
 
         Parameters
         ----------
-        hdf5_forward_solution_fname (str) : the HDF5 file written during the forward
-            GWF  solution that contains all the information needed to solve for the
-            adjoint state
-        hdf5_adjoint_solution_fname (str) : the HDF5 file to be created by the adjoint
-            solution process. If None, use `f"adjoint_solution_{self._name0}_" +
-            hdf5_forward_solution_fname`.
-        linear_solver (varies) : the scipy sparse linear alg solver to use.  If None,
-            a choice is made between direct and bicgstab, depending if the number of
-            nodes is less than 50,000.  If `str`, can be "direct" or "bicgstab".
-            Otherwise, can be a function pointer to a solver function in which the
-            first two args are the CSR amat matrix and the dense RHS vector,
-            respectively
-        linear_solver_kwargs (dict): dictionary of keyword args to pass to
-            `linear_solver`.  Default is {}
-        use_precon (bool): flag to use an ILU preconditioner with iterative
-            linear solver.
-        precon_kwargs (dict): dictionary of keyword args to pass to the ilu
-            preconditioner.  Default is {}
+        hdf5_forward_solution_fname : PathLike
+            HDF5 file created by :meth:`Mf6Adj.solve_forward_model` containing the
+            forward-solution
+            information needed for the adjoint solve.
+        hdf5_adjoint_solution_fname : PathLike, optional
+            HDF5 file to write the adjoint solution. If omitted, a default
+            name based on the performance-measure name is used. If the target
+            file already exists, it is removed before writing.
+        skip_solve : bool, optional
+            Skip the adjoint solve for time steps with no performance-measure
+            entries.
+        csv_summary : bool, optional
+            Write a CSV summary of the sensitivity information beside the
+            adjoint HDF5 output file.
+        linear_solver : str or callable, optional
+            Sparse linear solver to use. Supported string values are
+            ``"direct"``, ``"bicgstab"``, ``"cg"``, ``"gmres"``,
+            ``"lgmres"``, and ``"lsqr"``.
+        linear_solver_kwargs : dict, optional
+            Keyword arguments passed to the configured linear solver callable.
+        use_precon : bool, optional
+            Use an ILU preconditioner with an iterative linear solver.
+        precon_kwargs : dict, optional
+            Keyword arguments passed to the ILU preconditioner.
+        singular_test : bool, optional
+            Test for a singular matrix and apply Tikhonov regularization when
+            needed.
+        tikhonov : float, optional
+            Tikhonov regularization value.
+        dvclose : float, optional
+            Custom convergence criterion based on the maximum absolute change
+            between consecutive iterates.
+        rclose : float, optional
+            Custom convergence criterion based on the maximum absolute residual.
+        dvscale : bool, optional
+            Scale lambda and the right-hand side to improve iterative solver
+            convergence for large lambda values.
 
         Returns
         -------
-        dfs (DataFrame) : summary of composite sensitivity information
-
+        DataFrame
+            Summary of composite sensitivity information.
         """
         supported_iterative_solvers = (
+            "bicgstab",
             "cg",
             "gmres",
             "lgmres",
-            "bicgstab",
+            "lsqr",
         )
+        linear_solver_kwargs = (
+            {} if linear_solver_kwargs is None else dict(linear_solver_kwargs)
+        )
+        precon_kwargs = {} if precon_kwargs is None else dict(precon_kwargs)
 
         adj_start = datetime.now()
+        self.logger.logger.info(f"Starting solve_adjoint at {adj_start}")
+        hdf5_forward_solution_fname = pl.Path(hdf5_forward_solution_fname)
         try:
             hdf = h5py.File(hdf5_forward_solution_fname, "r")
         except Exception as e:
@@ -279,20 +343,21 @@ class PerfMeas(object):
                 )
             )
         if hdf5_adjoint_solution_fname is None:
-            pth = os.path.split(hdf5_forward_solution_fname)[0]
-            hdf5_adjoint_solution_fname = os.path.join(
-                pth,
-                f"adjoint_solution_{self._name}_" + hdf5_forward_solution_fname,
+            hdf5_adjoint_solution_fname = hdf5_forward_solution_fname.parent / (
+                f"adjoint_solution_{self._name}_"
+                + f"{hdf5_forward_solution_fname.name}"
             )
+        else:
+            hdf5_adjoint_solution_fname = pl.Path(hdf5_adjoint_solution_fname)
 
-        if os.path.exists(hdf5_adjoint_solution_fname):
-            self.logger.warning(
+        if hdf5_adjoint_solution_fname.exists():
+            self.logger.logger.warning(
                 (
-                    "removing existing adjoint solution "
+                    "Removing existing adjoint solution "
                     + f"file '{hdf5_adjoint_solution_fname}'"
                 )
             )
-            os.remove(hdf5_adjoint_solution_fname)
+            hdf5_adjoint_solution_fname.unlink()
 
         adf = h5py.File(hdf5_adjoint_solution_fname, "w")
 
@@ -338,11 +403,11 @@ class PerfMeas(object):
         grid_shape = None
         if "nrow" in hdf["gwf_info"].keys():
             grid_shape = (
-                hdf["gwf_info"]["nlay"][0],
-                hdf["gwf_info"]["nrow"][0],
-                hdf["gwf_info"]["ncol"][0],
+                int(hdf["gwf_info"]["nlay"][0]),
+                int(hdf["gwf_info"]["nrow"][0]),
+                int(hdf["gwf_info"]["ncol"][0]),
             )
-            self.logger.info(f"structured grid found, shape: {grid_shape}")
+            self.logger.logger.info(f"Structured grid found, shape: {grid_shape}")
 
         ia = hdf["gwf_info"]["ia"][:]
         ja = hdf["gwf_info"]["ja"][:]
@@ -373,7 +438,7 @@ class PerfMeas(object):
         comp_welq_sens = np.zeros(nnodes)
         comp_rch_sens = np.zeros((nnodes))
 
-        bnd_dict = PerfMeas.get_mf6_bound_dict()
+        bnd_dict = get_mf6_bound_dict()
         comp_bnd_results = {}
         for ptype, pnames in gwf_package_dict.items():
             if ptype in bnd_dict:
@@ -382,15 +447,18 @@ class PerfMeas(object):
                         comp_bnd_results[pname + "_" + aname] = np.zeros(nnodes)
 
         for itime, kk in enumerate(kperkstp[::-1]):
+            if skip_solve and not self.__pm_available(kk):
+                continue
+
             data = {}
             kper_start = datetime.now()
             msg = (
-                "starting adjoint solve for PerfMeas: "
+                "Starting adjoint solve for PerfMeas: "
                 + f"{self._name} (kper, kstp) ({int(kk[0] + 1)}, {int(kk[1] + 1)})"
             )
-            self.logger.info(msg)
-            if itime == 0:
-                print(f"starting adjoint solve for PerfMeas: {self._name}")
+            self.logger.logger.info(msg)
+            # if itime == 0:
+            #     print(f"starting adjoint solve for PerfMeas: {self._name}")
 
             sol_key = kk_sol_map[kk]
             if sol_key in adf:
@@ -399,24 +467,35 @@ class PerfMeas(object):
                 )
 
             start = datetime.now()
-            self.logger.debug("forming rhs")
-            dfdh = self._dfdh(kk, hdf[sol_key])
+            self.logger.logger.debug("Forming rhs")
+
+            self.logger.logger.debug("Calculate dfdh")
+            dfdh = self.__dfdh(kk, hdf[sol_key])
+
+            self.logger.logger.debug(
+                "Calculating dfdh took: "
+                + f"{(datetime.now() - start).total_seconds()} seconds"
+            )
+
             data["dfdh"] = dfdh
             iss = hdf[sol_key]["iss"][0]
-            if itime != 0:  # transient
+
+            if iss == 0:  # transient
                 # get the derv of RHS WRT head
                 drhsdh = hdf[sol_key]["drhsdh"][:]
                 data["drhsdh"] = drhsdh
                 rhs = (drhsdh * lamb) - dfdh
             else:
                 rhs = -dfdh
-            self.logger.debug(
-                f"rhs took: {(datetime.now() - start).total_seconds()} seconds"
+
+            self.logger.logger.debug(
+                "Formulating rhs took: "
+                + f"{(datetime.now() - start).total_seconds()} seconds"
             )
 
             start = datetime.now()
 
-            self.logger.debug("forming amat transpose")
+            self.logger.logger.debug("Taking transpose of amat")
             amat = hdf[sol_key]["amat"][:]
             head = hdf[sol_key]["head"][:]
             residual = hdf[sol_key]["residual"][:]
@@ -425,38 +504,46 @@ class PerfMeas(object):
                 shape=(len(ia) - 1, len(ia) - 1),
             )
             amat = amat.transpose()
-            self.logger.debug(
+            self.logger.logger.debug(
                 (
-                    "amat transpose took: "
+                    "Transpose of amat took: "
                     + f"{(datetime.now() - start).total_seconds()} seconds"
                 )
             )
 
             start = datetime.now()
-            self.logger.info("lambda solve")
-            # m = None
+            self.logger.logger.info("Solving for lambda")
 
             is_newton = hdf[sol_key].attrs["is_newton"]
+            self.logger.logger.debug(f"Newton-Raphson: {is_newton}")
 
             if linear_solver is None:
                 if head.shape[0] < 50000:
                     linear_solver = "direct"
                 else:
                     linear_solver = "bicgstab"
+            self.logger.logger.debug(f"Linear solver: {linear_solver}")
 
             if linear_solver == "direct":
                 _linear_solver = spsolve
-                if len(linear_solver_kwargs) == 0:
+                if not linear_solver_kwargs:
                     _linear_solver_kwargs = {"use_umfpack": True}
                 else:
                     _linear_solver_kwargs = linear_solver_kwargs
             elif linear_solver in supported_iterative_solvers:
-                if len(linear_solver_kwargs) == 0:
-                    _linear_solver_kwargs = {
-                        "rtol": 1e-6,
-                        "atol": 1e-6,
-                        "maxiter": 200,
-                    }
+                if not linear_solver_kwargs:
+                    if linear_solver == "lsqr":
+                        _linear_solver_kwargs = {
+                            "btol": 1e-6,
+                            "atol": 1e-6,
+                            "iter_lim": 5000,
+                        }
+                    else:
+                        _linear_solver_kwargs = {
+                            "rtol": 1e-6,
+                            "atol": 1e-6,
+                            "maxiter": 200,
+                        }
                 else:
                     _linear_solver_kwargs = linear_solver_kwargs
 
@@ -464,7 +551,7 @@ class PerfMeas(object):
                     _linear_solver = bicgstab
                 elif linear_solver == "cg":
                     if is_newton:
-                        self.logger.warning(
+                        self.logger.logger.warning(
                             "GWF model is using the Newton-Raphson formulation. "
                             + f"Switching from '{linear_solver}' to 'bicgstab' "
                             + "linear solver."
@@ -477,6 +564,8 @@ class PerfMeas(object):
                     _linear_solver = lgmres
                 elif linear_solver == "gmres":
                     _linear_solver = gmres
+                elif linear_solver == "lsqr":
+                    _linear_solver = lsqr
                 else:
                     raise Exception(
                         "unrecognized iterative 'linear_solver' value: "
@@ -495,11 +584,29 @@ class PerfMeas(object):
                 _linear_solver = linear_solver
                 _linear_solver_kwargs = linear_solver_kwargs
 
+            # test if a singular matrix
+            if singular_test:
+                self.logger.logger.info("Testing if transpose of amat is singular")
+                is_singular = self.__is_singular(amat)
+                if is_singular:
+                    self.logger.logger.info("Transpose of amat is singular")
+                    if tikhonov <= 0.0:
+                        tikhonov = 1e-6
+
+            # add tikhonov regularization
+            if tikhonov > 0.0:
+                self.logger.logger.info(f"Adding Tikhonov regularization ({tikhonov})")
+                sign = np.sign(amat.diagonal())
+                mult = sign[0]
+                I = sparse.eye(amat.shape[0], format=amat.format)
+                amat = amat + mult * tikhonov * I
+
             # set up preconditioner
             m = None
-            if linear_solver != "direct":
+            if linear_solver not in ("direct", "lsqr"):
                 if use_precon:
-                    if len(precon_kwargs) == 0:
+                    self.logger.logger.debug("Setup preconditioner")
+                    if not precon_kwargs:
                         _precon_kwargs = {
                             "drop_tol": 1e-4,
                             "fill_factor": 10,
@@ -507,64 +614,127 @@ class PerfMeas(object):
                         }
                     else:
                         _precon_kwargs = precon_kwargs
-                    amat_ilu = spilu(amat, **_precon_kwargs)
-                    m = LinearOperator((head.shape[0], head.shape[0]), amat_ilu.solve)
+                    try:
+                        amat_ilu = spilu(amat, **_precon_kwargs)
+                        m = LinearOperator(
+                            (head.shape[0], head.shape[0]),
+                            amat_ilu.solve,
+                        )
+                    except Exception as e:
+                        if "maxiter" in _linear_solver_kwargs:
+                            _linear_solver_kwargs["maxiter"] += 1000
+                        else:
+                            _linear_solver_kwargs["maxiter"] = 1000
+
+                        msg = (
+                            "Failed to form preconditioner - "
+                            + f"using unpreconditioned {linear_solver} solver and "
+                            + f"reset maxiter to {_linear_solver_kwargs['maxiter']}"
+                        )
+                        self.logger.logger.info(msg)
+
+                        error_lines = str(e).splitlines()
+                        msg = ""
+                        for line in error_lines:
+                            msg += f" {line}."
+                        self.logger.logger.debug(msg)
+                        m = None
                     _linear_solver_kwargs["M"] = m
 
-            self.logger.info(f"solving with {linear_solver}")
-            self.logger.info(f"with solver options: {_linear_solver_kwargs}")
+            if linear_solver != "direct" and (
+                dvclose is not None or rclose is not None
+            ):
+                _linear_solver_kwargs["atol"] = 0.0
+                _linear_solver_kwargs["rtol"] = 0.0
+
+            self.logger.logger.info(
+                f"Solving with {linear_solver}"
+                + f"with solver options: {_linear_solver_kwargs}"
+            )
 
             # solve the system of equations
             if linear_solver == "direct":
                 lamb = _linear_solver(amat, rhs, **_linear_solver_kwargs)
             else:
-                counter = solver_counter()
-                if linear_solver == "gmres":
-                    lamb = _linear_solver(
-                        amat,
-                        rhs,
-                        callback=counter,
-                        callback_type="x",
-                        **_linear_solver_kwargs,
+                if dvscale:
+                    idx_max = np.abs(lamb).argmax()
+                    scale = float(np.abs(lamb[idx_max]))
+                    if scale > 1e-30:
+                        self.logger.logger.debug(f"Scaling lambda and rhs ({scale})")
+                        lamb /= scale
+                        rhs /= scale
+                try:
+                    solver_cb = SolverCallback(
+                        logger=self.logger,
+                        A=amat,
+                        b=rhs,
+                        dvclose=dvclose,
+                        rclose=rclose,
                     )
-                else:
-                    lamb = _linear_solver(
-                        amat,
-                        rhs,
-                        callback=counter,
-                        **_linear_solver_kwargs,
-                    )
+                    if linear_solver == "gmres":
+                        lamb, info = _linear_solver(
+                            amat,
+                            rhs,
+                            x0=lamb,
+                            callback=solver_cb,
+                            callback_type="x",
+                            **_linear_solver_kwargs,
+                        )
+                    elif linear_solver == "lsqr":
+                        lamb, info = _linear_solver(
+                            amat,
+                            rhs,
+                            damp=tikhonov,
+                            x0=lamb,
+                            **_linear_solver_kwargs,
+                        )
+                    else:
+                        lamb, info = _linear_solver(
+                            amat,
+                            rhs,
+                            x0=lamb,
+                            callback=solver_cb,
+                            **_linear_solver_kwargs,
+                        )
+                except StopIteration as e:
+                    self.logger.logger.info(e)
+                    lamb, info = solver_cb.xold, 0
 
             if linear_solver in supported_iterative_solvers:
-                info = lamb[1]
-                lamb = lamb[0]
+                # info = lamb[1]
+                # lamb = lamb[0]
+                if dvscale:
+                    if scale > 1e-30:
+                        self.logger.logger.debug(f"Unscaling lambda and rhs ({scale})")
+                        lamb *= scale
+                        rhs *= scale
 
                 residual = rhs - amat @ lamb
                 residual_2norm = np.linalg.norm(residual)
                 residual_infnorm = np.linalg.norm(residual, ord=np.inf)
-                self.logger.info(
+                self.logger.logger.info(
                     (
-                        f"solver return code: {info} "
-                        + f"iterations: {counter.niter + 1} "
+                        f"Solver return code: {info} "
+                        + f"iterations: {solver_cb.niter} "
                         + f"solver norms: L2 ({residual_2norm}) "
                         + f"infinity ({residual_infnorm})"
                     )
                 )
                 if info < 0:
-                    self.logger.error("solver parameter breakdown")
+                    self.logger.logger.error("Solver parameter breakdown")
                 elif info > 0:
-                    self.logger.warning("solver convergence not achieved")
+                    self.logger.logger.warning("Solver convergence not achieved")
 
             if np.any(np.isnan(lamb)):
-                self.logger.warning(
+                self.logger.logger.warning(
                     (
-                        f"nans in adjoint states for pm {self.name} "
+                        f"Adjoint states for pm {self.name} contain nans "
                         + f"at (kper,kstp) ({int(kk[0] + 1)}, {int(kk[1] + 1)})"
                     )
                 )
-            self.logger.info(
+            self.logger.logger.info(
                 (
-                    "lambda solve took: "
+                    "Solving for lambda took: "
                     + f"{(datetime.now() - start).total_seconds()} seconds"
                 )
             )
@@ -580,8 +750,8 @@ class PerfMeas(object):
             lamb[chd_nodelist] = 0.0
 
             start = datetime.now()
-            self.logger.debug("forming lam_dresdk_h")
-            k_sens, k33_sens = PerfMeas.lam_dresdk_h(
+            self.logger.logger.debug("Formulating lam_dresdk_h")
+            k_sens, k33_sens = self.__lam_dresdk_h(
                 is_newton,
                 ihighcellsat,
                 lamb,
@@ -605,9 +775,9 @@ class PerfMeas(object):
             data["k33"] = k33_sens
             comp_k_sens += k_sens
             comp_k33_sens += k33_sens
-            self.logger.debug(
+            self.logger.logger.debug(
                 (
-                    "lam_dresdk_h took: "
+                    "Formulating lam_dresdk_h took: "
                     + f"{(datetime.now() - start).total_seconds()} seconds"
                 )
             )
@@ -615,7 +785,7 @@ class PerfMeas(object):
             if has_sto:
                 start = datetime.now()
 
-                self.logger.debug("storage")
+                self.logger.logger.debug("Formulating storage")
 
                 if iss == 0:
                     ss_sens = lamb * hdf[sol_key]["dresdss_h"][:]
@@ -623,9 +793,9 @@ class PerfMeas(object):
                     ss_sens = np.zeros_like(lamb)
                 data["ss"] = ss_sens
                 comp_ss_sens += ss_sens
-                self.logger.debug(
+                self.logger.logger.debug(
                     (
-                        "storage took: "
+                        "Formulating storage took: "
                         + f"{(datetime.now() - start).total_seconds()} seconds"
                     )
                 )
@@ -644,15 +814,13 @@ class PerfMeas(object):
                             continue
                         start = datetime.now()
 
-                        self.logger.debug(f"{ptype}, {pname}")
+                        self.logger.logger.debug(f"Formulating {ptype}, {pname}")
 
                         sp_bnd_dict = {
                             "bound": hdf[sol_key][pname]["bound"][:],
                             "node": hdf[sol_key][pname]["nodelist"][:],
                         }
-                        # print(pname,ptype)
-                        # print(hdf[sol_key][pname]["bound"][:])
-                        sens_level, sens_cond = self.lam_drhs_dbnd(
+                        sens_level, sens_cond = self.__lam_drhs_dbnd(
                             lamb, head, sp_bnd_dict, has_flux_pm
                         )
                         comp_bnd_results[pname + "_" + bnd_dict[ptype][0]] += sens_level
@@ -662,9 +830,9 @@ class PerfMeas(object):
                                 sens_cond
                             )
                             data[pname + "_" + bnd_dict[ptype][1]] = sens_cond
-                        self.logger.debug(
+                        self.logger.logger.debug(
                             (
-                                f"{ptype}, {pname} took: "
+                                f"Formulating {ptype}, {pname} took: "
                                 + f"{(datetime.now() - start).total_seconds()} "
                                 + "seconds"
                             )
@@ -673,27 +841,30 @@ class PerfMeas(object):
             data["lambda"] = lamb
             data["head"] = hdf[sol_key]["head"][:]
             msg = (
-                "adjoint solve took: "
+                "Adjoint solve took: "
                 + f"{(datetime.now() - kper_start).total_seconds()!s} "
                 + f"seconds to solve adjoint solution for PerfMeas: {self._name} "
                 + f"(kper, kstp) ({int(kk[0] + 1)}, {int(kk[1] + 1)})"
             )
-            self.logger.info(msg)
+            self.logger.logger.info(msg)
 
-            if self.logging_level == logging.DEBUG:
+            if self.logger.isDebugLogger:
+                self.logger.logger.debug("Adding amat, rhs, and residual to hdf file")
                 data["amat"] = amat
                 data["rhs"] = rhs
                 data["residual"] = residual
-            self.logger.info("write group to hdf file")
-            PerfMeas.write_group_to_hdf(
+
+            self.logger.logger.info("Write group to hdf file")
+            _write_group_to_hdf(
                 adf,
                 sol_key,
                 data,
                 nodeuser=nodeuser,
                 grid_shape=grid_shape,
                 nodereduced=nodereduced,
+                logger=self.logger.logger,
             )
-        self.logger.info("form composite sensitivities")
+        self.logger.logger.info("Formulate composite sensitivities")
         data = {}
         data["k11"] = comp_k_sens
         data["k33"] = comp_k33_sens
@@ -705,14 +876,15 @@ class PerfMeas(object):
 
         for name, vals in comp_bnd_results.items():
             data[name] = vals
-        self.logger.info("writing composite sensitivities")
-        PerfMeas.write_group_to_hdf(
+        self.logger.logger.info("Writing composite sensitivities")
+        _write_group_to_hdf(
             adf,
             "composite",
             data,
             nodeuser=nodeuser,
             grid_shape=grid_shape,
             nodereduced=nodereduced,
+            logger=self.logger.logger,
         )
         adf.close()
         hdf.close()
@@ -733,110 +905,50 @@ class PerfMeas(object):
             df["ss"] = comp_ss_sens
 
         df.index.name = "node"
-        df.to_csv(f"adjoint_summary_{self._name}.csv")
+        if csv_summary:
+            csv_path = hdf5_adjoint_solution_fname.with_suffix(".csv")
+            df.to_csv(csv_path)
 
         kper, kstp = kk
         dtsec = (datetime.now() - adj_start).total_seconds()
         line = (
-            "adjoint solve took: "
+            "Adjoint solve took: "
             + f"{dtsec:10.5g} seconds "
             + f"for pm '{self._name}' at (kper,kstp) ({int(kper + 1)}, {int(kstp + 1)})"
         )
-        self.logger.info(line)
-        print(f"adjoint solve took: {dtsec:10.5g} seconds for pm '{self._name}'")
+        self.logger.logger.info(line)
+
         return df
 
-    @staticmethod
-    def write_group_to_hdf(
-        hdf,
-        group_name,
-        data_dict,
-        attr_dict={},
-        grid_shape=None,
-        nodeuser=None,
-        nodereduced=None,
-    ):
-        """write a group in data to an open HDF5 file
+    def __dconddhk(self, k1, k2, cl1, cl2, width, height1, height2) -> float:
+        """Return the derivative of intercell conductance with respect to ``K``.
+
+        The expression follows the MODFLOW-style conductance formulation for a
+        two-cell connection and is used when building hydraulic-conductivity
+        sensitivities.
 
         Parameters
         ----------
-        hdf (h5py.File) : an open HDF5 filehandle
-        group_name (str) : the group name for the dataset
-        data_dict (dict) : datasets to write to the HDF5 file
-        attr_dict (dict) : optional dict of attributes to write for the group
-        nodeuser (ndarray) : optional `nodeuser` array from MODFLOW6
-        nodereduced (ndarray) : optional `nodereduced` array from MODFLOW6
-
-        """
-        if group_name in hdf:
-            raise Exception(f"group_name {group_name} already in hdf file")
-        grp = hdf.create_group(group_name)
-        for name, val in attr_dict.items():
-            grp.attrs[name] = val
-        kijs = None
-        if grid_shape is not None and nodeuser is not None:
-            kijs = PerfMeas.get_lrc(grid_shape, list(nodeuser))
-        for tag, item in data_dict.items():
-            if isinstance(item, list):
-                item = np.array(item)
-            if isinstance(item, np.ndarray):
-                if grid_shape is not None and nodeuser is not None:
-                    if len(item) == len(nodeuser):  # 3D
-                        arr = np.zeros(grid_shape, dtype=item.dtype)
-                        for kij, v in zip(kijs, item):
-                            arr[kij] = v
-
-                        _ = grp.create_dataset(
-                            tag, grid_shape, dtype=item.dtype, data=arr
-                        )
-                    else:
-                        raise Exception("doh! " + str(tag))
-                elif nodeuser is not None and nodereduced is not None:
-                    arr = np.zeros_like(nodereduced, dtype=item.dtype)
-                    for inode, v in zip(nodeuser, item):
-                        arr[inode] = v
-                    _ = grp.create_dataset(tag, arr.shape, dtype=item.dtype, data=arr)
-                else:
-                    _ = grp.create_dataset(tag, item.shape, dtype=item.dtype, data=item)
-            elif isinstance(item, dict):
-                subgrp = grp.create_group(tag)
-                for k, v in item.items():
-                    if isinstance(v, np.ndarray):
-                        _ = subgrp.create_dataset(k, v.shape, dtype=v.dtype, data=v)
-                    else:
-                        subgrp.attrs[k] = v
-
-            else:
-                raise Exception(
-                    f"unrecognized data_dict entry: {tag},type:{type(item)}"
-                )
-        if nodeuser is not None:
-            _ = grp.create_dataset(
-                "nodeuser", nodeuser.shape, dtype=nodeuser.dtype, data=nodeuser
-            )
-        if kijs is not None:
-            for idx, name in enumerate(["k", "i", "j"]):
-                arr = np.array([kij[idx] for kij in kijs], dtype=int)
-                _ = grp.create_dataset(name, arr.shape, dtype=arr.dtype, data=arr)
-
-    @staticmethod
-    def _dconddhk(k1, k2, cl1, cl2, width, height1, height2):
-        """Partial of conductance with respect to K
-
-        Parameters
-        ----------
-        k1 (float) : K of connection 1
-        k2 (float) : K of connection 2
-        cl1 (float) : length of connection 1
-        cl2 (float) : length of connection 2
-        width (float) : connection width
-        height1 (float) : height of connection 1
-        height2 (float) : height of connmection 2
+        k1 : float
+            Hydraulic conductivity for connection 1.
+        k2 : float
+            Hydraulic conductivity for connection 2.
+        cl1 : float
+            Length of connection 1.
+        cl2 : float
+            Length of connection 2.
+        width : float
+            Connection width.
+        height1 : float
+            Saturated height of connection 1.
+        height2 : float
+            Saturated height of connection 2.
 
         Returns
         -------
-        d (float) : partial of conductance WRT K
-
+        float
+            Derivative of connection conductance with respect to hydraulic
+            conductivity.
         """
 
         # todo: upstream weighting - could use height1 and height2 to check...
@@ -846,18 +958,18 @@ class PerfMeas(object):
         )
         return d
 
-    @staticmethod
-    def smooth_sat(sat):
-        """Saturation smoother using sigmoid function from MODFLOW6
+    def __smooth_sat_simple(self, sat) -> float:
+        """Smooth saturation using the MODFLOW 6 sigmoid-style function.
 
         Parameters
         ----------
-        sat (ndarray) : saturation array
+        sat : float
+            Saturation value.
 
         Returns
         -------
-        s_sat (ndarray) : smoothed saturation
-
+        float
+            Smoothed saturation bounded between 0 and 1.
         """
         satomega = 1.0e-6
         A_omega = 1 / (1 - satomega)
@@ -872,20 +984,22 @@ class PerfMeas(object):
             s_sat = 1 - (A_omega / (2 * satomega)) * ((1 - sat) ** 2)
         return s_sat
 
-    @staticmethod
-    def d_smooth_sat_dh(sat, top, bot):
-        """Partial of smoother saturation with respect to head
+    def __d_smooth_sat_dh_simple(self, sat, top, bot) -> float:
+        """Return the derivative of smoothed saturation with respect to head.
 
         Parameters
         ----------
-        sat (ndarray) : saturation
-        top (ndarray) : cell top
-        bot (ndarray) : cell bottom
+        sat : float
+            Saturation.
+        top : float
+            Cell top elevation.
+        bot : float
+            Cell bottom elevation.
 
         Returns
         -------
-        d_s_sat_dh (ndarray) : partial of smoothed saturation WRT head
-
+        float
+            Derivative of the smoothed saturation curve with respect to head.
         """
         satomega = 1.0e-6
         A_omega = 1 / (1 - satomega)
@@ -898,8 +1012,23 @@ class PerfMeas(object):
             d_s_sat_dh = (A_omega / satomega) * (1 - sat) / (top - bot)
         return d_s_sat_dh
 
-    @staticmethod
-    def _cell_sat(top, bot, h):
+    def __cell_sat(self, top, bot, h) -> float:
+        """Return cell saturation from cell top, bottom, and head.
+
+        Parameters
+        ----------
+        top : float
+            Cell top elevation.
+        bot : float
+            Cell bottom elevation.
+        h : float
+            Cell head.
+
+        Returns
+        -------
+        float
+            Cell saturation clipped to the interval ``[0, 1]``.
+        """
         if h > top:
             sat = 1.0
         elif h < bot:
@@ -908,24 +1037,31 @@ class PerfMeas(object):
             sat = (h - bot) / (top - bot)
         return sat
 
-    @staticmethod
-    def _smooth_sat(ihighcellsat, top1, top2, bot1, bot2, h1, h2):
-        """Private method for upstream smoothing
+    def __smooth_sat(self, ihighcellsat, top1, top2, bot1, bot2, h1, h2) -> float:
+        """Return smoothed saturation for the upstream cell.
 
         Parameters
         ----------
-        ihighcellsat (int) : flag for using highest cell bottom to calculate saturation
-        top1 (float) : top of node 1
-        top2 (float) : top of node 2
-        bot1 (float) : bottom of node 1
-        bot2 (float) : bottom of node 2
-        h1 (float) : head of node 1
-        h2 (float) : head of node 2
+        ihighcellsat : int
+            Whether to use the highest cell bottom when calculating saturation.
+        top1 : float
+            Top elevation of node 1.
+        top2 : float
+            Top elevation of node 2.
+        bot1 : float
+            Bottom elevation of node 1.
+        bot2 : float
+            Bottom elevation of node 2.
+        h1 : float
+            Head of node 1.
+        h2 : float
+            Head of node 2.
 
         Returns
         -------
-        value (float) smoothed saturation of the upstream node
-
+        float
+            Smoothed saturation of the upstream node selected from the
+            connection pair.
         """
         bot = None
         if ihighcellsat != 0:
@@ -933,41 +1069,45 @@ class PerfMeas(object):
                 bot = max(bot1, bot2)
         if h1 > h2:
             if bot is None:
-                sat = PerfMeas._cell_sat(top1, bot1, h1)
+                sat = self.__cell_sat(top1, bot1, h1)
             else:
-                sat = PerfMeas._cell_sat(top1, bot, h1)
+                sat = self.__cell_sat(top1, bot, h1)
         else:
             if bot is None:
-                sat = PerfMeas._cell_sat(top2, bot2, h2)
+                sat = self.__cell_sat(top2, bot2, h2)
             else:
-                sat = PerfMeas._cell_sat(top2, bot, h2)
-        return PerfMeas.smooth_sat(sat)
+                sat = self.__cell_sat(top2, bot, h2)
+        return self.__smooth_sat_simple(sat)
 
-    @staticmethod
-    def _d_smooth_sat_dh(sat, h1, h2, top, bot):
-        """Private method of partial of smoothed saturation
-           with respect to upstream head
+    def __d_smooth_sat_dh(self, sat, h1, h2, top, bot) -> float:
+        """Return the derivative of smoothed saturation with respect to upstream head.
 
         Parameters
         ----------
-        sat (float) : saturation
-        h1 (float) : head of node 1
-        h2 (float) : head of node 2
-        top (float): top
+        sat : float
+            Saturation.
+        h1 : float
+            Head of node 1.
+        h2 : float
+            Head of node 2.
+        top : float
+            Upstream cell top elevation.
+        bot : float
+            Upstream cell bottom elevation.
 
         Returns
         -------
-
-        value (float) : partial of smoothed saturation WRT upstream head
-
+        float
+            Derivative of smoothed saturation with respect to the upstream
+            head. Returns zero when ``h1`` is not the upstream head.
         """
         value = 0.0
         if h1 >= h2:
-            value = PerfMeas.d_smooth_sat_dh(sat, top, bot)
+            value = self.__d_smooth_sat_dh_simple(sat, top, bot)
         return value
 
-    @staticmethod
-    def lam_dresdk_h(
+    def __lam_dresdk_h(
+        self,
         is_newton,
         ihighcellsat,
         lamb,
@@ -985,33 +1125,53 @@ class PerfMeas(object):
         icelltype,
         k11,
         k33,
-    ):
-        """adjoint state times the partial of residual with respect to k times head
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return adjoint-weighted residual derivatives.
+
+        Derivatives are with respect to ``k11`` and ``k33``.
 
         Parameters
         ----------
-        is_newton (bool) : flag for newton solution
-        ihighcellsat (int) : flag for using highest cell bottom to calculate saturation
-        lamb (ndarray) : adjoint state array
-        sat (ndarray) : saturation array
-        head (ndarray) : head array
-        ihc (ndarray) : horizontal connection indicator array
-        ia (ndarray) : the index of connection array in the compressed sparse row format
-        ja (ndarray) : the connection array in the compressed sparse row format
-        jas (ndarray) : the full connectivity array
-        cl1 (ndarray) : the connection length array for conn 1
-        cl2 (ndarray) : the connection length array for conn 2
-        hwva (ndarray) : the horizontal width vertical area array
-        top (ndarray) : the top array
-        bot (ndarray) : the bottom array
-        icelltype (ndarray) : the convertible cell type indicator array
-        k11 (ndarray) : the k11 array
-        k33 (ndarray) : the k33 array
+        is_newton : bool
+            Whether Newton terms are active.
+        ihighcellsat : int
+            Whether to use the highest cell bottom when calculating saturation.
+        lamb : ndarray
+            Adjoint state array.
+        sat : ndarray
+            Saturation array.
+        head : ndarray
+            Head array.
+        ihc : ndarray
+            Horizontal connection indicator array.
+        ia : ndarray
+            Connection index array in compressed sparse row format.
+        ja : ndarray
+            Connection array in compressed sparse row format.
+        jas : ndarray
+            Full connectivity array.
+        cl1 : ndarray
+            Connection length array for connection 1.
+        cl2 : ndarray
+            Connection length array for connection 2.
+        hwva : ndarray
+            Horizontal-width/vertical-area array.
+        top : ndarray
+            Top elevations.
+        bot : ndarray
+            Bottom elevations.
+        icelltype : ndarray
+            Convertible-cell type indicator array.
+        k11 : ndarray
+            Horizontal hydraulic conductivity array.
+        k33 : ndarray
+            Vertical hydraulic conductivity array.
 
         Returns
         -------
-        result_k, result_k33 (ndarray) : the adjoint state times the partial of
-                                         residual with respect to k and k33 times head
+        tuple[ndarray, ndarray]
+            Adjoint-weighted residual derivatives with respect to ``k11`` and
+            ``k33``.
         """
         iac = np.array([ia[i + 1] - ia[i] for i in range(len(ia) - 1)])
         # array of number of connections per node (size nodes)
@@ -1039,7 +1199,7 @@ class PerfMeas(object):
                 iihc = ihc[jj]
 
                 if iihc == 0:  # vertical con
-                    dconddk33 = PerfMeas._dconddhk(
+                    dconddk33 = self.__dconddhk(
                         k33[node],
                         k33[mnode],
                         0.5 * height1,
@@ -1058,7 +1218,7 @@ class PerfMeas(object):
                 else:
                     # TODO: check if one cell is convertible (??is this required??)
                     if is_newton:
-                        dconddk = PerfMeas._dconddhk(
+                        dconddk = self.__dconddhk(
                             k11[node],
                             k11[mnode],
                             cl1[jj],
@@ -1067,7 +1227,7 @@ class PerfMeas(object):
                             height1,
                             height2,
                         )
-                        SF = PerfMeas._smooth_sat(
+                        SF = self.__smooth_sat(
                             ihighcellsat,
                             top[node],
                             top[mnode],
@@ -1078,7 +1238,7 @@ class PerfMeas(object):
                         )
 
                     else:
-                        dconddk = PerfMeas._dconddhk(
+                        dconddk = self.__dconddhk(
                             k11[node],
                             k11[mnode],
                             cl1[jj],
@@ -1101,7 +1261,39 @@ class PerfMeas(object):
             result[node] = sum2
         return result, result33
 
-    def lam_drhs_dbnd(self, lamb, head, sp_dict, has_flux_pm):
+    def __lam_drhs_dbnd(
+        self,
+        lamb: np.ndarray,
+        head: np.ndarray,
+        sp_dict: dict,
+        has_flux_pm: bool,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return adjoint-weighted derivatives with respect to boundary terms.
+
+        The ``sp_dict["bound"]`` array is interpreted positionally with
+        ``bound[0]`` as boundary head and optional ``bound[1]`` as boundary
+        conductance.
+
+        Parameters
+        ----------
+        lamb : ndarray
+            Adjoint state array.
+        head : ndarray
+            Head array.
+        sp_dict : dict
+            Stress-package data for a single time step containing at least
+            ``node`` and ``bound`` arrays.
+        has_flux_pm : bool
+            Whether the performance measure has a direct flux contribution in
+            addition to the adjoint-weighted response.
+
+        Returns
+        -------
+        tuple[ndarray, ndarray]
+            Two arrays containing derivatives with respect to the head-like
+            boundary term and the conductance-like boundary term,
+            respectively.
+        """
         result_head = np.zeros_like(lamb)
         result_cond = np.zeros_like(lamb)
 
@@ -1126,129 +1318,137 @@ class PerfMeas(object):
 
         return result_head, result_cond
 
-    def _dfdh(self, kk, sol_dataset):
-        """partial of the performance measure with respect to head
+    def __pm_available(self, kk) -> bool:
+        """Return whether a performance measure entry exists for a given time.
 
         Parameters
         ----------
-        kk (tuple) : zero-based stress period and time step
-        sol_dataset(h5py.Dataset): the forward solution dataset
+        kk : tuple
+            Zero-based ``(kper, kstp)`` tuple.
 
         Returns
         -------
-        result (ndarray) : partial of performance measure WRT head
-
+        bool
+            True if a performance measure entry exists, otherwise False.
         """
+
+        relevant_entries = [p for p in self._entries if p.kperkstp == kk]
+        return len(relevant_entries) > 0
+
+    def __dfdh(self, kk, sol_dataset) -> np.ndarray:
+        """Return the derivative of the performance measure with respect to head.
+
+        Parameters
+        ----------
+        kk : tuple
+            Zero-based stress period and time step.
+        sol_dataset : h5py.Group
+            Forward-solution HDF5 group for one time step. The group must
+            contain a ``head`` dataset and, for flux performance measures,
+            package subgroups with ``nodelist`` and ``hcof`` datasets.
+
+        Returns
+        -------
+        ndarray
+            Derivative of the performance measure with respect to head at the
+            requested time step.
+        """
+
+        # 1. Load data once. Avoid [:] if sol_dataset is already in memory,
+        # but for HDF5, reading once into a local variable is best.
         head = sol_dataset["head"][:]
-        residual = sol_dataset["residual"][:]
         dfdh = np.zeros_like(head)
-        for pfr in self._entries:
-            if pfr.kperkstp == kk:
-                if pfr.pm_type == "head":
-                    if pfr.pm_form == "direct":
-                        dfdh[pfr.inode] = pfr.weight
-                    elif pfr.pm_form == "residual":
-                        dfdh[pfr.inode] = (
-                            2.0 * pfr.weight * (head[pfr.inode] - pfr.obsval)
-                        )
-                else:
+
+        # 2. Cache 'hcof' and 'nodelist' to avoid repeated disk I/O
+        # Also pre-build a map for O(1) index lookups
+        cached_maps = {}
+
+        # 3. Filter entries first to reduce iterations
+        relevant_entries = [p for p in self._entries if p.kperkstp == kk]
+
+        for pfr in relevant_entries:
+            if pfr.pm_type == "head":
+                if pfr.pm_form == "direct":
+                    dfdh[pfr.inode] = pfr.weight
+                elif pfr.pm_form == "residual":
+                    # Scalar math is fine here, but make sure head is a numpy array
+                    dfdh[pfr.inode] = 2.0 * pfr.weight * (head[pfr.inode] - pfr.obsval)
+            else:
+                # Handle non-head types with caching
+                if pfr.pm_type not in cached_maps:
+                    # Store hcof and a mapping of inode -> index
                     hcof = sol_dataset[pfr.pm_type]["hcof"][:]
-                    inodelist = sol_dataset[pfr.pm_type]["nodelist"][:] - 1
-                    idx = np.where(inodelist == pfr.inode)[0][0]
-                    dfdh[pfr.inode] = hcof[idx]
+                    nodes = sol_dataset[pfr.pm_type]["nodelist"][:] - 1
+                    # Dict comprehension is much faster than np.where inside a loop
+                    node_to_idx = {node: i for i, node in enumerate(nodes)}
+                    cached_maps[pfr.pm_type] = (hcof, node_to_idx)
+
+                hcof_arr, node_map = cached_maps[pfr.pm_type]
+
+                # Fast O(1) lookup
+                if pfr.inode in node_map:
+                    idx = node_map[pfr.inode]
+                    dfdh[pfr.inode] = hcof_arr[idx]
+
         return dfdh
 
-    @staticmethod
-    def get_value_from_gwf(gwf_name, pak_name, prop_name, gwf):
-        """get a copy of a quantity from the MODFLOW6 API
+    def __get_value_from_gwf(self, gwf_name, pak_name, prop_name, gwf) -> Any:
+        """Return a copy of a quantity from the MODFLOW 6 API.
 
         Parameters
         ----------
-        gwf_name (str): name of the GWF instance
-        pak_name (str): name of the package in the GWF nam file
-        prop_name (str): name of the property in the 'pak_name' package
-        gwf (MODFLOW6 API): a MODFLOW6 GWF instance
+        gwf_name : str
+            Name of the groundwater-flow instance.
+        pak_name : str
+            Package name from the GWF name file.
+        prop_name : str
+            Property name in `pak_name`.
+        gwf : modflowapi.ModflowApi
+            MODFLOW 6 groundwater-flow API instance.
 
         Returns
         -------
-        value (varies): the quantity of interest
-
+        Any
+            Requested quantity copied from the MODFLOW 6 API.
         """
         addr = gwf.get_var_address(prop_name, gwf_name, pak_name)
         return gwf.get_value(addr)
 
-    @staticmethod
-    def get_ptr_from_gwf(gwf_name, pak_name, prop_name, gwf):
-        """get a pointer (well reference anyway) to a quantity from the MODFLOW6 API
+    def __is_singular(self, A, tol=1e-10) -> bool:
+        """Return whether a matrix is singular or numerically ill-conditioned.
 
         Parameters
         ----------
-        gwf_name (str): name of the GWF instance
-        pak_name (str): name of the package in the GWF nam file
-        prop_name (str): name of the property in the 'pak_name' package
-        gwf (MODFLOW6 API): a MODFLOW6 GWF instance
+        A : scipy.sparse.spmatrix or LinearOperator
+            Matrix to evaluate.
+        tol : float, optional
+            Absolute tolerance used to test the smallest singular value.
 
         Returns
         -------
-        value (varies): a mutable reference to the quantity of interest
-
+        bool
+            True if the matrix is singular or effectively singular.
         """
-        addr = gwf.get_var_address(prop_name, gwf_name, pak_name)
-        return gwf.get_value_ptr(addr)
+        # svds computes the k largest or smallest singular values.
+        # To check for singularity, we need the smallest ones.
+        # 'SM' specifies "smallest magnitude".
+        # We request only one singular value (k=1) for efficiency.
+        try:
+            # Note: svds works on square or rectangular matrices
+            # We need to ensure k is less than min(M, N) for svds to work
+            min_dim = min(A.shape)
+            if min_dim == 0:
+                return True  # Empty matrix is singular
+            k = max(1, min(5, min_dim - 1))  # Get a few smallest, ensure k >= 1
 
-    @staticmethod
-    def get_node(shape, lrc_list):
-        """get the node numbers for a given list of lrc values. stolen from flopy
+            # Use 'SM' to find smallest magnitude singular values
+            # svds returns U, s, Vh
+            _, s, _ = svds(A, k=k, which="SM")
 
-        Parameters
-        ----------
-        lrc_list (list): list of layer row column values
-
-        Returns
-        -------
-        values (ndarray): node numbers
-
-        """
-
-        if not isinstance(lrc_list, list):
-            lrc_list = [lrc_list]
-        multi_index = tuple(np.array(lrc_list).T)
-        return np.ravel_multi_index(multi_index, shape).tolist()
-
-    @staticmethod
-    def get_lrc(shape, nodes):
-        """get layer row column values from node numbers.  Also stolen from flopy
-
-        Parameters
-        ----------
-        nodes (list) : list of node numbers
-
-        Returns
-        -------
-        values (list): list of layer-row-column values
-
-
-        """
-        if isinstance(nodes, int):
-            nodes = [nodes]
-        return list(zip(*np.unravel_index(nodes, shape)))
-
-    @staticmethod
-    def has_sto_iconvert(gwf):
-        """does the forward model has an sto package with iconvert
-
-        Parameters
-        ----------
-        gwf (MODFLOW6 API): a MODFLOW6 GWF API instance
-
-        Returns
-        -------
-            flag (bool) : has sto iconvert?
-
-        """
-        names = [
-            n for n in list(gwf.get_input_var_names()) if "STO" in n and "ICONVERT" in n
-        ]
-        if len(names) == 0:
-            return False
-        return True
+            # Check if the smallest singular value is close to zero
+            smallest_s_value = np.min(s)
+            return np.isclose(smallest_s_value, 0.0, atol=tol)
+        except RuntimeError:
+            # svds might raise a RuntimeError for very difficult
+            # cases (e.g., convergence issues)
+            return True  # Assume singular or ill-conditioned if solver fails

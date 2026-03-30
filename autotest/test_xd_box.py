@@ -6,10 +6,8 @@ import sys
 
 import flopy
 import matplotlib.pyplot as plt
-import modflowapi
 import numpy as np
 import pandas as pd
-import pyemu
 from flopy.utils.gridgen import Gridgen
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -19,24 +17,10 @@ except ImportError:
     sys.path.insert(0, str(pl.Path("../").resolve()))
     import mf6adj
 
-env_path = pl.Path(os.environ.get("CONDA_PREFIX", None))
-assert env_path is not None, (
-    "autotest script must be run from the mf6adj Conda environment"
-)
-
-bin_path = "bin"
-exe_ext = ""
-if "linux" in platform.platform().lower():
-    lib_ext = ".so"
-elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
-    lib_ext = ".dylib"
-else:
-    bin_path = "Scripts"
-    lib_ext = ".dll"
-    exe_ext = ".exe"
-lib_name = env_path / f"{bin_path}/libmf6{lib_ext}"
-mf6_bin = env_path / f"{bin_path}/mf6{exe_ext}"
-gg_bin = env_path / f"{bin_path}/gridgen{exe_ext}"
+mf6_bin, lib_name = mf6adj.get_conda_mf6_paths()
+gg_bin = mf6_bin.parent / f"gridgen{mf6_bin.suffix}"
+if not gg_bin.is_file():
+    flopy.utils.get_modflow(":python", subset="gridgen")
 
 
 # fmt: off
@@ -58,12 +42,11 @@ def setup_xd_box_model(
     is_anatest=False,
 ):
     tdis_pd = [(sp_len, 1, 1.0) for _ in range(nper)]
+    new_d = pl.Path(new_d)
     if botm is None:
         botm = np.linspace(0, -nlay + 1, nlay)
-    if os.path.exists(new_d):
+    if new_d.exists():
         shutil.rmtree(new_d)
-    os.mkdir(new_d)
-
 
     sim = flopy.mf6.MFSimulation(
         sim_name=name,
@@ -132,8 +115,9 @@ def setup_xd_box_model(
         for kk in range(nlay):
             for j in range(nrow):
                 for i in range(ncol):
-                    start[kk][j][i] = H1 + (H2 - H1) * \
-                     gwf.modelgrid.xcellcenters[j][i] / L1
+                    start[kk][j][i] = (
+                        H1 + (H2 - H1) * gwf.modelgrid.xcellcenters[j][i] / L1
+                    )
                     # start[kk][j][i] = H2
     flopy.mf6.ModflowGwfic(gwf, pname="ic", strt=start)
 
@@ -151,16 +135,10 @@ def setup_xd_box_model(
         steady_state = [False]
         transient = [True]
         if len(tdis_pd) > 1:
-            if is_anatest:
-                steady_state = dict.fromkeys(range(len(tdis_pd)), False)
-                steady_state[0] = True
-                transient = dict.fromkeys(range(len(tdis_pd)), True)
-                transient[0] = False
-            else:
-                steady_state = dict.fromkeys(range(len(tdis_pd)), False)
-                steady_state[0] = True
-                transient = dict.fromkeys(range(len(tdis_pd)), True)
-                transient[0] = False
+            steady_state = dict.fromkeys(range(len(tdis_pd)), False)
+            steady_state[0] = True
+            transient = dict.fromkeys(range(len(tdis_pd)), True)
+            transient[0] = False
 
         flopy.mf6.ModflowGwfsto(
             gwf,
@@ -177,8 +155,6 @@ def setup_xd_box_model(
         bnd_nper = np.arange(1, nper, dtype=int)
     if nper > 3:
         bnd_nper = np.arange(1, nper - 1, dtype=int)
-    print(nper, bnd_nper)
-
     if ncol > 1:
         stage = top
         if not full_sat_bnd:
@@ -271,296 +247,38 @@ def setup_xd_box_model(
         rech = {kper: np.zeros((nrow, ncol)) + 0.0000001 for kper in range(nper)}
         flopy.mf6.ModflowGwfrcha(gwf, recharge=rech)
 
-    # # ### Write the datasets and run to make sure it works
+    # Write the datasets and run to make sure it works
     sim.write_simulation()
 
     # hack in tvk so we can use pert within api later
-    with open(os.path.join(new_d, "blank.tvk"), "w") as f:
+    with open(new_d / "blank.tvk", "w") as f:
         f.write("\n")
 
-    pyemu.os_utils.run(mf6_bin.name, cwd=new_d)
+    sim.run_simulation()
     return sim
 
 
 # fmt: off
-def run_xd_box_pert(
-    new_d,
-    p_kijs,
-    plot_pert_results=True,
-    weight=1.0, pert_mult=1.01,
-    name="xdbox",
-    obsval=1.0,
-    pm_locs=None,
-):
-    # # now run with API
-    bd = os.getcwd()
-    os.chdir(new_d)
-    sys.path.append(os.path.join("..", ".."))
-    print(os.listdir("."))
-    print("test run to completion with API")
-    mf6api = modflowapi.ModflowApi(lib_name)
-    mf6api.initialize()
-    current_time = mf6api.get_current_time()
-    end_time = mf6api.get_end_time()
-    max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
-
-    sim = flopy.mf6.MFSimulation.load(sim_ws=".")
-    gwf = sim.get_model()
-    nlay, nrow, ncol = gwf.dis.nlay.data, gwf.dis.nrow.data, gwf.dis.ncol.data
-    if pm_locs is None:
-        pm_locs = [(nlay - 1, nrow - 1, ncol - 2)]
-    include_sto = True
-    if gwf.sto is None:
-        include_sto = False
-    head_base = []
-    swr_head_base = []
-    while current_time < end_time:
-        dt = mf6api.get_time_step()
-        mf6api.prepare_time_step(dt)
-        kiter = 0
-        mf6api.prepare_solve(1)
-        while kiter < max_iter:
-            has_converged = mf6api.solve(1)
-            kiter += 1
-            if has_converged:
-                break
-        mf6api.finalize_solve(1)
-        mf6api.finalize_time_step()
-        current_time = mf6api.get_current_time()
-        # dt1 = mf6api.get_time_step()
-        head_base.append(
-            mf6api.get_value_ptr(mf6api.get_var_address("X", f"{name}")).copy()
-        )
-        swr_head_base.append(
-            (
-                (
-                    mf6api.get_value_ptr(mf6api.get_var_address("X", f"{name}")).copy()
-                    - obsval
-                )
-                * weight
-            )
-            ** 2
-        )
-        if not has_converged:
-            print("model did not converge")
-            break
-
-    np.savetxt("dbase.dat", head_base[0], fmt="%15.6E")
-    np.savetxt("swrbase.dat", swr_head_base[0], fmt="%15.6E")
-
-    addr = ["NODEUSER", "FREYBERG6", "DIS"]
-    wbaddr = mf6api.get_var_address(*addr)
-    nuser = mf6api.get_value(wbaddr).copy() - 1
-    if nuser.shape[0] == 1:
-        nuser = np.arange(nlay * nrow * ncol, dtype=int)
-
-    kijs = gwf.modelgrid.get_lrc(list(nuser))
-    try:
-        mf6api.finalize()
-    except Exception as e:
-        raise RuntimeError(e)
-
-    props = [gwf.npf.k.array.copy()]
-    flopy_objects = [gwf.npf]
-    flopy_prop_names = ["k"]
-    tags = ["k11"]
-
-    if nlay > 1:
-        props.append(gwf.npf.k33.array.copy())
-        flopy_objects.append(gwf.npf)
-        flopy_prop_names.append("k33")
-        tags.append("k33")
-
-    if include_sto:
-        props.append(gwf.sto.ss.array.copy())
-        flopy_objects.append(gwf.sto)
-        flopy_prop_names.append("ss")
-        tags.append("ss")
-
-    for prop, fobj, fname, tag in zip(props, flopy_objects, flopy_prop_names, tags):
-        arr = prop.copy()
-        epsilon = {}
-        head_pert = {}
-        swr_pert = {}
-        count = 0
-        for k, i, j in p_kijs:
-            count += 1
-            kk_arr = arr.copy()
-            kij = (k, i, j)
-            dk = kk_arr[k, i, j] * pert_mult
-            epsilon[kij] = dk - kk_arr[k, i, j]
-            kk_arr[k, i, j] = dk
-
-            if kij not in head_pert:
-                head_pert[kij] = []
-                swr_pert[kij] = []
-            fobj.__setattr__(fname, kk_arr)
-            sim.write_simulation()
-            np.savetxt(
-                f"pert_arr_{tag}_pk{k}_pi{i}_pj{j}.dat",
-                kk_arr.flatten(),
-                fmt="%15.6E",
-            )
-            # sim.run_simulation()
-            mf6api = modflowapi.ModflowApi(lib_name)
-            mf6api.initialize()
-            current_time = mf6api.get_current_time()
-            end_time = mf6api.get_end_time()
-            max_iter = mf6api.get_value(mf6api.get_var_address("MXITER", "SLN_1"))
-            # condsat = mf6api.get_value_ptr(
-            #     mf6api.get_var_address("CONDSAT", name, "NPF")
-            #     )
-
-            kper = 0
-            while current_time < end_time:
-                dt = mf6api.get_time_step()
-                mf6api.prepare_time_step(dt)
-                kiter = 0
-                mf6api.prepare_solve(1)
-                while kiter < max_iter:
-                    has_converged = mf6api.solve(1)
-                    kiter += 1
-                    if has_converged:
-                        break
-                mf6api.finalize_solve(1)
-                mf6api.finalize_time_step()
-                current_time = mf6api.get_current_time()
-                head = mf6api.get_value(mf6api.get_var_address("X", f"{name}"))
-                head_pert[(k, i, j)].append(head.copy())
-                swr_pert[(k, i, j)].append(((head.copy() - obsval) * weight) ** 2)
-                # if tag == "ss":
-                np.savetxt(
-                    f"dpert_{tag}_kper{kper}_pk{k}_pi{i}_pj{j}.dat",
-                    head_pert[(k, i, j)][-1],
-                    fmt="%15.6E",
-                )
-                np.savetxt(
-                    f"swrpert_{tag}_kper{kper}_pk{k}_pi{i}_pj{j}.dat",
-                    swr_pert[(k, i, j)][-1],
-                    fmt="%15.6E",
-                )
-
-                if not has_converged:
-                    print("model did not converge")
-                    break
-            try:
-                mf6api.finalize()
-            except Exception as e:
-                raise RuntimeError(e)
-            kper += 1
-
-        pert_direct_sens = {}
-        pert_swr_sens = {}
-        for kij in p_kijs:
-            delt = []
-            swr_delt = []
-            for kper in range(sim.tdis.nper.data):
-                delt.append((head_pert[kij][kper] - head_base[kper]) / epsilon[kij])
-                swr_delt.append(
-                    (swr_pert[kij][kper] - swr_head_base[kper]) / epsilon[kij]
-                )
-            pert_direct_sens[kij] = delt
-            pert_swr_sens[kij] = swr_delt
-
-        if plot_pert_results:
-            pdf = PdfPages(f"pert_sens_{tag}.pdf")
-
-        # for p_i_node,p_kij in enumerate(p_kijs):
-        for p_kij in pm_locs:
-            pk, pi, pj = p_kij
-            # if p_kij != (0, 0, 2):
-            #    continue
-            if p_kij not in kijs:
-                print("pm kij missing", p_kij)
-                continue
-            p_i_node = kijs.index(p_kij)
-            for kper in range(sim.tdis.nper.data):
-                head_plot = np.zeros((nlay, nrow, ncol))
-                for kij, h, p in zip(kijs, head_base[kper], head_pert[p_kij][kper]):
-                    head_plot[kij] = h
-                head_plot = head_plot.reshape((nlay, nrow, ncol))
-                head_plot[id == 0] = np.nan
-                dsens_plot = np.zeros((nlay, nrow, ncol))
-                ssens_plot = np.zeros((nlay, nrow, ncol))
-                for inode, kij in enumerate(kijs):
-                    dsens = pert_direct_sens[kij][kper][p_i_node]
-                    swrsens = pert_swr_sens[kij][kper][p_i_node]
-                    dsens_plot[kij] = dsens
-                    ssens_plot[kij] = swrsens
-                dsens_plot = dsens_plot.reshape((nlay, nrow, ncol))
-                dsens_plot[id == 0] = np.nan
-                ssens_plot = ssens_plot.reshape((nlay, nrow, ncol))
-                ssens_plot[id == 0] = np.nan
-
-                if plot_pert_results:
-                    if nlay > 1:
-                        fig, axes = plt.subplots(nlay, 3, figsize=(nlay * 10, 15))
-                    else:
-                        fig, axes = plt.subplots(nlay, 3, figsize=(15, 5))
-                        axes = np.atleast_2d(axes)
-                for k in range(nlay):
-                    if plot_pert_results:
-                        cb = axes[k, 0].imshow(head_plot[k, :, :])
-                        plt.colorbar(cb, ax=axes[k, 0])
-                        cb = axes[k, 1].imshow(dsens_plot[k, :, :])
-                        plt.colorbar(cb, ax=axes[k, 1])
-                        cb = axes[k, 2].imshow(ssens_plot[k, :, :])
-                        plt.colorbar(cb, ax=axes[k, 2])
-                        axes[k, 0].set_title(f"heads k:{k},kper:{kper}", loc="left")
-                        axes[k, 1].set_title(
-                            f"dsens kij:{p_kij} k:{k},kper:{kper}",
-                            loc="left",
-                        )
-                        axes[k, 2].set_title(
-                            f"swrsens kij:{p_kij} k:{k},kper:{kper}",
-                            loc="left",
-                        )
-                    np.savetxt(
-                        f"pert-direct_kper{kper:03d}_pk{pk:03d}_pi{pi:03d}" + 
-                        f"_pj{pj:03d}_comp_sens_{tag}_k{k:03d}.dat",
-                        dsens_plot[k, :, :],
-                        fmt="%15.6E",
-                    )
-                    np.savetxt(
-                        f"pert-phi_kper{kper:03d}_pk{pk:03d}_pi{pi:03d}" + 
-                        f"_pj{pj:03d}_comp_sens_{tag}_k{k:03d}.dat",
-                        ssens_plot[k, :, :],
-                        fmt="%15.6E",
-                    )
-
-                if plot_pert_results:
-                    plt.tight_layout()
-                    pdf.savefig()
-                    plt.close(fig)
-
-        fobj.__setattr__(fname, arr)
-        sim.write_simulation()
-        # sim.run_simulation()
-        if plot_pert_results:
-            pdf.close()
-    os.chdir(bd)
-
-
-# fmt: off
 def xd_box_compare(new_d, plot_compare=False, dif_thres=1e-6,):
+    new_d = pl.Path(new_d)
     sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
     gwf = sim.get_model()
     id = gwf.dis.idomain.array
 
     adj_summary_files = [
-        os.path.join(new_d, f)
+        str(new_d / f)
         for f in os.listdir(new_d)
-        if f.startswith("adjoint_summary") and f.endswith(".csv")
+        if f.startswith("adjoint_solution") and f.endswith(".csv")
     ]
 
     assert len(adj_summary_files) > 0
 
-    pert_summary = pd.read_csv(os.path.join(new_d, "pert_results.csv"), index_col=0)
+    pert_summary = pd.read_csv(new_d / "pert_results.csv", index_col=0)
     for col in ["k", "i", "j"]:
         if col in pert_summary:
             pert_summary[col] = pert_summary[col].astype(int)
     if plot_compare:
-        pdf = PdfPages(os.path.join(new_d, "compare.pdf"))
+        pdf = PdfPages(new_d / "compare.pdf")
 
     skip = ["epsilon", "k", "i", "j", "addr"]
     pm_names = [c for c in pert_summary.columns if c not in skip]
@@ -726,7 +444,7 @@ def xd_box_compare(new_d, plot_compare=False, dif_thres=1e-6,):
         ax.set_yticks(np.arange(df.shape[0]))
         ax.set_yticklabels(df.index.values, fontsize=8)
         plt.tight_layout()
-        plt.savefig(os.path.join(new_d, "abs_percent_dif_results.pdf"))
+        plt.savefig(new_d / "abs_percent_dif_results.pdf")
         plt.close(fig)
 
     return df
@@ -770,7 +488,7 @@ def test_xd_box():
     plot_adj_results = False  # plot adj result
 
     plot_compare = False
-    new_d = "xd_box_1_test"
+    new_d = pl.Path("xd_box_1_test")
     nrow = 5
     ncol = 5
     nlay = 3
@@ -810,13 +528,6 @@ def test_xd_box():
     pert_mult = 1.01
     weight = 1.0
 
-    p_kijs = []
-
-    for k in range(nlay):
-        for i in range(nrow):
-            for j in range(ncol):
-                p_kijs.append((k, i, j))
-
     pm_locs = []
     for k in range(nlay):  # [0, int(nlay / 2), nlay-1]:
         for i in range(nrow):  # [0, int(nrow / 2), nrow-1]:
@@ -829,13 +540,9 @@ def test_xd_box():
     assert len(pm_locs) > 0
 
     if run_adj:
-        bd = os.getcwd()
-        os.chdir(new_d)
-        sys.path.append(os.path.join("..", ".."))
-
         print("calculating mf6adj sensitivity")
 
-        with open("test.adj", "w") as f:
+        with open(new_d / "test.adj", "w") as f:
             f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
             for p_kij in pm_locs:
                 k, i, j = p_kij
@@ -868,8 +575,6 @@ def test_xd_box():
                         ghb = gwf.get_package("ghb_0").stress_period_data.array[kper]
                         if ghb is None:
                             continue
-                        # print(ghb)
-
                         kijs = [g[0] for g in ghb if g[0][0] == k]
 
                         for k, i, j in kijs:
@@ -880,26 +585,32 @@ def test_xd_box():
 
                     lines.append("end performance_measure\n\n")
                 if len(lines) > 2:
-                    [f.write(line) for line in lines]
+                    for line in lines:
+                        f.write(line)
 
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
-        adj.solve_gwf()
-        adj.solve_adjoint()
-        adj._perturbation_test(pert_mult=pert_mult)
+        adj = mf6adj.Mf6Adj(
+            "test.adj", 
+            lib_name, 
+            logging_level="WARNING",
+            working_directory=new_d,
+            )
+        adj.solve_forward_model()
+        adj.solve_adjoint(csv_summary=True)
+        adj.perturbation_method(pert_mult=pert_mult)
         adj.finalize()
 
         if plot_adj_results:
             afiles_to_plot = [
                 f
-                for f in os.listdir(".")
+                for f in os.listdir(new_d)
                 if (f.startswith("pm-direct") or f.startswith("pm-phi"))
                 and f.endswith(".dat")
             ]
             afiles_to_plot.sort()
 
-            with PdfPages("adj.pdf") as pdf:
+            with PdfPages(new_d / "adj.pdf") as pdf:
                 for i, afile in enumerate(afiles_to_plot):
-                    arr = np.atleast_2d(np.loadtxt(afile))
+                    arr = np.atleast_2d(np.loadtxt(new_d / afile))
                     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
                     cb = ax.imshow(arr)
                     plt.colorbar(cb, ax=ax)
@@ -909,7 +620,6 @@ def test_xd_box():
                     plt.close(fig)
                     print(afile, i, len(afiles_to_plot))
 
-        os.chdir(bd)
 
     xd_box_compare(new_d, plot_compare)
     return
@@ -930,7 +640,7 @@ def test_xd_box_unstruct():
 
     # plot_compare = True
 
-    new_d = "xd_box_1_unstruct_test"
+    new_d = pl.Path("xd_box_1_unstruct_test")
     nrow = ncol = 5
     nlay = 2
     nper = 2
@@ -985,81 +695,64 @@ def test_xd_box_unstruct():
 
     wel = gwf.get_package("wel")
     if wel is not None:
-        f_wel = open(os.path.join(new_d, f"{name}_disv.wel"), "w")
-        f_wel.write(
-            "begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n"
-        )
-        mxbnd = -999
-        for kper in range(sim.tdis.nper.data):
-            if kper in wel.stress_period_data.data:
-                mxbnd = max(mxbnd, wel.stress_period_data.data[kper].shape[0])
-        f_wel.write(f"begin dimensions\nmaxbound {mxbnd}\nend dimensions\n\n")
+        with open(new_d / f"{name}_disv.wel", "w") as f_wel:
+            f_wel.write(
+                "begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n"
+            )
+            mxbnd = -999
+            for kper in range(sim.tdis.nper.data):
+                if kper in wel.stress_period_data.data:
+                    mxbnd = max(mxbnd, wel.stress_period_data.data[kper].shape[0])
+            f_wel.write(f"begin dimensions\nmaxbound {mxbnd}\nend dimensions\n\n")
 
-        for kper in range(sim.tdis.nper.data):
-            if kper not in wel.stress_period_data.data:
-                continue
-            rarray = wel.stress_period_data.data[kper]
-
-            print(rarray.dtype)
-            xs = [xcc[cid[1], cid[2]] for cid in rarray.cellid]
-            ys = [ycc[cid[1], cid[2]] for cid in rarray.cellid]
-            ilay = [cid[0] for cid in rarray.cellid]
-            xys = [(x, y) for x, y in zip(xs, ys)]
-            # use zero for the layer so that we get the cell2d value back
-            inodes = [g.intersect([xy], "point", 0)[0][0] for xy, il in zip(xys, ilay)]
-            # data = [[(il, inode), bhead, cond] for il, inode, bhead, cond in
-            #        zip(ilay, inodes, rarray.flux)]
-            # wel_spd[kper] = data
-            f_wel.write(f"begin period {kper + 1}\n")
-            [
-                f_wel.write(f"{il + 1:9d} {inode + 1:9d} {q:15.6E}\n")
-                for il, inode, q in zip(ilay, inodes, rarray.q)
-            ]
-            f_wel.write(f"end period {kper + 1}\n\n")
-        f_wel.close()
+            for kper in range(sim.tdis.nper.data):
+                if kper not in wel.stress_period_data.data:
+                    continue
+                rarray = wel.stress_period_data.data[kper]
+                xs = [xcc[cid[1], cid[2]] for cid in rarray.cellid]
+                ys = [ycc[cid[1], cid[2]] for cid in rarray.cellid]
+                ilay = [cid[0] for cid in rarray.cellid]
+                xys = [(x, y) for x, y in zip(xs, ys)]
+                # use zero for the layer so that we get the cell2d value back
+                inodes = [g.intersect([xy], "point", 0)[0][0] 
+                          for xy, il in zip(xys, ilay)]
+                f_wel.write(f"begin period {kper + 1}\n")
+                for il, inode, q in zip(ilay, inodes, rarray.q):
+                    f_wel.write(f"{il + 1:9d} {inode + 1:9d} {q:15.6E}\n")
+                f_wel.write(f"end period {kper + 1}\n\n")
 
     ghb = gwf.get_package("ghb")
     if ghb is not None:
-        f_ghb = open(os.path.join(new_d, f"{name}_disv.ghb"), "w")
-        f_ghb.write(
-            "begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n"
-        )
-
-        f_ghb.write(
-            "begin dimensions\nmaxbound " + 
-            f"{ghb.stress_period_data.data[0].shape[0]}\nend dimensions\n\n"
-        )
-
-        ghb_spd = {}
-        for kper in range(sim.tdis.nper.data):
-            rarray = ghb.stress_period_data.data[kper]
-            # print(rarray)
-            xs = [xcc[cid[1], cid[2]] for cid in rarray.cellid]
-            ys = [ycc[cid[1], cid[2]] for cid in rarray.cellid]
-            ilay = [cid[0] for cid in rarray.cellid]
-            xys = [(x, y) for x, y in zip(xs, ys)]
-            # use zero for the layer so that we get the cell2d value back
-            inodes = [g.intersect([xy], "point", 0)[0][0] for xy, il in zip(xys, ilay)]
-            data = [
-                [(il, inode), bhead, cond]
+        with open(new_d / f"{name}_disv.ghb", "w") as f_ghb:
+            f_ghb.write(
+                "begin options\nprint_input\nprint_flows\nsave_flows\nend options\n\n"
+            )
+            f_ghb.write(
+                "begin dimensions\nmaxbound "
+                f"{ghb.stress_period_data.data[0].shape[0]}\nend dimensions\n\n"
+            )
+            for kper in range(sim.tdis.nper.data):
+                rarray = ghb.stress_period_data.data[kper]
+                xs = [xcc[cid[1], cid[2]] for cid in rarray.cellid]
+                ys = [ycc[cid[1], cid[2]] for cid in rarray.cellid]
+                ilay = [cid[0] for cid in rarray.cellid]
+                xys = [(x, y) for x, y in zip(xs, ys)]
+                # use zero for the layer so that we get the cell2d value back
+                inodes = [g.intersect([xy], "point", 0)[0][0] 
+                          for xy, il in zip(xys, ilay)]
+                f_ghb.write(f"begin period {kper + 1}\n")
                 for il, inode, bhead, cond in zip(
                     ilay, inodes, rarray.bhead, rarray.cond
-                )
-            ]
-            ghb_spd[kper] = data
-            f_ghb.write(f"begin period {kper + 1}\n")
-            [
-                f_ghb.write(f"{il + 1:9d} {inode + 1:9d} {bhead:15.6E} {cond:15.6E}\n")
-                for il, inode, bhead, cond in zip(
-                    ilay, inodes, rarray.bhead, rarray.cond
-                )
-            ]
-            f_ghb.write(f"end period {kper + 1}\n\n")
-        f_ghb.close()
+                ):
+                    f_ghb.write(
+                        f"{il + 1:9d} {inode + 1:9d} {bhead:15.6E} {cond:15.6E}\n"
+                    )
+                f_ghb.write(f"end period {kper + 1}\n\n")
 
     # now hack the nam file
-    nam_file = os.path.join(new_d, f"{name}.nam")
-    lines = open(nam_file, "r").readlines()
+    nam_file = new_d / f"{name}.nam"
+    with open(nam_file, "r") as f:
+        lines = f.readlines()
 
     with open(nam_file, "w") as f:
         for line in lines:
@@ -1071,12 +764,7 @@ def test_xd_box_unstruct():
                 line = f"WEL6 {name}_disv.wel wel\n"
             f.write(line)
 
-    pyemu.os_utils.run("mf6", cwd=new_d)
-
-    p_kinodes = []
-    for k in range(nlay):
-        for inode in range(gwf.disv.ncpl.data):
-            p_kinodes.append((k, inode))
+    sim.run_simulation
 
     pm_locs = []
     for k in [0, int(nlay / 2), nlay - 1]:
@@ -1089,10 +777,7 @@ def test_xd_box_unstruct():
     assert len(pm_locs) > 0
 
     if run_adj:
-        bd = os.getcwd()
-        os.chdir(new_d)
-
-        with open("test.adj", "w") as f:
+        with open(new_d / "test.adj", "w") as f:
             f.write("\nbegin options\n\nend options\n\n")
             for p_kinode in pm_locs:
                 k, inode = p_kinode
@@ -1114,24 +799,29 @@ def test_xd_box_unstruct():
                     )
                 f.write("end performance_measure\n\n")
 
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
-        adj.solve_gwf()
-        adj.solve_adjoint()
-        adj._perturbation_test(pert_mult=pert_mult)
+        adj = mf6adj.Mf6Adj(
+            "test.adj", 
+            lib_name, 
+            logging_level="WARNING",
+            working_directory=new_d,
+            )
+        adj.solve_forward_model()
+        adj.solve_adjoint(csv_summary=True)
+        adj.perturbation_method(pert_mult=pert_mult)
         adj.finalize()
 
         if plot_adj_results:
             afiles_to_plot = [
                 f
-                for f in os.listdir(".")
+                for f in os.listdir(new_d)
                 if (f.startswith("pm-direct") or f.startswith("pm-phi"))
                 and f.endswith(".dat")
             ]
             afiles_to_plot.sort()
 
-            with PdfPages("adj.pdf") as pdf:
+            with PdfPages(new_d / "adj.pdf") as pdf:
                 for i, afile in enumerate(afiles_to_plot):
-                    arr = np.atleast_2d(np.loadtxt(afile))
+                    arr = np.atleast_2d(np.loadtxt(new_d / afile))
                     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
                     cb = ax.imshow(arr)
                     plt.colorbar(cb, ax=ax)
@@ -1141,7 +831,6 @@ def test_xd_box_unstruct():
                     plt.close(fig)
                     print(afile, i, len(afiles_to_plot))
 
-        os.chdir(bd)
     xd_box_compare(new_d, False)
 
 def test_xd_box_chd():
@@ -1155,7 +844,7 @@ def test_xd_box_chd():
     plot_adj_results = False  # plot adj result
 
     plot_compare = False
-    new_d = "xd_box_chd_test"
+    new_d = pl.Path("xd_box_chd_test")
     nrow = 1
     ncol = 3
     nlay = 1
@@ -1195,14 +884,6 @@ def test_xd_box_chd():
     pert_mult = 1.01
     weight = 1.0
 
-    p_kijs = []
-    # pm_locs = [(nlay-1,int(nrow/2),ncol-2),(0,int(nrow/2),ncol-2)]
-
-    for k in range(nlay):
-        for i in range(nrow):
-            for j in range(ncol):
-                p_kijs.append((k, i, j))
-
     pm_locs = []
     for k in range(nlay):  # [0, int(nlay / 2), nlay-1]:
         for i in range(nrow):  # [0, int(nrow / 2), nrow-1]:
@@ -1215,13 +896,9 @@ def test_xd_box_chd():
     assert len(pm_locs) > 0
 
     if run_adj:
-        bd = os.getcwd()
-        os.chdir(new_d)
-        sys.path.append(os.path.join("..", ".."))
-
         print("calculating mf6adj sensitivity")
 
-        with open("test.adj", "w") as f:
+        with open(new_d / "test.adj", "w") as f:
             f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
             for p_kij in pm_locs:
                 k, i, j = p_kij
@@ -1254,7 +931,6 @@ def test_xd_box_chd():
                         ghb = gwf.get_package("ghb_0").stress_period_data.array[kper]
                         if ghb is None:
                             continue
-                        print(ghb)
 
                         kijs = [g[0] for g in ghb if g[0][0] == k]
 
@@ -1266,25 +942,31 @@ def test_xd_box_chd():
 
                     lines.append("end performance_measure\n\n")
                 if len(lines) > 2:
-                    [f.write(line) for line in lines]
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
-        adj.solve_gwf()
-        adj.solve_adjoint()
-        adj._perturbation_test(pert_mult=pert_mult)
+                    for line in lines:
+                        f.write(line)
+        adj = mf6adj.Mf6Adj(
+            "test.adj", 
+            lib_name, 
+            logging_level="WARNING",
+            working_directory=new_d,
+            )
+        adj.solve_forward_model()
+        adj.solve_adjoint(csv_summary=True)
+        adj.perturbation_method(pert_mult=pert_mult)
         adj.finalize()
 
         if plot_adj_results:
             afiles_to_plot = [
                 f
-                for f in os.listdir(".")
+                for f in os.listdir(new_d)
                 if (f.startswith("pm-direct") or f.startswith("pm-phi"))
                 and f.endswith(".dat")
             ]
             afiles_to_plot.sort()
 
-            with PdfPages("adj.pdf") as pdf:
+            with PdfPages(new_d / "adj.pdf") as pdf:
                 for i, afile in enumerate(afiles_to_plot):
-                    arr = np.atleast_2d(np.loadtxt(afile))
+                    arr = np.atleast_2d(np.loadtxt(new_d / afile))
                     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
                     cb = ax.imshow(arr)
                     plt.colorbar(cb, ax=ax)
@@ -1294,15 +976,11 @@ def test_xd_box_chd():
                     plt.close(fig)
                     print(afile, i, len(afiles_to_plot))
 
-        os.chdir(bd)
-
     xd_box_compare(new_d, plot_compare)
     return
 
 
 def test_xd_box_chd_ana():
-
-    
     # workflow flags
     include_id0 = False  # include idomain = 0 cells
     include_sto = True
@@ -1312,10 +990,10 @@ def test_xd_box_chd_ana():
     clean = True
 
     run_adj = True
-    plot_adj_results = False # plot adj result
+    plot_adj_results = False  # plot adj result
 
     plot_compare = False
-    new_d = 'xd_box_chd_ana2_test'
+    new_d = pl.Path("xd_box_chd_ana2_test")
     nrow = 80
     ncol = 100
     nlay = 1
@@ -1323,110 +1001,119 @@ def test_xd_box_chd_ana():
     sp_len = 1
     delr = 5.0
     delc = 5.0
-    botm = [-1]#,-100]
+    botm = [-1]  # ,-100]
     if clean:
-        sim = setup_xd_box_model(new_d, nper=nper,include_sto=include_sto,
-                             include_id0=include_id0, nrow=nrow, ncol=ncol,
-                             nlay=nlay,q=-0.0, hk=10.0,k33=10.0, 
-                             icelltype=1, iconvert=0, newton=True, 
-                             delr=delr, delc=delc,top=0,
-                             full_sat_bnd=False,botm=botm,alt_bnd="chd",sp_len=sp_len,
-                             is_anatest=True)
+        sim = setup_xd_box_model(
+            new_d,
+            nper=nper,
+            include_sto=include_sto,
+            include_id0=include_id0,
+            nrow=nrow,
+            ncol=ncol,
+            nlay=nlay,
+            q=-0.0,
+            hk=10.0,
+            k33=10.0,
+            icelltype=1,
+            iconvert=0,
+            newton=True,
+            delr=delr,
+            delc=delc,
+            top=0,
+            full_sat_bnd=False,
+            botm=botm,
+            alt_bnd="chd",
+            sp_len=sp_len,
+            is_anatest=True,
+        )
     else:
         sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
 
     gwf = sim.get_model()
     id = gwf.dis.idomain.array
-    nlay,nrow,ncol = gwf.dis.nlay.data,gwf.dis.nrow.data,gwf.dis.ncol.data
+    nlay, nrow, ncol = gwf.dis.nlay.data, gwf.dis.nrow.data, gwf.dis.ncol.data
     obsval = 1.0
 
     pert_mult = 1.01
     weight = 1.0
 
-    p_kijs = []
-
-    for k in range(nlay):
-        for i in range(nrow):
-            for j in range(ncol):
-                p_kijs.append((k, i, j))
-
     pm_locs = []
     for k in range(nlay):
         for i in range(nrow):
-            pm_locs.append((k, i, i+2))
+            pm_locs.append((k, i, i + 2))
 
     pm_locs = [(0, int(nrow / 2), int(ncol / 5))]
     pm_locs = list(set(pm_locs))
     pm_locs.sort()
-    
 
     assert len(pm_locs) > 0
-    sys.path.insert(0,os.path.join(".."))
-    import mf6adj
     if run_adj:
-        bd = os.getcwd()
-        os.chdir(new_d)
-        sys.path.append(os.path.join("..",".."))
+        print("calculating mf6adj sensitivity")
 
-        print('calculating mf6adj sensitivity')
-
-        with open("test.adj",'w') as f:
+        with open(new_d / "test.adj", "w") as f:
             f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
             for p_kij in pm_locs:
                 k, i, j = p_kij
                 if id[k, i, j] <= 0:
                     continue
-                pm_name = "direct_pk{0:03d}_pi{1:03d}_pj{2:03d}".format(k, i, j)
-                f.write("begin performance_measure {0}\n".format(pm_name))
+                pm_name = f"direct_pk{k:03d}_pi{i:03d}_pj{j:03d}"
+                f.write(f"begin performance_measure {pm_name}\n")
                 for kper in range(sim.tdis.nper.data):
-                    f.write("{0} 1 {1} {2} {3} head direct {4} -1e+30\n".\
-                        format(kper + 1, k + 1, i + 1, j + 1, weight))
+                    f.write(
+                        f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head direct "
+                        f"{weight} -1e+30\n"
+                    )
                 f.write("end performance_measure\n\n")
             
-        adj = mf6adj.Mf6Adj("test.adj", lib_name,logging_level="WARNING")
-        adj.solve_gwf()
-        df_dict = adj.solve_adjoint()
-        
-        lamb = df_dict[pm_name]["wel6_q"]
-        
+        adj = mf6adj.Mf6Adj(
+            "test.adj",
+            lib_name,
+            logging_level="WARNING",
+            working_directory=new_d,
+        )
+        adj.solve_forward_model()
+        df_dict = adj.solve_adjoint(csv_summary=True)
 
-        os.chdir(bd)
+        lamb = df_dict[pm_name]["wel6_q"]
+
         X = gwf.modelgrid.xcellcenters
         Y = gwf.modelgrid.ycellcenters
         
-        lambana = np.loadtxt(os.path.join("testing_files",
-                                  "lamb_Analytical.txt"))
+        lambana = np.loadtxt(pl.Path("testing_files") / "lamb_Analytical.txt")
         lambana = pd.Series(lambana)
-        lamb = lamb.reindex(np.arange(nrow*ncol,dtype=int))
+        lamb = lamb.reindex(np.arange(nrow * ncol, dtype=int))
         lamb.loc[:] *= -1
         lambana.loc[pd.isna(lamb)] = np.nan
-        
-        
-        arrana = lambana.values.reshape(nrow,ncol)
-        arr = lamb.values.reshape(nrow,ncol)
-        vmin = min(np.nanmin(arrana),np.nanmin(arr))
-        vmax = max(np.nanmax(arrana),np.nanmax(arr))
-        levels = np.linspace(vmin,vmax,10)
 
-        diff = (arrana - arr)
-        #diff[np.abs(diff)<1] = np.nan
-        diff[np.abs(arrana)<1e-3] = np.nan
-        diff[np.abs(arr)<1e-3] = np.nan
-        
+        arrana = lambana.values.reshape(nrow, ncol)
+        arr = lamb.values.reshape(nrow, ncol)
+        vmin = min(np.nanmin(arrana), np.nanmin(arr))
+        vmax = max(np.nanmax(arrana), np.nanmax(arr))
+        levels = np.linspace(vmin, vmax, 10)
+
+        diff = arrana - arr
+        # diff[np.abs(diff)<1] = np.nan
+        diff[np.abs(arrana) < 1e-3] = np.nan
+        diff[np.abs(arr) < 1e-3] = np.nan
+
         mx = np.nanmax(np.abs(diff))
         assert mx < 0.04
-        
-        _, axes = plt.subplots(1,2,figsize=(8.5,3))
-        cb = axes[0].pcolormesh(X,Y,arrana,vmin=vmin,vmax=vmax)
-        plt.colorbar(cb,ax=axes[0],label="adjoint state")
-        axes[0].contour(X,Y,arrana,vmin=vmin,vmax=vmax,levels=levels,
-                        colors="k",linewidths=0.5,linestyles="-")
-        axes[0].set_title("A) analytical",loc="left")
-        cb = axes[1].pcolormesh(X,Y,arr,vmin=vmin,vmax=vmax)
-        plt.colorbar(cb,ax=axes[1],label="adjoint state")
-        axes[1].contour(X,Y,arr,vmin=vmin,vmax=vmax,levels=levels,
-                        colors="k",linewidths=0.5,linestyles="-")
-        axes[1].set_title("B) MF6ADJ",loc="left")
+
+        _, axes = plt.subplots(1, 2, figsize=(8.5, 3))
+        cb = axes[0].pcolormesh(X, Y, arrana, vmin=vmin, vmax=vmax)
+        plt.colorbar(cb, ax=axes[0], label="adjoint state")
+        axes[0].contour(
+            X, Y, arrana, vmin=vmin, vmax=vmax, levels=levels,
+            colors="k", linewidths=0.5, linestyles="-",
+        )
+        axes[0].set_title("A) analytical", loc="left")
+        cb = axes[1].pcolormesh(X, Y, arr, vmin=vmin, vmax=vmax)
+        plt.colorbar(cb, ax=axes[1], label="adjoint state")
+        axes[1].contour(
+            X, Y, arr, vmin=vmin, vmax=vmax, levels=levels,
+            colors="k", linewidths=0.5, linestyles="-",
+        )
+        axes[1].set_title("B) MF6ADJ", loc="left")
 
         # cb = axes[2].pcolormesh(X,Y,diff,vmin=-mx,vmax=mx,cmap="coolwarm")
         # levels = np.linspace(-mx,mx,10)
@@ -1440,11 +1127,9 @@ def test_xd_box_chd_ana():
             ax.set_xlabel("X (m)")
             ax.set_ylabel("Y (m)")
         plt.tight_layout()
-        plt.savefig(os.path.join(new_d,"compare.png"),dpi=500)
+        plt.savefig(new_d / "compare.png", dpi=500)
         plt.close()
 
-    
-#    xd_box_compare(new_d,plot_compare)
 
 def test_xd_box_ss():
     # workflow flags
@@ -1457,7 +1142,7 @@ def test_xd_box_ss():
     plot_adj_results = False  # plot adj result
 
     plot_compare = False
-    new_d = "xd_box_ss_test"
+    new_d = pl.Path("xd_box_ss_test")
 
     nrow = 5
     ncol = 5
@@ -1498,13 +1183,6 @@ def test_xd_box_ss():
     pert_mult = 1.01
     weight = 1.0
 
-    p_kijs = []
-
-    for k in range(nlay):
-        for i in range(nrow):
-            for j in range(ncol):
-                p_kijs.append((k, i, j))
-
     pm_locs = []
     for k in range(nlay):  # [0, int(nlay / 2), nlay-1]:
         for i in range(nrow):  # [0, int(nrow / 2), nrow-1]:
@@ -1516,13 +1194,9 @@ def test_xd_box_ss():
     assert len(pm_locs) > 0
 
     if run_adj:
-        bd = os.getcwd()
-        os.chdir(new_d)
-        sys.path.append(os.path.join("..", ".."))
-
         print("calculating mf6adj sensitivity")
 
-        with open("test.adj", "w") as f:
+        with open(new_d / "test.adj", "w") as f:
             f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
             for p_kij in pm_locs:
                 k, i, j = p_kij
@@ -1555,7 +1229,6 @@ def test_xd_box_ss():
                         ghb = gwf.get_package("ghb_0").stress_period_data.array[kper]
                         if ghb is None:
                             continue
-                        print(ghb)
 
                         kijs = [g[0] for g in ghb if g[0][0] == k]
 
@@ -1567,26 +1240,32 @@ def test_xd_box_ss():
 
                     lines.append("end performance_measure\n\n")
                 if len(lines) > 2:
-                    [f.write(line) for line in lines]
+                    for line in lines:
+                        f.write(line)
 
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
-        adj.solve_gwf()
-        adj.solve_adjoint()
-        adj._perturbation_test(pert_mult=pert_mult)
+        adj = mf6adj.Mf6Adj(
+            "test.adj", 
+            lib_name, 
+            logging_level="WARNING",
+            working_directory=new_d,
+            )
+        adj.solve_forward_model()
+        adj.solve_adjoint(csv_summary=True)
+        adj.perturbation_method(pert_mult=pert_mult)
         adj.finalize()
 
         if plot_adj_results:
             afiles_to_plot = [
                 f
-                for f in os.listdir(".")
+                for f in os.listdir(new_d)
                 if (f.startswith("pm-direct") or f.startswith("pm-phi"))
                 and f.endswith(".dat")
             ]
             afiles_to_plot.sort()
 
-            with PdfPages("adj.pdf") as pdf:
+            with PdfPages(new_d / "adj.pdf") as pdf:
                 for i, afile in enumerate(afiles_to_plot):
-                    arr = np.atleast_2d(np.loadtxt(afile))
+                    arr = np.atleast_2d(np.loadtxt(new_d / afile))
                     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
                     cb = ax.imshow(arr)
                     plt.colorbar(cb, ax=ax)
@@ -1595,8 +1274,6 @@ def test_xd_box_ss():
                     pdf.savefig()
                     plt.close(fig)
                     print(afile, i, len(afiles_to_plot))
-
-        os.chdir(bd)
 
     xd_box_compare(new_d, plot_compare)
     return
@@ -1615,7 +1292,7 @@ def test_xd_box_drn():
     plot_adj_results = False  # plot adj result
 
     plot_compare = False
-    new_d = "xd_box_drn_test"
+    new_d = pl.Path("xd_box_drn_test")
     nrow = 5
     ncol = 5
     nlay = 3
@@ -1655,13 +1332,6 @@ def test_xd_box_drn():
     pert_mult = 1.01
     weight = 1.0
 
-    p_kijs = []
-
-    for k in range(nlay):
-        for i in range(nrow):
-            for j in range(ncol):
-                p_kijs.append((k, i, j))
-
     pm_locs = []
     for k in range(nlay):  # [0, int(nlay / 2), nlay-1]:
         for i in range(nrow):  # [0, int(nrow / 2), nrow-1]:
@@ -1673,13 +1343,9 @@ def test_xd_box_drn():
     assert len(pm_locs) > 0
 
     if run_adj:
-        bd = os.getcwd()
-        os.chdir(new_d)
-        sys.path.append(os.path.join("..", ".."))
-
         print("calculating mf6adj sensitivity")
 
-        with open("test.adj", "w") as f:
+        with open(new_d / "test.adj", "w") as f:
             f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
             for p_kij in pm_locs:
                 k, i, j = p_kij
@@ -1712,7 +1378,6 @@ def test_xd_box_drn():
                         ghb = gwf.get_package("ghb_0").stress_period_data.array[kper]
                         if ghb is None:
                             continue
-                        print(ghb)
 
                         kijs = [g[0] for g in ghb if g[0][0] == k]
 
@@ -1724,26 +1389,32 @@ def test_xd_box_drn():
 
                     lines.append("end performance_measure\n\n")
                 if len(lines) > 2:
-                    [f.write(line) for line in lines]
+                    for line in lines:
+                        f.write(line)
 
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
-        adj.solve_gwf()
-        adj.solve_adjoint()
-        adj._perturbation_test(pert_mult=pert_mult)
+        adj = mf6adj.Mf6Adj(
+            "test.adj", 
+            lib_name, 
+            logging_level="WARNING",
+            working_directory=new_d,
+            )
+        adj.solve_forward_model()
+        adj.solve_adjoint(csv_summary=True)
+        adj.perturbation_method(pert_mult=pert_mult)
         adj.finalize()
 
         if plot_adj_results:
             afiles_to_plot = [
                 f
-                for f in os.listdir(".")
+                for f in os.listdir(new_d)
                 if (f.startswith("pm-direct") or f.startswith("pm-phi"))
                 and f.endswith(".dat")
             ]
             afiles_to_plot.sort()
 
-            with PdfPages("adj.pdf") as pdf:
+            with PdfPages(new_d / "adj.pdf") as pdf:
                 for i, afile in enumerate(afiles_to_plot):
-                    arr = np.atleast_2d(np.loadtxt(afile))
+                    arr = np.atleast_2d(np.loadtxt(new_d / afile))
                     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
                     cb = ax.imshow(arr)
                     plt.colorbar(cb, ax=ax)
@@ -1752,8 +1423,6 @@ def test_xd_box_drn():
                     pdf.savefig()
                     plt.close(fig)
                     print(afile, i, len(afiles_to_plot))
-
-        os.chdir(bd)
 
     xd_box_compare(new_d, plot_compare)
     return
@@ -1796,7 +1465,7 @@ def test_xd_box_maw():
     plot_adj_results = False  # plot adj result
 
     plot_compare = False
-    new_d = "xd_box_maw_test"
+    new_d = pl.Path("xd_box_maw_test")
     nrow = 5
     ncol = 5
     nlay = 3
@@ -1846,20 +1515,14 @@ def test_xd_box_maw():
         perioddata=maw_perioddata,
     )
     sim.write_simulation()
-    pyemu.os_utils.run("mf6", cwd=new_d)
+    sim.run_simulation()
+    
     id = gwf.dis.idomain.array
     nlay, nrow, ncol = gwf.dis.nlay.data, gwf.dis.nrow.data, gwf.dis.ncol.data
     obsval = 1.0
 
     pert_mult = 1.01
     weight = 1.0
-
-    p_kijs = []
-
-    for k in range(nlay):
-        for i in range(nrow):
-            for j in range(ncol):
-                p_kijs.append((k, i, j))
 
     pm_locs = []
     for k in range(nlay):  # [0, int(nlay / 2), nlay-1]:
@@ -1871,16 +1534,11 @@ def test_xd_box_maw():
     pm_locs.sort()
 
     assert len(pm_locs) > 0
-    sys.path.insert(0, os.path.join(".."))
 
     if run_adj:
-        bd = os.getcwd()
-        os.chdir(new_d)
-        sys.path.append(os.path.join("..", ".."))
-
         print("calculating mf6adj sensitivity")
 
-        with open("test.adj", "w") as f:
+        with open(new_d / "test.adj", "w") as f:
             f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
             for p_kij in pm_locs:
                 k, i, j = p_kij
@@ -1913,7 +1571,6 @@ def test_xd_box_maw():
                         ghb = gwf.get_package("ghb_0").stress_period_data.array[kper]
                         if ghb is None:
                             continue
-                        print(ghb)
 
                         kijs = [g[0] for g in ghb if g[0][0] == k]
 
@@ -1925,26 +1582,32 @@ def test_xd_box_maw():
 
                     lines.append("end performance_measure\n\n")
                 if len(lines) > 2:
-                    [f.write(line) for line in lines]
+                    for line in lines:
+                        f.write(line)
 
-        adj = mf6adj.Mf6Adj("test.adj", lib_name, logging_level="WARNING")
-        adj.solve_gwf()
-        adj.solve_adjoint()
-        adj._perturbation_test(pert_mult=pert_mult)
+        adj = mf6adj.Mf6Adj(
+            "test.adj", 
+            lib_name, 
+            logging_level="WARNING",
+            working_directory=new_d,
+            )
+        adj.solve_forward_model()
+        adj.solve_adjoint(csv_summary=True)
+        adj.perturbation_method(pert_mult=pert_mult)
         adj.finalize()
 
         if plot_adj_results:
             afiles_to_plot = [
                 f
-                for f in os.listdir(".")
+                for f in os.listdir(new_d)
                 if (f.startswith("pm-direct") or f.startswith("pm-phi"))
                 and f.endswith(".dat")
             ]
             afiles_to_plot.sort()
 
-            with PdfPages("adj.pdf") as pdf:
+            with PdfPages(new_d / "adj.pdf") as pdf:
                 for i, afile in enumerate(afiles_to_plot):
-                    arr = np.atleast_2d(np.loadtxt(afile))
+                    arr = np.atleast_2d(np.loadtxt(new_d / afile))
                     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
                     cb = ax.imshow(arr)
                     plt.colorbar(cb, ax=ax)
@@ -1954,39 +1617,35 @@ def test_xd_box_maw():
                     plt.close(fig)
                     print(afile, i, len(afiles_to_plot))
 
-        os.chdir(bd)
-
     xd_box_compare(new_d, plot_compare)
     return
 
 
-def nested_test():
+def test_nested():
     org_d = "nested"
-    new_d = "nested_test"
-    if os.path.exists(new_d):
+    new_d = pl.Path("nested_test")
+    if new_d.exists():
         shutil.rmtree(new_d)
-    shutil.copytree(org_d,new_d)
+    shutil.copytree(org_d, new_d)
 
-    with open(os.path.join(new_d,"test.adj"),'w') as f:
+    with open(new_d / "test.adj", "w") as f:
         f.write("\nbegin options\n\nend options\n\n")
         f.write("begin performance_measure pm1\n")
         f.write("1 1 1 80 head direct 1.0 -1.0e30 \n")
         f.write("end performance_measure\n\n")
 
-    b_d = os.getcwd()
-    os.chdir(new_d)
-
-    adj = mf6adj.Mf6Adj("test.adj", lib_name, False)
-    adj.solve_gwf()
-    adjdf = adj.solve_adjoint()["pm1"]
-    pertdf1 = adj._perturbation_test(pert_mult=1.1)
+    adj = mf6adj.Mf6Adj(
+        "test.adj",
+        lib_name,
+        logging_level="WARNING",
+        working_directory=new_d,
+    )
+    adj.solve_forward_model()
+    adjdf = adj.solve_adjoint(csv_summary=True)["pm1"]
+    pertdf1 = adj.perturbation_method(pert_mult=1.1)
     adj.finalize()
 
-    os.chdir(b_d)
-
-    #print(adjdf["ss"])
-    #print(pertdf1.columns)
-    pertssdf = pertdf1.loc[pertdf1.addr.str.contains("ss"),"pm1"]
+    pertssdf = pertdf1.loc[pertdf1.addr.str.contains("ss"), "pm1"]
     diff = 100.0 * (adjdf["ss"] - pertssdf) / pertssdf
     print(diff[~np.isnan(diff)].shape)
     assert diff[~np.isnan(diff)].shape[0] == 107
@@ -1996,5 +1655,4 @@ def nested_test():
 
 
 if __name__ == "__main__":
-    #test_xd_box_chd_ana()
-    nested_test()
+    test_nested()

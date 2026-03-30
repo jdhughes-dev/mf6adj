@@ -16,23 +16,7 @@ except ImportError:
     sys.path.insert(0, str(pl.Path("../").resolve()))
     import mf6adj
 
-env_path = pl.Path(os.environ.get("CONDA_PREFIX", None))
-assert env_path is not None, (
-    "autotest script must be run from the mf6adj Conda environment"
-)
-
-bin_path = "bin"
-exe_ext = ""
-if "linux" in platform.platform().lower():
-    lib_ext = ".so"
-elif "darwin" in platform.platform().lower() or "macos" in platform.platform().lower():
-    lib_ext = ".dylib"
-else:
-    bin_path = "Scripts"
-    lib_ext = ".dll"
-    exe_ext = ".exe"
-lib_name = env_path / f"{bin_path}/libmf6{lib_ext}"
-mf6_bin = env_path / f"{bin_path}/mf6{exe_ext}"
+mf6_bin, lib_name = mf6adj.get_conda_mf6_paths()
 
 perioddata = [(1.0, 1, 1.0), (1.0, 1, 1.0)]
 nper = len(perioddata)
@@ -213,7 +197,7 @@ def build_model(ws, name="disv"):
 
     sim.write_simulation()
 
-    pm_fname = "perfmeas.dat"
+    pm_fname = f"{name}_perfmeas.dat"
     with open(ws / pm_fname, "w") as fpm:
         for bnd in ("river", "drain"):
             if bnd == "river":
@@ -243,26 +227,26 @@ def build_model(ws, name="disv"):
 
 
 def solve_adjoint(ws, pm_fname):
-    bd = pl.Path.cwd()
-    os.chdir(ws)
-
-    forward_hdf5_name = "forward.hdf5"
+    forward_hdf5_name = "test_unstructured_forward.hdf5"
     start = datetime.now()
 
-    adj = mf6adj.Mf6Adj(pm_fname, lib_name, logging_level="INFO")
-    adj.solve_gwf(hdf5_name=forward_hdf5_name)
+    adj = mf6adj.Mf6Adj(
+        pm_fname,
+        lib_name,
+        logging_level="INFO",
+        working_directory=ws,
+    )
+    adj.solve_forward_model(hdf5_name=forward_hdf5_name)
     dfsum = adj.solve_adjoint()
     adj.finalize()  # release components
     duration = (datetime.now() - start).total_seconds()
     print("adjoint took:", duration)
 
-    os.chdir(bd)
-
 
 def get_sensitivities(ws):
     results = {}
     for bnd in ("river", "drain"):
-        result_hdf = ws / f"adjoint_solution_{bnd}_forward.hdf5"
+        result_hdf = ws / f"adjoint_solution_{bnd}.hdf5"
         hdf = h5py.File(result_hdf, "r")
         for key in hdf.keys():
             if key == "composite":

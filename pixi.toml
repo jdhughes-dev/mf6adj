@@ -6,42 +6,61 @@ version = "1.0.0"
 
 [dependencies]
 appdirs = "*"
-codespell = "*"
+codespell = ">=2.2.2"
 contextily = "*"
 coverage = "*"
 filelock = "*"
 flaky = "*"
-flopy = "*"
-hatchling = ">=1.27.0,<2"
-h5py = "*"
+flopy = ">=3.10.0"
+h5py = ">=3.0.0"
 ipykernel = "*"
 jupyter = "*"
 jupyter_client = ">=8.4.0"
-matplotlib = "*"
-modflowapi = "*"
+pandoc = "*"
+matplotlib = ">=3.5.0"
+modflowapi = ">=0.2.0"
 nbmake = "*"
-numpy = "*"
-pip = "*"
-pyemu = "*"
+numpy = ">=2.0"
+pandas = ">=2.0.0"
+pyemu = ">=1.4.0"
+geopandas = ">=1.0.0"
+boltons = "*"
+tomli-w = "*"
+modflow-devtools = ">=1.9.1"
 pyshp = "*"
-pytest = "*"
-pytest-benchmark = "*"
+pytest = ">=9.0.2"
 pytest-cov = "*"
 pytest-dotenv = "*"
 pytest-order = "*"
 pytest-xdist = "*"
 python = "3.10.*"
 requests = "*"
-ruff = "*"
-scipy = "*"
+scipy = ">=1.7.0"
 shapely = "*"
 
+# pre-commit tools
+pre-commit = "*"
+nbstripout = "*"
+ruff = "*"
+jupyterlab_code_formatter = "*"
+
+# docs
+myst-parser = "*"
+nbconvert = "*"
+nbsphinx = "*"
+pyyaml = "*"
+sphinx = ">=7.1.2"
+sphinx-rtd-theme = ">=1"
+
+# docs/build tools (PyPI-only)
 [pypi-dependencies]
-modflow-devtools = { git = "https://github.com/MODFLOW-ORG/modflow-devtools.git", extras = ["dfn"] }
+hatchling = ">=1.27.0,<2"
 hatch-fancy-pypi-readme = "*"
+rtds-action = "*"
 
 [tasks]
-postinstall = "pip install --no-build-isolation --no-deps --disable-pip-version-check -e ."
+pre-commit-install = { cmd = "pre-commit install" }
+postinstall = "pip install --no-deps --disable-pip-version-check -e ."
 
 # jupyter
 jupyter = { cmd = "jupyter lab" }
@@ -50,6 +69,8 @@ jupyter = { cmd = "jupyter lab" }
 update-flopy = { cmd = "python -m flopy.mf6.utils.generate_classes --ref develop" }
 
 # format
+format = { cmd = "pre-commit run --all-files" }
+format-all = { cmd = "pixi run clean-notebooks; pre-commit run --all-files" }
 check-lint = "ruff check ."
 check-format = "ruff format . --check"
 check-spelling = "codespell"
@@ -62,9 +83,17 @@ install-gridgen = {cmd = "get-modflow --subset gridgen :python"}
 
 # test
 autotest = { cmd = "pixi run autotest-base; pixi run autotest-notebooks" }
-autotest-base = { cmd = "pytest -v -n=auto --durations=0 --cov=mf6adj --cov-report=xml --keep-failed .failed", cwd = "autotest" }
+autotest-base = { cmd = "pixi run clean-tests; pytest -v -n=auto --durations=0 --cov=mf6adj --cov-report=xml --keep-failed .failed", cwd = "autotest" }
 autotest-notebooks = { cmd = "pytest -v -n=auto --durations=0 --nbmake --nbmake-timeout=3000", cwd = "examples" }
 clean-notebooks = { cmd = "python clear_output_all.py", cwd = "examples" }
+clean-tests = { cmd = "rm -rf *_test", cwd = "autotest" }
 
 # coverage report
 coverage-report = { cmd = "coverage report", cwd = "autotest"}
+
+# docs
+docs-install = { cmd = "pip install --no-deps --disable-pip-version-check -e '.[doc]'" }
+docs-apidoc = { cmd = "python scripts/sphinx_apidoc.py" }
+docs-build = { cmd = "pixi run docs-install; python scripts/sphinx_build.py" }
+docs-build-exec = { cmd = "pixi run docs-install; python scripts/sphinx_build.py --execute" }
+docs-clean = { cmd = "rm -rf docs/_build docs/source/_api docs/source/examples" }

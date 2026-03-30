@@ -1,0 +1,113 @@
+name: docs
+
+on:
+  schedule:
+    - cron: '0 8 * * *' # run at 8 AM UTC (12 AM PST, 8 PM NZST)
+  push:
+    branches:
+      - main
+      - develop
+    paths-ignore:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/ci.yml'
+      - '.gitignore'
+      - 'CITATION.cff'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths-ignore:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/ci.yml'
+      - '.gitignore'
+      - 'CITATION.cff'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'The tag, branch or commit hash to trigger an RTD build for. Branches and tags must be fully formed, e.g. refs/heads/<branch> or refs/tags/<tag> respectively.'
+        required: false
+        type: string
+        default: 'refs/heads/develop'
+      mf6_ref:
+        description: 'The tag, branch or commit hash to build MF6 from. Branches and tags must be fully formed, e.g. refs/heads/<branch> or refs/tags/<tag> respectively.'
+        required: false
+        type: string
+        default: 'refs/heads/develop'
+
+jobs:
+  build-docs:
+    name: Build docs
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ github.ref }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.9.4
+        with:
+          pixi-version: v0.59.0
+
+      - name: pixi post-install
+        run: |
+          pixi run postinstall
+
+      - name: Update flopy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}    
+        run: |
+          pixi run update-flopy
+          
+      - name: Install executables
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pixi run install-executables
+
+      - name: Run notebooks and build HTML docs
+        run: |
+          pixi run docs-build-exec
+
+      - name: Upload rendered notebooks
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rendered-notebooks-${{ github.sha }}
+          path: docs/source/examples/
+          retention-days: 7
+
+      - name: Upload built documentation
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: built-docs
+          path: docs/_build/html/
+          retention-days: 7
+
+  trigger_rtd:
+    name: Trigger Read the Docs build
+    runs-on: ubuntu-latest
+    if: success() && github.repository_owner == 'INTERA-Inc' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: build-docs
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+
+      - name: Trigger RTD build via webhook
+        uses: dfm/rtds-action@v1
+        with:
+          webhook_url: ${{ secrets.RTDS_WEBHOOK_URL }}
+          webhook_token: ${{ secrets.RTDS_WEBHOOK_TOKEN }}
+          commit_ref: ${{ github.ref }}

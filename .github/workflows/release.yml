@@ -1,0 +1,194 @@
+name: Release
+on:
+  push:
+    branches:
+      - main
+      - v[0-9]+.[0-9]+.[0-9]+*
+  release:
+    types:
+      - published
+jobs:
+  prep:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' && github.ref_name != 'main' }}
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+
+      - name: Checkout release branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+
+      - name: Install mf6adj
+        run: uv sync --all-extras
+
+      - name: Update version numbers
+        id: version
+        run: |
+          # extract version from branch name
+          ref="${{ github.ref_name }}"
+          ver="${ref#"v"}"
+
+          # update version files
+          if [[ "$ver" == *"rc"* ]]; then
+            uv run scripts/update_version.py -v "${ver%%rc*}"
+          else
+            uv run scripts/update_version.py -v "$ver"
+          fi
+
+          # show version and set output
+          uv run python -c "import mf6adj; print(f'mf6adj version: {mf6adj.__version__}')"
+          echo "version=${ver#"v"}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: uv run scripts/generate_changelog.py --version ${{ steps.version.outputs.version }}
+
+      - name: Commit and push version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add mf6adj/version.py changelog/CHANGELOG.md
+          git diff --staged --quiet || git commit -m "bump version to ${{ steps.version.outputs.version }} [skip ci]"
+          git push origin ${{ github.ref_name }}
+
+      - name: Write version file
+        run: echo "${{ steps.version.outputs.version }}" > version.txt
+
+      - name: Upload version artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: version
+          path: version.txt
+
+      - name: Upload changelog artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: changelog
+          path: changelog/CHANGELOG.md
+
+  pr:
+    name: Draft release PR
+    needs: prep
+    if: ${{ github.event_name == 'push' && !(contains(github.ref_name, 'rc')) }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+
+      - name: Checkout release branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Draft pull request
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          ref="${{ github.ref_name }}"
+          ver="${ref#"v"}"
+          title="Release $ver"
+          body='
+          # mf6adj '$ver'
+
+          Merge this pull request into `main` to approve the release.
+          Merging triggers a final job that creates a draft GitHub release and publishes the package to PyPI.
+
+          ## Release checklist
+
+          - [ ] `changelog/CHANGELOG.md` reviewed and correct
+          - [ ] `mf6adj/version.py` shows the correct version
+          - [ ] This PR merged into `main`
+          - [ ] Draft GitHub release reviewed and published
+          - [ ] **Publish package** job completed successfully on PyPI
+          '
+          gh pr create -B "main" -H "$ref" --title "$title" --draft --body "$body"
+
+  release:
+    name: Draft release
+    # runs only when changes are merged to main
+    if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+
+      - name: Checkout main branch
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      # actions/download-artifact won't look at previous workflow runs but we need to in order to get changelog
+      - name: Download version artifact
+        uses: dawidd6/action-download-artifact@v19
+        with:
+          workflow: release.yml
+          name: version
+
+      - name: Download changelog artifact
+        uses: dawidd6/action-download-artifact@v19
+        with:
+          workflow: release.yml
+          name: changelog
+          path: changelog/
+
+      - name: Draft release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          version=$(cat version.txt)
+          title="mf6adj $version"
+          notes=$(cat changelog/CHANGELOG.md)
+          gh release create "v$version" \
+            --target main \
+            --title "$title" \
+            --notes "$notes" \
+            --draft \
+            --latest
+
+  publish:
+    name: Publish package
+    # runs only after release is published (manually promoted from draft)
+    if: ${{ github.event_name == 'release' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      id-token: write  # mandatory for trusted publishing
+    environment:  # requires a 'release' environment in repo settings
+      name: release
+      url: https://pypi.org/p/mf6adj
+    steps:
+
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Setup Python
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+
+      - name: Build package
+        run: uv build
+
+      - name: Check package
+        run: uvx twine check --strict dist/*
+
+      - name: Publish package
+        run: uv publish --verbose --trusted-publishing always
