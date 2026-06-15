@@ -186,12 +186,12 @@ class Mf6Adj:
                 + f"{pm_name} has mixed 'pm_forms' ({pm_forms}), "
                 + "this is not supported"
             )
-        if next(iter(pm_types)) != "head" and next(iter(pm_forms)) != "direct":
+        if next(iter(pm_types)) != "head" and next(iter(pm_forms)) == "residual":
             raise Exception(
                 "performance measure"
                 + pm_name
-                + " has a flux 'pm_form' and is a "
-                + "residual 'pm_type', this is not supported"
+                + " has a flux 'pm_type' and is a "
+                + "residual 'pm_form', this is not supported"
             )
         if pm_name in [pm._name for pm in self._performance_measures]:
             raise Exception(f"PM {pm_name} multiply defined")
@@ -901,7 +901,6 @@ class Mf6Adj:
     def solve_adjoint(
         self,
         hdf5_adjoint_solution_fname: Optional[PathLike] = None,
-        skip_solve: bool = False,
         csv_summary: bool = False,
         linear_solver=None,
         linear_solver_kwargs: dict = {},
@@ -921,9 +920,6 @@ class Mf6Adj:
         hdf5_adjoint_solution_fname : PathLike, optional
             HDF5 file to write the adjoint solution. If omitted, a default
             name based on the performance-measure name is used.
-        skip_solve : bool, optional
-            Skip the adjoint solve for time steps with no performance-measure
-            entries.
         csv_summary : bool, optional
             Write a CSV summary of the sensitivity information.
         linear_solver : str or callable, optional
@@ -982,7 +978,6 @@ class Mf6Adj:
                 df = pm.solve_adjoint(
                     hdf5_forward_solution_fname=self._hdf5_name,
                     hdf5_adjoint_solution_fname=hdf5_adjoint_solution_fname,
-                    skip_solve=skip_solve,
                     csv_summary=csv_summary,
                     linear_solver=linear_solver,
                     linear_solver_kwargs=linear_solver_kwargs,

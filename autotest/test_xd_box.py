@@ -5,6 +5,7 @@ import shutil
 import sys
 
 import flopy
+import h5py
 import matplotlib
 
 matplotlib.use("Agg")
@@ -626,6 +627,156 @@ def test_xd_box():
 
     xd_box_compare(new_d, plot_compare)
     return
+
+
+def _parse_kperkstp(group_key):
+    # group keys look like 'solution_kper:00001_kstp:00000'
+    parts = group_key.split(":")
+    kper = int(parts[1].split("_")[0])
+    kstp = int(parts[2])
+    return (kper, kstp)
+
+
+def test_xd_box_instantaneous():
+    """Check the 'instantaneous' pm_form against the 'direct' pm_form.
+
+    An 'instantaneous' measure uses the same value as 'direct', but it looks at
+    each time step on its own and ignores how later time steps feed back into
+    earlier ones. The adjoint solve runs from the last time step to the first.
+    For a model with a steady-state period followed by transient periods, and
+    the same head observation, this means:
+
+      * steady-state step   -> same as direct (nothing feeds back anyway)
+      * last step solved    -> same as direct (nothing has fed back yet)
+      * transient, not last -> differs from direct (the feedback is dropped)
+
+    The overall (composite) result for an instantaneous measure is the average
+    of the per-step results (each weighted by its time-step length), not the
+    plain sum used for direct/residual. Time steps with no observation are
+    skipped, so a measure defined on only some time steps writes and averages
+    over just those steps.
+    """
+    new_d = pl.Path("xd_box_instantaneous_test")
+    nper = 3
+    sim = setup_xd_box_model(
+        new_d,
+        nper=nper,
+        include_sto=True,
+        include_id0=True,
+        nrow=5,
+        ncol=5,
+        nlay=3,
+        q=-3,
+        icelltype=1,
+        iconvert=1,
+        newton=True,
+        delr=10.0,
+        delc=10.0,
+        full_sat_bnd=False,
+        botm=[-10, -100, -1000],
+        alt_bnd="riv",
+        sp_len=10,
+    )
+
+    # Use one head observation. Write it as a direct measure and an
+    # instantaneous measure over every period, plus an instantaneous measure
+    # over only some periods to check that empty time steps are skipped.
+    k, i, j = 1, 2, 2
+    subset_kpers = [1, 2]  # zero-based periods 1 and 2 (skip steady period 0)
+    with open(new_d / "test.adj", "w") as f:
+        f.write("\nbegin options\nhdf5_name out.h5\nend options\n\n")
+        for form in ("direct", "instantaneous"):
+            f.write(f"begin performance_measure insttest_{form}\n")
+            for kper in range(nper):
+                f.write(
+                    f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} "
+                    + f"head {form} 1.0 -1e+30\n"
+                )
+            f.write("end performance_measure\n\n")
+
+        f.write("begin performance_measure insttest_subset\n")
+        for kper in subset_kpers:
+            f.write(
+                f"{kper + 1} 1 {k + 1} {i + 1} {j + 1} head instantaneous 1.0 -1e+30\n"
+            )
+        f.write("end performance_measure\n\n")
+
+    adj = mf6adj.Mf6Adj(
+        "test.adj",
+        lib_name,
+        logging_level="WARNING",
+        working_directory=new_d,
+    )
+    adj.solve_forward_model()
+    adj.solve_adjoint(csv_summary=False)
+    adj.finalize()
+
+    # time-step length (dt) and the steady/transient flag for each time step
+    dts, iss = {}, {}
+    with h5py.File(new_d / "out.h5", "r") as hf:
+        for key in hf:
+            if key.startswith("solution_kper"):
+                kk = _parse_kperkstp(key)
+                dts[kk] = float(hf[key].attrs["dt"])
+                iss[kk] = int(hf[key]["iss"][0])
+
+    def load_adjoint(name):
+        lambdas = {}
+        with h5py.File(new_d / f"adjoint_solution_{name}.h5", "r") as hf:
+            for key in hf:
+                if key.startswith("solution_kper"):
+                    lambdas[_parse_kperkstp(key)] = hf[key]["lambda"][:]
+            composite = hf["composite"]["wel6_q"][:]
+        return lambdas, composite
+
+    direct_lam, _ = load_adjoint("insttest_direct")
+    inst_lam, inst_comp = load_adjoint("insttest_instantaneous")
+
+    steps = sorted(direct_lam.keys())
+    assert len(steps) == nper
+    last_solved = steps[-1]  # last in time == first solved going backward
+
+    saw_transient_diff = False
+    for kk in steps:
+        diff = np.max(np.abs(direct_lam[kk] - inst_lam[kk]))
+        should_match = iss[kk] == 1 or kk == last_solved
+        if should_match:
+            assert diff < 1e-12, (
+                f"step {kk} (iss={iss[kk]}) should match direct, max diff {diff}"
+            )
+        else:
+            assert diff >= 1e-12, (
+                f"transient step {kk} should differ from direct (coupling dropped)"
+            )
+            saw_transient_diff = True
+    assert saw_transient_diff, "no transient step exercised the time decoupling"
+
+    # the overall result is the per-step results averaged over time, each
+    # weighted by its time-step length
+    wsum = sum(dts[kk] for kk in steps)
+    expected_comp = sum(inst_lam[kk] * dts[kk] for kk in steps) / wsum
+    assert np.max(np.abs(inst_comp - expected_comp)) < 1e-10, (
+        "instantaneous composite is not the time-weighted mean of per-step states"
+    )
+
+    # the subset measure should only solve and write the periods it is defined
+    # on, and its overall result should be the average over just those steps
+    sub_lam, sub_comp = load_adjoint("insttest_subset")
+    sub_steps = sorted(sub_lam.keys())
+    assert sub_steps == [(kper, 0) for kper in subset_kpers], (
+        f"subset measure solved unexpected steps: {sub_steps}"
+    )
+    sub_wsum = sum(dts[kk] for kk in sub_steps)
+    sub_expected = sum(sub_lam[kk] * dts[kk] for kk in sub_steps) / sub_wsum
+    assert np.max(np.abs(sub_comp - sub_expected)) < 1e-10, (
+        "subset composite is not the time-weighted mean over its observation steps"
+    )
+    # the subset's per-step states match the full measure's at shared steps
+    for kk in sub_steps:
+        assert np.max(np.abs(sub_lam[kk] - inst_lam[kk])) < 1e-12, (
+            f"subset and full instantaneous states differ at shared step {kk}"
+        )
+
 
 def test_xd_box_unstruct():
     # workflow flags
