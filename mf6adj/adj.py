@@ -11,6 +11,7 @@ import h5py
 import modflowapi
 import numpy as np
 import pandas as pd
+from xmipy.errors import XMIError
 
 from .pm import PerfMeas, PerfMeasRecord
 from .utils.utils import _utils_cd
@@ -322,14 +323,15 @@ class Mf6Adj:
         data_dict["iac"] = iac
         icelltype = get_ptr_from_gwf(gwf_name, "NPF", "ICELLTYPE", gwf)
         data_dict["icelltype"] = icelltype
-        if self._gwf_version > "6.6.3":
+        # IHIGHCELLSAT is not registered by MODFLOW 6 6.6.3 and earlier
+        try:
             ihighcellsat = get_ptr_from_gwf(
                 gwf_name,
                 "NPF",
                 "IHIGHCELLSAT",
                 gwf,
             )
-        else:
+        except XMIError:
             ihighcellsat = np.array([0], dtype=int)
         ihighcellsat_value = int(np.asarray(ihighcellsat).ravel()[0])
         if ihighcellsat_value != 0:
@@ -1031,9 +1033,16 @@ class Mf6Adj:
         Returns
         -------
         str
-            MODFLOW 6 version string reported by the API.
+            MODFLOW 6 version string reported by the API, or an empty string
+            if the API call fails.
         """
-        version = self._gwf.get_version()
+        # get_version overruns the version buffer in MODFLOW 6 6.7.0 and
+        # earlier, which can raise an access violation on Windows
+        try:
+            version = self._gwf.get_version()
+        except OSError as e:
+            self.logger.logger.warning(f"Could not get the MODFLOW 6 version: {e}")
+            return ""
         self.logger.logger.info(f"MODFLOW 6 version: {version}")
         return version
 
