@@ -204,7 +204,9 @@ class PerfMeas:
         """
         return str(self._name)
 
-    def _performance_measure_forward(self, head_dict, sp_package_dict) -> float:
+    def _performance_measure_forward(
+        self, head_dict, sp_package_dict, dt_dict=None
+    ) -> float:
         """Calculate the forward value of the performance measure.
 
         This helper is used during perturbation testing to evaluate the
@@ -217,21 +219,37 @@ class PerfMeas:
         sp_package_dict : dict
             Nested mapping of stress-package results produced by
             :meth:`Mf6Adj.solve_forward_model` when ``pert_save=True``.
+        dt_dict : dict, optional
+            Mapping from ``(kper, kstp)`` tuples to time step lengths. Required
+            for an instantaneous measure.
 
         Returns
         -------
         float
             Scalar forward value for the performance measure. Direct measures
-            are accumulated linearly and residual measures are accumulated as
-            weighted squared residuals.
+            are accumulated linearly, residual measures are accumulated as
+            weighted squared residuals, and instantaneous measures are the
+            time-weighted mean of the per-time-step values.
         """
-        result = 0.0
+        is_instantaneous = self._entries[0].pm_form == "instantaneous"
+        if is_instantaneous and dt_dict is None:
+            raise Exception(
+                "dt_dict is required to evaluate the instantaneous performance "
+                + f"measure {self.name}"
+            )
+
+        # accumulate by time step so an instantaneous measure can be averaged
+        # over time below. Every time step with an entry is represented, which
+        # matches the time steps the adjoint solution accumulates.
+        per_step = {pfr.kperkstp: 0.0 for pfr in self._entries}
         for pfr in self._entries:
             if pfr.pm_type == "head":
                 if pfr.pm_form in ("direct", "instantaneous"):
-                    result += pfr.weight * head_dict[pfr.kperkstp][pfr.inode]
+                    per_step[pfr.kperkstp] += (
+                        pfr.weight * head_dict[pfr.kperkstp][pfr.inode]
+                    )
                 elif pfr.pm_form == "residual":
-                    result += (
+                    per_step[pfr.kperkstp] += (
                         pfr.weight * (head_dict[pfr.kperkstp][pfr.inode] - pfr.obsval)
                     ) ** 2
                 else:
@@ -246,12 +264,22 @@ class PerfMeas:
                                     and kk_d["packagename"] == pfr.pm_type
                                 ):
                                     if pfr.pm_form in ("direct", "instantaneous"):
-                                        result += pfr.weight * kk_d["simval"]
+                                        per_step[kk] += pfr.weight * kk_d["simval"]
                                     elif pfr.pm_form == "residual":
-                                        result += (
+                                        per_step[kk] += (
                                             pfr.weight * (kk_d["simval"] - pfr.obsval)
                                         ) ** 2
-        return result
+
+        if not is_instantaneous:
+            return float(sum(per_step.values()))
+
+        # An instantaneous measure is the time-weighted mean of the per-step
+        # values, so the result does not depend on the time discretization.
+        # This matches the composite the adjoint solution reports.
+        wsum = sum(dt_dict[kk] for kk in per_step)
+        if wsum <= 0.0:
+            return 0.0
+        return float(sum(dt_dict[kk] * val for kk, val in per_step.items()) / wsum)
 
     def _setup_block_jacobi_preconditioner(self, amat, block_size=5000):
         """Setup a block Jacobi preconditioner

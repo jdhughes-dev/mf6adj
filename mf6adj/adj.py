@@ -116,6 +116,7 @@ class Mf6Adj:
             self._gwf = self._initialize_gwf(lib_name, self._flow_dir)
             self._gwf_version = self._get_gwf_version()
             self._hdf5_name = None
+            self._dt_dict = None
 
             self._structured_mg = None
             self.is_structured = is_structured
@@ -562,9 +563,12 @@ class Mf6Adj:
 
             sp_package_data = None
             head_dict = None
+            dt_dict = None
             if pert_save:
                 sp_package_data = {}
                 head_dict = {}
+                # time step lengths, used to weight an instantaneous measure
+                dt_dict = {}
 
             while ctime < etime:
                 sol_start = datetime.now()
@@ -702,6 +706,7 @@ class Mf6Adj:
                 data_dict["head"] = head
                 if pert_save:
                     head_dict[kperkstp] = head
+                    dt_dict[kperkstp] = dt1
 
                 head_old = self._gwf.get_value(
                     self._gwf.get_var_address("XOLD", self._gwf_name.upper())
@@ -896,6 +901,7 @@ class Mf6Adj:
             self._add_gwf_info_to_hdf(fhd)
             fhd.close()
             if pert_save:
+                self._dt_dict = dt_dict
                 return head_dict, sp_package_data
 
     def solve_adjoint(
@@ -1076,8 +1082,11 @@ class Mf6Adj:
         # for d in org_sp_package_data["ghb6"][(0, 0)]:
         #     # print(d)
         #     tot += d["simval"]
+        dt_dict = self._dt_dict
         base_results = {
-            pm.name: pm._performance_measure_forward(org_head, org_sp_package_data)
+            pm.name: pm._performance_measure_forward(
+                org_head, org_sp_package_data, dt_dict
+            )
             for pm in self._performance_measures
         }
         assert len(base_results) == len(self._performance_measures)
@@ -1122,7 +1131,7 @@ class Mf6Adj:
             """
             return {
                 pm.name: (
-                    pm._performance_measure_forward(pert_head, pert_sp_dict)
+                    pm._performance_measure_forward(pert_head, pert_sp_dict, dt_dict)
                     - base_results[pm.name]
                 )
                 / epsilon
