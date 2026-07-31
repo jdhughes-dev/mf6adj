@@ -171,27 +171,27 @@ class Mf6Adj:
 
         Notes
         -----
-        A performance measure must contain at least one entry, cannot mix
-        ``direct`` and ``residual`` forms, and cannot mix ``head`` entries with
-        flux-package entries.
+        A performance measure must contain at least one entry and cannot mix
+        ``pm_form`` values. ``head`` and flux-package entries may be combined,
+        but a flux entry cannot be part of a ``residual`` measure.
         """
         if len(pm_entries) == 0:
             raise Exception(f"no entries found for PM {pm_name}")
-        pm_types = {entry.pm_type for entry in pm_entries}
 
         pm_forms = {entry.pm_form for entry in pm_entries}
         if len(pm_forms) > 1:
             raise Exception(
-                "performance measure"
-                + f"{pm_name} has mixed 'pm_forms' ({pm_forms}), "
-                + "this is not supported"
+                f"performance measure {pm_name} has mixed 'pm_forms' "
+                + f"({pm_forms}), this is not supported"
             )
-        if next(iter(pm_types)) != "head" and next(iter(pm_forms)) == "residual":
+        pm_form = next(iter(pm_forms))
+
+        flux_types = {entry.pm_type for entry in pm_entries} - {"head"}
+        if flux_types and pm_form == "residual":
             raise Exception(
-                "performance measure"
-                + pm_name
-                + " has a flux 'pm_type' and is a "
-                + "residual 'pm_form', this is not supported"
+                f"performance measure {pm_name} has flux 'pm_types' "
+                + f"({flux_types}) and is a residual 'pm_form', "
+                + "this is not supported"
             )
         if pm_name in [pm._name for pm in self._performance_measures]:
             raise Exception(f"PM {pm_name} multiply defined")
