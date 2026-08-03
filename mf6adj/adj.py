@@ -117,6 +117,7 @@ class Mf6Adj:
             self._gwf = self._initialize_gwf(lib_name, self._flow_dir)
             self._gwf_version = self._get_gwf_version()
             self._hdf5_name = None
+            self._dt_dict = None
 
             self._structured_mg = None
             self.is_structured = is_structured
@@ -172,27 +173,27 @@ class Mf6Adj:
 
         Notes
         -----
-        A performance measure must contain at least one entry, cannot mix
-        ``direct`` and ``residual`` forms, and cannot mix ``head`` entries with
-        flux-package entries.
+        A performance measure must contain at least one entry and cannot mix
+        ``pm_form`` values. ``head`` and flux-package entries may be combined,
+        but a flux entry cannot be part of a ``residual`` measure.
         """
         if len(pm_entries) == 0:
             raise Exception(f"no entries found for PM {pm_name}")
-        pm_types = {entry.pm_type for entry in pm_entries}
 
         pm_forms = {entry.pm_form for entry in pm_entries}
         if len(pm_forms) > 1:
             raise Exception(
-                "performance measure"
-                + f"{pm_name} has mixed 'pm_forms' ({pm_forms}), "
-                + "this is not supported"
+                f"performance measure {pm_name} has mixed 'pm_forms' "
+                + f"({pm_forms}), this is not supported"
             )
-        if next(iter(pm_types)) != "head" and next(iter(pm_forms)) != "direct":
+        pm_form = next(iter(pm_forms))
+
+        flux_types = {entry.pm_type for entry in pm_entries} - {"head"}
+        if flux_types and pm_form == "residual":
             raise Exception(
-                "performance measure"
-                + pm_name
-                + " has a flux 'pm_form' and is a "
-                + "residual 'pm_type', this is not supported"
+                f"performance measure {pm_name} has flux 'pm_types' "
+                + f"({flux_types}) and is a residual 'pm_form', "
+                + "this is not supported"
             )
         if pm_name in [pm._name for pm in self._performance_measures]:
             raise Exception(f"PM {pm_name} multiply defined")
@@ -564,9 +565,12 @@ class Mf6Adj:
 
             sp_package_data = None
             head_dict = None
+            dt_dict = None
             if pert_save:
                 sp_package_data = {}
                 head_dict = {}
+                # time step lengths, used to weight an instantaneous measure
+                dt_dict = {}
 
             while ctime < etime:
                 sol_start = datetime.now()
@@ -704,6 +708,7 @@ class Mf6Adj:
                 data_dict["head"] = head
                 if pert_save:
                     head_dict[kperkstp] = head
+                    dt_dict[kperkstp] = dt1
 
                 head_old = self._gwf.get_value(
                     self._gwf.get_var_address("XOLD", self._gwf_name.upper())
@@ -898,12 +903,12 @@ class Mf6Adj:
             self._add_gwf_info_to_hdf(fhd)
             fhd.close()
             if pert_save:
+                self._dt_dict = dt_dict
                 return head_dict, sp_package_data
 
     def solve_adjoint(
         self,
         hdf5_adjoint_solution_fname: Optional[PathLike] = None,
-        skip_solve: bool = False,
         csv_summary: bool = False,
         linear_solver=None,
         linear_solver_kwargs: dict = {},
@@ -923,9 +928,6 @@ class Mf6Adj:
         hdf5_adjoint_solution_fname : PathLike, optional
             HDF5 file to write the adjoint solution. If omitted, a default
             name based on the performance-measure name is used.
-        skip_solve : bool, optional
-            Skip the adjoint solve for time steps with no performance-measure
-            entries.
         csv_summary : bool, optional
             Write a CSV summary of the sensitivity information.
         linear_solver : str or callable, optional
@@ -984,7 +986,6 @@ class Mf6Adj:
                 df = pm.solve_adjoint(
                     hdf5_forward_solution_fname=self._hdf5_name,
                     hdf5_adjoint_solution_fname=hdf5_adjoint_solution_fname,
-                    skip_solve=skip_solve,
                     csv_summary=csv_summary,
                     linear_solver=linear_solver,
                     linear_solver_kwargs=linear_solver_kwargs,
@@ -1090,8 +1091,11 @@ class Mf6Adj:
         # for d in org_sp_package_data["ghb6"][(0, 0)]:
         #     # print(d)
         #     tot += d["simval"]
+        dt_dict = self._dt_dict
         base_results = {
-            pm.name: pm._performance_measure_forward(org_head, org_sp_package_data)
+            pm.name: pm._performance_measure_forward(
+                org_head, org_sp_package_data, dt_dict
+            )
             for pm in self._performance_measures
         }
         assert len(base_results) == len(self._performance_measures)
@@ -1136,7 +1140,7 @@ class Mf6Adj:
             """
             return {
                 pm.name: (
-                    pm._performance_measure_forward(pert_head, pert_sp_dict)
+                    pm._performance_measure_forward(pert_head, pert_sp_dict, dt_dict)
                     - base_results[pm.name]
                 )
                 / epsilon

@@ -118,10 +118,10 @@ class PerfMeasRecord:
         self.pm_type = pm_type.lower().strip()
 
         self.pm_form = pm_form.lower().strip()
-        if self.pm_form not in ["direct", "residual"]:
+        if self.pm_form not in ["direct", "residual", "instantaneous"]:
             raise Exception(
-                "PerfMeasRecord.pm_form must be 'direct' or 'residual', "
-                + f"not '{self.pm_form}'"
+                "PerfMeasRecord.pm_form must be 'direct', 'residual', or "
+                + f"'instantaneous', not '{self.pm_form}'"
             )
 
     def __repr__(self) -> str:
@@ -204,7 +204,9 @@ class PerfMeas:
         """
         return str(self._name)
 
-    def _performance_measure_forward(self, head_dict, sp_package_dict) -> float:
+    def _performance_measure_forward(
+        self, head_dict, sp_package_dict, dt_dict=None
+    ) -> float:
         """Calculate the forward value of the performance measure.
 
         This helper is used during perturbation testing to evaluate the
@@ -217,21 +219,37 @@ class PerfMeas:
         sp_package_dict : dict
             Nested mapping of stress-package results produced by
             :meth:`Mf6Adj.solve_forward_model` when ``pert_save=True``.
+        dt_dict : dict, optional
+            Mapping from ``(kper, kstp)`` tuples to time step lengths. Required
+            for an instantaneous measure.
 
         Returns
         -------
         float
             Scalar forward value for the performance measure. Direct measures
-            are accumulated linearly and residual measures are accumulated as
-            weighted squared residuals.
+            are accumulated linearly, residual measures are accumulated as
+            weighted squared residuals, and instantaneous measures are the
+            time-weighted mean of the per-time-step values.
         """
-        result = 0.0
+        is_instantaneous = self._entries[0].pm_form == "instantaneous"
+        if is_instantaneous and dt_dict is None:
+            raise Exception(
+                "dt_dict is required to evaluate the instantaneous performance "
+                + f"measure {self.name}"
+            )
+
+        # accumulate by time step so an instantaneous measure can be averaged
+        # over time below. Every time step with an entry is represented, which
+        # matches the time steps the adjoint solution accumulates.
+        per_step = {pfr.kperkstp: 0.0 for pfr in self._entries}
         for pfr in self._entries:
             if pfr.pm_type == "head":
-                if pfr.pm_form == "direct":
-                    result += pfr.weight * head_dict[pfr.kperkstp][pfr.inode]
+                if pfr.pm_form in ("direct", "instantaneous"):
+                    per_step[pfr.kperkstp] += (
+                        pfr.weight * head_dict[pfr.kperkstp][pfr.inode]
+                    )
                 elif pfr.pm_form == "residual":
-                    result += (
+                    per_step[pfr.kperkstp] += (
                         pfr.weight * (head_dict[pfr.kperkstp][pfr.inode] - pfr.obsval)
                     ) ** 2
                 else:
@@ -245,13 +263,23 @@ class PerfMeas:
                                     kk_d["node"] == pfr.inode + 1
                                     and kk_d["packagename"] == pfr.pm_type
                                 ):
-                                    if pfr.pm_form == "direct":
-                                        result += pfr.weight * kk_d["simval"]
+                                    if pfr.pm_form in ("direct", "instantaneous"):
+                                        per_step[kk] += pfr.weight * kk_d["simval"]
                                     elif pfr.pm_form == "residual":
-                                        result += (
+                                        per_step[kk] += (
                                             pfr.weight * (kk_d["simval"] - pfr.obsval)
                                         ) ** 2
-        return result
+
+        if not is_instantaneous:
+            return float(sum(per_step.values()))
+
+        # An instantaneous measure is the time-weighted mean of the per-step
+        # values, so the result does not depend on the time discretization.
+        # This matches the composite the adjoint solution reports.
+        wsum = sum(dt_dict[kk] for kk in per_step)
+        if wsum <= 0.0:
+            return 0.0
+        return float(sum(dt_dict[kk] * val for kk, val in per_step.items()) / wsum)
 
     def _setup_block_jacobi_preconditioner(self, amat, block_size=5000):
         """Setup a block Jacobi preconditioner
@@ -391,7 +419,6 @@ class PerfMeas:
         self,
         hdf5_forward_solution_fname: PathLike,
         hdf5_adjoint_solution_fname: Optional[PathLike] = None,
-        skip_solve: bool = False,
         csv_summary: bool = False,
         linear_solver=None,
         linear_solver_kwargs: Optional[dict] = None,
@@ -419,9 +446,6 @@ class PerfMeas:
             HDF5 file to write the adjoint solution. If omitted, a default
             name based on the performance-measure name is used. If the target
             file already exists, it is removed before writing.
-        skip_solve : bool, optional
-            Skip the adjoint solve for time steps with no performance-measure
-            entries.
         csv_summary : bool, optional
             Write a CSV summary of the sensitivity information beside the
             adjoint HDF5 output file.
@@ -597,6 +621,16 @@ class PerfMeas:
                 has_flux_pm = True
                 break
 
+        # An "instantaneous" measure looks at each time step on its own and
+        # ignores how later time steps would otherwise feed back into earlier
+        # ones. The result is the sensitivity at each time step by itself. All
+        # entries in a measure share the same form, so one flag covers the
+        # whole measure.
+        is_instantaneous = self._entries[0].pm_form == "instantaneous"
+        # running total of the time-step weights, used below to average the
+        # result of an instantaneous measure
+        wsum = 0.0
+
         comp_welq_sens = np.zeros(nnodes)
         comp_rch_sens = np.zeros((nnodes))
 
@@ -609,7 +643,12 @@ class PerfMeas:
                         comp_bnd_results[pname + "_" + aname] = np.zeros(nnodes)
 
         for itime, kk in enumerate(kperkstp[::-1]):
-            if skip_solve and not self.__pm_available(kk):
+            # For an instantaneous measure, a time step with no observation
+            # adds nothing, so skip it. The average below then uses only the
+            # time steps that have an observation. Direct and residual measures
+            # pass information from one time step to the next, so every step
+            # must be solved and none are skipped.
+            if is_instantaneous and not self.__pm_available(kk):
                 continue
 
             data = {}
@@ -642,12 +681,26 @@ class PerfMeas:
             data["dfdh"] = dfdh
             iss = hdf[sol_key]["iss"][0]
 
-            if iss == 0:  # transient
-                # get the derv of RHS WRT head
+            # Weight for this time step, used when combining the per-step
+            # results below. This does not change the old behavior: for direct
+            # and residual measures w is 1.0, so "value * w" is exactly the same
+            # as "value" and the divide by wsum at the end is skipped. Only an
+            # instantaneous measure uses a real weight (the length of the time
+            # step, dt) so its result can be averaged over time.
+            w = float(hdf[sol_key].attrs["dt"]) if is_instantaneous else 1.0
+            wsum += w
+
+            if iss == 0 and not is_instantaneous:  # transient
+                # drhsdh is the storage term that links this time step to the
+                # next. Multiplying it by the later step's result (lamb) carries
+                # that result backward in time into this step.
                 drhsdh = hdf[sol_key]["drhsdh"][:]
                 data["drhsdh"] = drhsdh
                 rhs = (drhsdh * lamb) - dfdh
             else:
+                # Either steady state or an instantaneous measure. In both
+                # cases there is no carryover from the later time step, so each
+                # time step is solved on its own.
                 rhs = -dfdh
 
             self.logger.logger.debug(
@@ -951,8 +1004,8 @@ class PerfMeas:
 
             data["k11"] = k_sens
             data["k33"] = k33_sens
-            comp_k_sens += k_sens
-            comp_k33_sens += k33_sens
+            comp_k_sens += k_sens * w
+            comp_k33_sens += k33_sens * w
             self.logger.logger.debug(
                 (
                     "Formulating lam_dresdk_h took: "
@@ -970,7 +1023,7 @@ class PerfMeas:
                 else:
                     ss_sens = np.zeros_like(lamb)
                 data["ss"] = ss_sens
-                comp_ss_sens += ss_sens
+                comp_ss_sens += ss_sens * w
                 self.logger.logger.debug(
                     (
                         "Formulating storage took: "
@@ -979,8 +1032,8 @@ class PerfMeas:
                 )
 
             data["wel6_q"] = lamb
-            comp_welq_sens += lamb
-            comp_rch_sens += lamb
+            comp_welq_sens += lamb * w
+            comp_rch_sens += lamb * w
             data["rch6_recharge"] = lamb
 
             for ptype, pnames in gwf_package_dict.items():
@@ -1001,11 +1054,13 @@ class PerfMeas:
                         sens_level, sens_cond = self.__lam_drhs_dbnd(
                             lamb, head, sp_bnd_dict, has_flux_pm
                         )
-                        comp_bnd_results[pname + "_" + bnd_dict[ptype][0]] += sens_level
+                        comp_bnd_results[pname + "_" + bnd_dict[ptype][0]] += (
+                            sens_level * w
+                        )
                         data[pname + "_" + bnd_dict[ptype][0]] = sens_level
                         if len(bnd_dict[ptype]) > 1:
                             comp_bnd_results[pname + "_" + bnd_dict[ptype][1]] += (
-                                sens_cond
+                                sens_cond * w
                             )
                             data[pname + "_" + bnd_dict[ptype][1]] = sens_cond
                         self.logger.logger.debug(
@@ -1043,6 +1098,19 @@ class PerfMeas:
                 logger=self.logger.logger,
             )
         self.logger.logger.info("Formulate composite sensitivities")
+        # An instantaneous measure handles each time step on its own, so its
+        # overall result is the average of the per-step results (each weighted
+        # by its time-step length) instead of a plain sum. Direct and residual
+        # measures keep the plain sum.
+        if is_instantaneous and wsum > 0.0:
+            comp_k_sens /= wsum
+            comp_k33_sens /= wsum
+            comp_welq_sens /= wsum
+            comp_rch_sens /= wsum
+            if has_sto:
+                comp_ss_sens /= wsum
+            for name in comp_bnd_results:
+                comp_bnd_results[name] /= wsum
         data = {}
         data["k11"] = comp_k_sens
         data["k33"] = comp_k33_sens
@@ -1546,7 +1614,7 @@ class PerfMeas:
 
         for pfr in relevant_entries:
             if pfr.pm_type == "head":
-                if pfr.pm_form == "direct":
+                if pfr.pm_form in ("direct", "instantaneous"):
                     dfdh[pfr.inode] = pfr.weight
                 elif pfr.pm_form == "residual":
                     # Scalar math is fine here, but make sure head is a numpy array

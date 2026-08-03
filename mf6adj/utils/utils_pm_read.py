@@ -111,8 +111,8 @@ def read_adj_file(
         The input file structure closely follows MODFLOW 6 input files. Each
         performance measure is defined in a ``performance_measure`` block. Entries
         provide time location, spatial location, output type (``head`` or a flux
-        package name), form (``direct`` or ``residual``), weight, and optionally
-        an observed value.
+        package name), form (``direct``, ``residual``, or ``instantaneous``),
+        weight, and optionally an observed value.
 
         Example entries for a structured model:
 
@@ -120,10 +120,22 @@ def read_adj_file(
             ``25 3 3 10 34 head direct 1.0 -999``
         - Residual head measure:
             ``25 3 3 10 34 head residual 1.0 123.45``
+        - Instantaneous head measure:
+            ``25 3 3 10 34 head instantaneous 1.0 -999``
 
-        At present, forms (``direct`` vs ``residual``) cannot be mixed within a
-        single performance measure, and types (``head`` vs flux package) also
-        cannot be mixed within a single performance measure.
+        An ``instantaneous`` measure uses the same value as a ``direct``
+        measure, but it looks at each time step on its own instead of letting
+        later time steps feed back into earlier ones. The result is the
+        sensitivity at each time step by itself, rather than the total
+        sensitivity over the whole run that ``direct`` gives. Time steps with no
+        entry are skipped, and the overall (composite) result is the average
+        over the observation times (each weighted by its time-step length)
+        instead of the plain sum used for ``direct`` and ``residual`` measures.
+        An ``instantaneous`` form works for both ``head`` and flux measures.
+
+        At present, forms (``direct``, ``residual``, ``instantaneous``) cannot be
+        mixed within a single performance measure, and types (``head`` vs flux
+        package) also cannot be mixed within a single performance measure.
     """
     hdf5_name = None if current_hdf5_name is None else pl.Path(current_hdf5_name)
 
