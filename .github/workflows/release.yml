@@ -1,8 +1,41 @@
 name: Release
+
+# Start a release from the Actions tab. Choose the version bump, where to
+# upload, and whether this is a rehearsal. The release gates are unchanged:
+# this workflow only drafts a pull request, a human merges it, a draft GitHub
+# release is created, and publishing to PyPI happens when that release is
+# published.
+#
+# Two rehearsal modes:
+#   dry_run             - bump, build and smoke test only; nothing leaves the runner
+#   repository=testpypi - as above, plus a real upload to TestPyPI, but no branch,
+#                         no pull request and no release, so nothing is burned in git
+
 on:
-  push:
-    branches:
-      - v[0-9]+.[0-9]+.[0-9]+*
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump applied to the current version"
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+          - stable
+          - rc
+          - dev
+      repository:
+        description: "Where to upload. Choose testpypi to rehearse."
+        type: choice
+        default: pypi
+        options:
+          - pypi
+          - testpypi
+      dry_run:
+        description: "Rehearsal: bump, build and smoke test, but do not push or publish"
+        type: boolean
+        default: false
   pull_request:
     types:
       - closed
@@ -11,19 +44,23 @@ on:
   release:
     types:
       - published
+
+concurrency: release-${{ github.event_name }}-${{ github.ref }}
+
 jobs:
   prep:
     name: Prepare release
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'push' }}
     permissions:
       contents: write
+      pull-requests: write
     defaults:
       run:
         shell: bash
     steps:
 
-      - name: Checkout release branch
+      - name: Checkout repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -36,82 +73,121 @@ jobs:
       - name: Install mf6adj
         run: uv sync --all-extras
 
-      - name: Update version numbers
+      - name: Resolve the new version
         id: version
         run: |
-          # extract version from branch name
-          ref="${{ github.ref_name }}"
-          ver="${ref#"v"}"
+          current=$(uv run scripts/update_version.py -g)
+          new=$(uv run python -c "
+          from packaging.version import Version
+          cur = Version('$current')
+          bump = '${{ inputs.bump }}'
+          major, minor, micro = cur.major, cur.minor, cur.micro
+          if bump == 'major':
+              out = f'{major + 1}.0.0'
+          elif bump == 'minor':
+              out = f'{major}.{minor + 1}.0'
+          elif bump == 'patch':
+              # finalize a dev or pre-release, otherwise step the patch number
+              out = f'{major}.{minor}.{micro}' if (cur.is_devrelease or cur.pre) else f'{major}.{minor}.{micro + 1}'
+          elif bump == 'stable':
+              out = f'{major}.{minor}.{micro}'
+          elif bump == 'rc':
+              n = cur.pre[1] + 1 if cur.pre and cur.pre[0] == 'rc' else 0
+              out = f'{major}.{minor}.{micro}rc{n}'
+          elif bump == 'dev':
+              n = cur.dev + 1 if cur.is_devrelease else 0
+              out = f'{major}.{minor}.{micro}.dev{n}'
+          else:
+              raise SystemExit(f'unknown bump {bump}')
+          print(out)
+          ")
+          echo "current=$current" >> $GITHUB_OUTPUT
+          echo "version=$new" >> $GITHUB_OUTPUT
+          echo "branch=v$new" >> $GITHUB_OUTPUT
+          echo "$current -> $new"
 
-          # update version files
-          if [[ "$ver" == *"rc"* ]]; then
-            uv run scripts/update_version.py -v "${ver%%rc*}"
-          else
-            uv run scripts/update_version.py -v "$ver"
-          fi
-
-          # show version and set output
+      - name: Update version numbers
+        run: |
+          ver="${{ steps.version.outputs.version }}"
+          # update_version.py records the release version, so a release
+          # candidate carries the version it is a candidate for
+          uv run scripts/update_version.py -v "${ver%%rc*}"
           uv run python -c "import mf6adj; print(f'mf6adj version: {mf6adj.__version__}')"
-          echo "version=${ver#"v"}" >> $GITHUB_OUTPUT
+
+      - name: Sync CITATION.cff
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          uv run python - <<'EOF'
+          import os
+          import pathlib
+          import re
+
+          version = os.environ["VERSION"]
+          cff = pathlib.Path("CITATION.cff")
+          text, n = re.subn(
+              r"^version:.*$", f"version: {version}", cff.read_text(), count=1, flags=re.M
+          )
+          assert n == 1, f"CITATION.cff: matched version {n} times"
+          cff.write_text(text)
+          EOF
+          git diff --stat CITATION.cff
 
       - name: Generate changelog
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: uv run scripts/generate_changelog.py --version ${{ steps.version.outputs.version }}
+        run: |
+          uv run scripts/generate_changelog.py --version ${{ steps.version.outputs.version }}
 
-      - name: Commit and push version bump
+      - name: Build package
+        run: uv build
+
+      - name: Check package
+        run: uvx twine check --strict dist/*
+
+      - name: Smoke test (wheel)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          uv run --isolated --no-project --with "$(ls dist/*.whl)" \
+            python -c "import mf6adj, os; assert mf6adj.__version__ == os.environ['VERSION'], mf6adj.__version__; print(mf6adj.__version__)"
+
+      - name: Smoke test (source distribution)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          uv run --isolated --no-project --with "$(ls dist/*.tar.gz)" \
+            python -c "import mf6adj, os; assert mf6adj.__version__ == os.environ['VERSION'], mf6adj.__version__; print(mf6adj.__version__)"
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+      # a TestPyPI upload is a rehearsal, so it deliberately leaves no trace in
+      # git: no release branch, no pull request and no release
+      - name: Push release branch
+        if: ${{ !inputs.dry_run && inputs.repository == 'pypi' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add mf6adj/version.py changelog/CHANGELOG.md
-          git diff --staged --quiet || git commit -m "bump version to ${{ steps.version.outputs.version }} [skip ci]"
-          git push origin ${{ github.ref_name }}
-
-      - name: Write version file
-        run: echo "${{ steps.version.outputs.version }}" > version.txt
-
-      - name: Upload version artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: version
-          path: version.txt
-
-      - name: Upload changelog artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: changelog
-          path: changelog/CHANGELOG.md
-
-  pr:
-    name: Draft release PR
-    needs: prep
-    if: ${{ github.event_name == 'push' && !(contains(github.ref_name, 'rc')) }}
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-      pull-requests: write
-    defaults:
-      run:
-        shell: bash -l {0}
-    steps:
-
-      - name: Checkout release branch
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.ref_name }}
+          git switch -c "${{ steps.version.outputs.branch }}"
+          git add mf6adj/version.py changelog/CHANGELOG.md CITATION.cff
+          git commit -m "bump version to ${{ steps.version.outputs.version }} [skip ci]"
+          git push origin "${{ steps.version.outputs.branch }}"
 
       - name: Draft pull request
+        if: ${{ !inputs.dry_run && inputs.repository == 'pypi' && !contains(steps.version.outputs.version, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          ref="${{ github.ref_name }}"
-          ver="${ref#"v"}"
-          title="Release $ver"
+          ver="${{ steps.version.outputs.version }}"
           body='
           # mf6adj '$ver'
 
           Merge this pull request into `main` to approve the release.
-          Merging triggers a final job that creates a draft GitHub release and publishes the package to PyPI.
+          Merging triggers a job that creates a draft GitHub release, and publishing that release uploads the package to PyPI.
 
           ## Release checklist
 
@@ -121,7 +197,62 @@ jobs:
           - [ ] Draft GitHub release reviewed and published
           - [ ] **Publish package** job completed successfully on PyPI
           '
-          gh pr create -B "main" -H "$ref" --title "$title" --draft --body "$body"
+          gh pr create -B main -H "${{ steps.version.outputs.branch }}" \
+            --title "Release $ver" --draft --body "$body"
+
+      - name: Summary
+        if: ${{ always() && steps.version.outputs.version != '' }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CURRENT: ${{ steps.version.outputs.current }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "### mf6adj $VERSION"
+            echo ""
+            echo "Bumped \`$CURRENT\` -> \`$VERSION\` (\`${{ inputs.bump }}\`)."
+            echo ""
+            if [ "$JOB_STATUS" != "success" ]; then
+              echo "**Run failed** - see the steps above for how far it got."
+              echo "If the release branch was pushed but the run did not finish,"
+              echo "delete it before re-running."
+            elif [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "Dry run from \`$GITHUB_REF_NAME\`: built and smoke tested only."
+              echo "Nothing was pushed or published."
+            elif [ "${{ inputs.repository }}" = "testpypi" ]; then
+              echo "Rehearsal from \`$GITHUB_REF_NAME\`: uploading to TestPyPI."
+              echo "No branch, pull request or release was created, so this version"
+              echo "number is still free for a real release."
+            else
+              echo "Release branch \`v$VERSION\` pushed. Merge the draft pull request to continue."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  testpypi:
+    name: Publish to TestPyPI
+    needs: prep
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run && inputs.repository == 'testpypi' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # mandatory for trusted publishing
+    environment:  # requires a 'testpypi' environment in repo settings
+      name: testpypi
+      url: https://test.pypi.org/p/mf6adj
+    steps:
+
+      - name: Download distributions
+        uses: actions/download-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+      - name: Setup Python
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+
+      - name: Publish package
+        run: uv publish --verbose --trusted-publishing always --publish-url https://test.pypi.org/legacy/
 
   release:
     name: Draft release
@@ -138,31 +269,18 @@ jobs:
         with:
           ref: main
 
-      # actions/download-artifact won't look at previous workflow runs but we need to in order to get changelog
-      - name: Download version artifact
-        uses: dawidd6/action-download-artifact@v21
-        with:
-          workflow: release.yml
-          name: version
-
-      - name: Download changelog artifact
-        uses: dawidd6/action-download-artifact@v21
-        with:
-          workflow: release.yml
-          name: changelog
-          path: changelog/
-
       - name: Draft release
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          version=$(cat version.txt)
-          title="mf6adj $version"
-          notes=$(cat changelog/CHANGELOG.md)
+          # the version and changelog were merged with the release PR, so they
+          # are read from the repository rather than passed between runs
+          version="${{ github.event.pull_request.head.ref }}"
+          version="${version#v}"
           gh release create "v$version" \
             --target main \
-            --title "$title" \
-            --notes "$notes" \
+            --title "mf6adj $version" \
+            --notes-file changelog/CHANGELOG.md \
             --draft \
             --latest
 
@@ -170,7 +288,7 @@ jobs:
     name: Publish package
     # runs only after release is published (manually promoted from draft)
     if: ${{ github.event_name == 'release' }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     permissions:
       id-token: write  # mandatory for trusted publishing
     environment:  # requires a 'release' environment in repo settings
@@ -193,6 +311,16 @@ jobs:
 
       - name: Check package
         run: uvx twine check --strict dist/*
+
+      - name: Smoke test (wheel)
+        run: |
+          uv run --isolated --no-project --with "$(ls dist/*.whl)" \
+            python -c "import mf6adj; print(mf6adj.__version__)"
+
+      - name: Smoke test (source distribution)
+        run: |
+          uv run --isolated --no-project --with "$(ls dist/*.tar.gz)" \
+            python -c "import mf6adj; print(mf6adj.__version__)"
 
       - name: Publish package
         run: uv publish --verbose --trusted-publishing always
