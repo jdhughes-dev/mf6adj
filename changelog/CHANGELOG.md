@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.0] - 2026-08-03
 
+### Breaking changes
+
+- `Mf6Adj.solve_adjoint()` and `PerfMeas.solve_adjoint()` no longer accept
+  `skip_solve`. The flag applied to every performance measure form, but a
+  transient `direct` or `residual` measure carries information backward from
+  one time step to the next, so skipping a time step returned incorrect
+  sensitivities with no indication that anything was wrong. Time steps with no
+  entries are now skipped automatically, and only for the `instantaneous` form,
+  where each time step is solved on its own and skipping is correct.
+
 ### Changes
 
 - post v1.1.0 updates (#63) (@jdhughes-dev)
@@ -18,18 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ci(release): start a release from dropdowns and add rehearsal modes (#70) (@jdhughes-dev)
 - ci(release): only allow a release to be cut from main (#71) (@jdhughes-dev)
 
-
-## [Unreleased]
-
-### Breaking changes
-
-- `Mf6Adj.solve_adjoint()` and `PerfMeas.solve_adjoint()` no longer accept
-  `skip_solve`. The flag applied to every performance measure form, but a
-  transient `direct` or `residual` measure carries information backward from
-  one time step to the next, so skipping a time step returned incorrect
-  sensitivities with no indication that anything was wrong. Time steps with no
-  entries are now skipped automatically, and only for the `instantaneous` form,
-  where each time step is solved on its own and skipping is correct.
 
 ## [1.1.0] - 2026-06-02
 
