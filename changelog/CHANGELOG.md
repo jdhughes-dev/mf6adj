@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-03
+
+### Changes
+
+- post v1.1.0 updates (#63) (@jdhughes-dev)
+- Bump actions/checkout from 6 to 7 (#65) (@app/dependabot)
+- Bump prefix-dev/setup-pixi from 0.9.6 to 0.10.0 (#67) (@app/dependabot)
+- Bump actions/setup-python from 6 to 7 (#68) (@app/dependabot)
+- fix(adj): detect IHIGHCELLSAT instead of comparing version strings (#69) (@jdhughes-dev)
+- feat(pm)!: Add instantaneous performance measure type and remove skip_solve (#64) (@jdhughes-dev)
+- ci(release): start a release from dropdowns and add rehearsal modes (#70) (@jdhughes-dev)
+- ci(release): only allow a release to be cut from main (#71) (@jdhughes-dev)
+
+
 ## [Unreleased]
 
 ### Breaking changes
