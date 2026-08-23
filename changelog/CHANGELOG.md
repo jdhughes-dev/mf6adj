@@ -5,39 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Breaking changes
-
-- A model whose packages add their own equations to the MODFLOW 6 solution
-  matrix is rejected instead of returning corrupted sensitivities. `maw6`
-  always adds equations, and so does an implicitly coupled lake (MODFLOW 6
-  6.8.0 and later); `sfr6`, `lak6`, and `uzf6` are solved in the outer
-  iteration and are unaffected.
-
-### Added
-
-- `lak6` performance measures, so a measure can sum the exchange between a lake
-  and the aquifer, with lake stage and conductance among the parameters.
-- The lake water balance is solved with the flow equations, so a sensitivity to
-  a lake with a free stage is a total derivative rather than one that holds the
-  stage fixed. Outlets, stage-volume-area tables, rainfall, and evaporation are
-  included, and a lake perched above the water table is coupled only through
-  its stage, since the head beneath it no longer sets the leakage. Inflows routed to a lake by `mvr6`, and the stage dependence of a
-  horizontal connection's conductance, are not, and are reported as warnings.
-
-### Fixed
-
-- Boundary values are read from each package's own arrays rather than from
-  `BOUND`, which MODFLOW 6 leaves allocated but zeroed. The stage and
-  conductance sensitivities of `ghb6`, `riv6`, `drn6`, and `chd6` were reported
-  as zero.
-- A cell holding more than one boundary from the same package accumulates all
-  of them rather than keeping only the last.
-- A flux performance measure uses its entry weight, and its direct term is
-  applied only to the boundaries the measure names rather than to every
-  head-dependent package.
-
 ## [1.2.0] - 2026-08-03
 
 ### Breaking changes

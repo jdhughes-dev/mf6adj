@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from xmipy.errors import XMIError
 
-from .advanced_packages.lake import forward_terms as lake_forward_terms
+from .advanced_packages import lake_forward_terms, sfr_forward_terms
 from .pm import PerfMeas, PerfMeasRecord
 from .utils.utils import _utils_cd
 from .utils.utils_fileio import _write_group_to_hdf
@@ -852,7 +852,9 @@ class Mf6Adj:
                                         bound[:, i] = vals
 
                                 if package_type == "sfr6":
-                                    tag = self._gwf_package_dict[package_type][0]
+                                    # tag is already this package: taking the
+                                    # first one instead wrote every streamflow
+                                    # routing package under that name
                                     stage = self._gwf.get_value(
                                         self._gwf.get_var_address(
                                             "STAGE", self._gwf_name, tag.upper()
@@ -891,6 +893,12 @@ class Mf6Adj:
                                         + f"data dict for {tag}"
                                     )
                                     data_dict[tag][key] = val
+                                if package_type == "sfr6":
+                                    data_dict[tag].update(
+                                        sfr_forward_terms(
+                                            self._gwf, self._gwf_name, tag
+                                        )
+                                    )
                                 if package_type == "lak6":
                                     # the hdf writer nests one level, so these
                                     # sit alongside the package arrays
