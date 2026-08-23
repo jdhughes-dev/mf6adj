@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 from xmipy.errors import XMIError
 
+from .advanced_packages.lake import forward_terms as lake_forward_terms
 from .pm import PerfMeas, PerfMeasRecord
 from .utils.utils import _utils_cd
 from .utils.utils_fileio import _write_group_to_hdf
@@ -890,6 +891,14 @@ class Mf6Adj:
                                         + f"data dict for {tag}"
                                     )
                                     data_dict[tag][key] = val
+                                if package_type == "lak6":
+                                    # the hdf writer nests one level, so these
+                                    # sit alongside the package arrays
+                                    data_dict[tag].update(
+                                        lake_forward_terms(
+                                            self._gwf, self._gwf_name, tag
+                                        )
+                                    )
                 attr_dict = {
                     "ctime": ctime,
                     "dt": dt1,

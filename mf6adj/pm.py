@@ -21,6 +21,7 @@ from scipy.sparse.linalg import (
     svds,
 )
 
+from .advanced_packages import LakeCoupling
 from .utils.utils import SolverCallback
 from .utils.utils_fileio import _write_group_to_hdf
 from .utils.utils_logger import _LoggerUtil
@@ -180,6 +181,7 @@ class PerfMeas:
         """
         self._name = pm_name.lower().strip()
         self._entries = pm_entries
+        self._lake = None
 
         if logger is None:
             logger_name = f"{self.__class__.__name__}-{self.name}"
@@ -628,6 +630,12 @@ class PerfMeas:
         comp_welq_sens = np.zeros(nnodes)
         comp_rch_sens = np.zeros((nnodes))
 
+        # A lake stage is a dependent variable, so the system is bordered with
+        # the lake water balance. nnodes is a one-element array, so keep a
+        # scalar for slicing the bordered solution.
+        nnode = int(np.asarray(nnodes).ravel()[0])
+        self._lake = LakeCoupling(logger=self.logger.logger)
+
         bnd_dict = get_mf6_bound_dict()
         comp_bnd_results = {}
         for ptype, pnames in gwf_package_dict.items():
@@ -712,7 +720,38 @@ class PerfMeas:
                 (amat.copy()[: ja.shape[0]], ja.copy(), ia.copy()),
                 shape=(len(ia) - 1, len(ia) - 1),
             )
-            amat = amat.transpose()
+            amat = amat.transpose().tocsr()
+
+            # the lake state is per time step: a step with no free lake must
+            # not inherit the previous step's columns, carry, or solution size
+            # a steady-state step has no change in lake storage, so it has no
+            # storage on the diagonal and nothing to carry. An instantaneous
+            # measure keeps the storage, because that is part of the lake's
+            # equation at this step, but is solved without the carry.
+            lake_storage = hdf[sol_key]["iss"][0] == 0
+            lake_carry_back = lake_storage and not is_instantaneous
+            lake_blocks = self._lake.blocks(hdf[sol_key], gwf_package_dict)
+            if not lake_blocks:
+                self._lake.reset_step()
+                if lamb.shape[0] != nnode:
+                    lamb = lamb[:nnode]
+            else:
+                dt = float(hdf[sol_key].attrs["dt"])
+                amat, rhs = self._lake.augment(
+                    amat,
+                    rhs,
+                    lake_blocks,
+                    dt,
+                    self._lake.dfds(self._entries, kk, lake_blocks),
+                    nnode,
+                    transient=lake_storage,
+                )
+                # the number of free lakes can change between steps, so rebuild
+                # the initial guess from the aquifer part and zero the rest
+                if lamb.shape[0] != amat.shape[0]:
+                    guess = np.zeros(amat.shape[0])
+                    guess[:nnode] = lamb[:nnode]
+                    lamb = guess
             self.logger.logger.debug(
                 (
                     "Transpose of amat took: "
@@ -833,7 +872,7 @@ class PerfMeas:
                         try:
                             amat_ilu = spilu(amat, **_precon_kwargs)
                             m = LinearOperator(
-                                (head.shape[0], head.shape[0]),
+                                (amat.shape[0], amat.shape[0]),
                                 amat_ilu.solve,
                             )
                         except Exception as e:
@@ -949,6 +988,13 @@ class PerfMeas:
                     self.logger.logger.error("Solver parameter breakdown")
                 elif info > 0:
                     self.logger.logger.warning("Solver convergence not achieved")
+
+            if self._lake.columns:
+                # split the lake stages off and carry their storage back to the
+                # previous time step, as drhsdh does for the aquifer
+                lamb = self._lake.split(
+                    lamb, lake_blocks, dt, nnode, carry_back=lake_carry_back
+                )
 
             if np.any(np.isnan(lamb)):
                 self.logger.logger.warning(
@@ -1082,9 +1128,11 @@ class PerfMeas:
 
             if self.logger.isDebugLogger:
                 self.logger.logger.debug("Adding amat, rhs, and residual to hdf file")
-                data["amat"] = amat
-                data["rhs"] = rhs
-                data["residual"] = residual
+                # the writer serializes csc, and maps vectors onto the grid,
+                # so drop the lake rows the bordered system added
+                data["amat"] = amat.tocsc()
+                data["rhs"] = rhs[:nnode]
+                data["residual"] = residual[:nnode]
 
             self.logger.logger.info("Write group to hdf file")
             _write_group_to_hdf(

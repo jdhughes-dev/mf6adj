@@ -13,8 +13,31 @@ Cases:
                       overwrite.
   - maw_rejected    : a model with maw6 is rejected because it adds equations
                       to the solution matrix.
-  - lak_total_deriv : a free lake stage makes the adjoint disagree with a
-                      finite-difference total derivative (xfail).
+  - lak_total_deriv : a free lake stage reproduces a finite-difference total
+                      derivative.
+  - two_lakes       : each lake gets its own connections and surface area, and
+                      both reproduce a finite-difference total derivative.
+  - stage_switches  : a lake that is free in one period and constant in another
+                      does not carry lake state between time steps.
+  - multi_period    : a lake free through several periods reproduces a
+                      finite-difference total derivative, exercising the lake
+                      storage carried backward in time.
+  - outlets         : a lake with a specified, Manning, or weir outlet
+                      reproduces a finite-difference total derivative.
+  - table_lake      : a lake with a stage-volume-area table stores against the
+                      table rather than its connection areas.
+  - instantaneous   : over one step an instantaneous measure matches a direct
+                      one, so the lake keeps its storage on the diagonal.
+  - steady_lake     : a steady free lake must pass its inflow straight through,
+                      so that measure is insensitive to everything.
+  - two_packages    : two lake packages in one model keep their own stages and
+                      their own columns in the bordered system.
+  - perched         : a lake perched over a partially saturated aquifer leaks
+                      at a rate the head cannot change.
+  - disv            : the same lake on a vertex grid gives the same answer as
+                      on a structured one.
+  - disu            : a lake on an unstructured grid reproduces a
+                      finite-difference total derivative.
 """
 
 import pathlib as pl
@@ -303,18 +326,12 @@ def test_maw_rejected(function_tmpdir):
         )
 
 
-@pytest.mark.xfail(
-    reason="the adjoint holds the lake stage fixed, so it returns a partial "
-    "derivative rather than the total derivative (INTERA-Inc/mf6adj#78)",
-    strict=False,
-)
 def test_lak_total_derivative(function_tmpdir):
-    """The lake sensitivity should match a finite-difference total derivative.
+    """The lake sensitivity matches a finite-difference total derivative.
 
     A lake whose stage is free to move responds to pumping twice: the heads
-    beneath it fall, and the stage falls with them. The adjoint captures only
-    the first, so this comparison fails until the lake equation is solved with
-    the flow equations.
+    beneath it fall, and the stage falls with them. Solving the lake water
+    balance with the flow equations captures both.
     """
     dq = -5.0  # small enough to stay in the linear range
 
@@ -331,9 +348,11 @@ def test_lak_total_derivative(function_tmpdir):
     finite_difference = (perturbed - base) / dq
 
     cells = [(1, i, j) for _, i, j in _lake_cells()]
-    df = _solve(ws_base, _write_adj(ws_base, cells, "lak-1", name="pm"))["pm"]
-    node = np.ravel_multi_index(WELL_CELL, (NLAY, NROW, NCOL))
-    adjoint = df["wel6_q"].values[node]
+    _solve(ws_base, _write_adj(ws_base, cells, "lak-1", name="pm"))
+    # read the full-grid array: the lake removes cells from the top layer, so a
+    # reduced node number is not the grid index
+    with h5py.File(ws_base / "adjoint_solution_pm.hd5", "r") as hf:
+        adjoint = float(hf["composite"]["wel6_q"][WELL_CELL])
 
     assert np.isclose(adjoint, finite_difference, rtol=1e-2), (
         f"adjoint {adjoint:.6e} does not match the finite-difference total "
@@ -391,4 +410,1027 @@ def test_direct_effect_only_for_measured_package(function_tmpdir):
     assert np.isclose(adjoint, finite_difference, rtol=1e-3), (
         f"adjoint {adjoint:.6e} does not match the finite difference "
         f"{finite_difference:.6e}"
+    )
+
+
+def _build_two_lakes(ws, well_rate):
+    """Build a model with two separate lakes, each of two cells."""
+    ws = pl.Path(ws)
+    if ws.exists():
+        shutil.rmtree(ws)
+    cells = {0: [(2, 2), (2, 3)], 1: [(5, 5), (5, 6)]}
+    sim = flopy.mf6.MFSimulation(sim_name="lk", sim_ws=str(ws), exe_name=str(mf6_bin))
+    flopy.mf6.ModflowTdis(sim, nper=1, perioddata=[(100.0, 1, 1.0)])
+    flopy.mf6.ModflowIms(sim, outer_dvclose=1e-11, inner_dvclose=1e-12)
+    gwf = flopy.mf6.ModflowGwf(sim, modelname="lk", save_flows=True)
+    idomain = np.ones((NLAY, NROW, NCOL), dtype=int)
+    for lake in cells.values():
+        for i, j in lake:
+            idomain[0, i, j] = 0
+    flopy.mf6.ModflowGwfdis(
+        gwf,
+        nlay=NLAY,
+        nrow=NROW,
+        ncol=NCOL,
+        delr=DELRC,
+        delc=DELRC,
+        top=10.0,
+        botm=[0.0, -10.0],
+        idomain=idomain,
+    )
+    flopy.mf6.ModflowGwfic(gwf, strt=9.5)
+    flopy.mf6.ModflowGwfnpf(gwf, k=10.0, k33=1.0, icelltype=0)
+    flopy.mf6.ModflowGwfsto(gwf, ss=1e-5, sy=0.2, transient={0: True})
+    spd = []
+    for k in range(NLAY):
+        for i in range(NROW):
+            spd.append([(k, i, 0), 9.7, 1000.0])
+            spd.append([(k, i, NCOL - 1), 9.3, 1000.0])
+    flopy.mf6.ModflowGwfghb(gwf, stress_period_data=spd, pname="ghb-edge")
+    flopy.mf6.ModflowGwfwel(
+        gwf, stress_period_data=[[WELL_CELL, well_rate]], pname="wel-1"
+    )
+    pkgdata, conn = [], []
+    for ilak, lake in cells.items():
+        pkgdata.append([ilak, 9.4, len(lake)])
+        for n, (i, j) in enumerate(lake):
+            conn.append([ilak, n, (1, i, j), "vertical", BEDLEAK, 0.0, 0.0, 0.0, 0.0])
+    flopy.mf6.ModflowGwflak(
+        gwf,
+        nlakes=2,
+        noutlets=0,
+        ntables=0,
+        packagedata=pkgdata,
+        connectiondata=conn,
+        pname="lak-1",
+    )
+    flopy.mf6.ModflowGwfoc(gwf, head_filerecord="lk.hds", saverecord=[("HEAD", "ALL")])
+    sim.write_simulation(silent=True)
+    sim.run_simulation(silent=True)
+    return sim, cells
+
+
+def test_two_lakes(function_tmpdir):
+    """Two lakes each get their own connections, surface area, and sensitivity."""
+    dq = -5.0
+    cells = {0: [(2, 2), (2, 3)], 1: [(5, 5), (5, 6)]}
+    measured = [(1, i, j) for lake in cells.values() for i, j in lake]
+
+    def exchange(ws, rate):
+        _build_two_lakes(ws, rate)
+        _solve(ws, _write_adj(ws, measured, "lak-1", name="pm"))
+        return _measure_value(ws, "lak-1")
+
+    ws_base = function_tmpdir / "base"
+    base = exchange(ws_base, WELL_RATE)
+    pert = exchange(function_tmpdir / "pert", WELL_RATE + dq)
+    finite_difference = (pert - base) / dq
+
+    # each lake owns two connections of one cell each, so its surface area is
+    # twice the cell area rather than the whole package's
+    path = sorted(ws_base.glob("lk_*.hd5"))[-1]
+    with h5py.File(path, "r") as hf:
+        key = [k for k in hf if k.startswith("solution_")][-1]
+        area = hf[key]["lak-1"]["lake_surface_area"][:]
+        lake_of_conn = hf[key]["lak-1"]["lake_of_conn"][:]
+    assert area.shape == (2,), f"expected one area per lake, got {area.shape}"
+    assert np.allclose(area, 2.0 * DELRC * DELRC), (
+        f"per-lake surface areas are wrong: {area}"
+    )
+    assert np.array_equal(lake_of_conn, [0, 0, 1, 1]), lake_of_conn
+
+    with h5py.File(ws_base / "adjoint_solution_pm.hd5", "r") as hf:
+        adjoint = float(hf["composite"]["wel6_q"][WELL_CELL])
+    assert np.isclose(adjoint, finite_difference, rtol=1e-2), (
+        f"adjoint {adjoint:.6e} does not match the finite-difference total "
+        f"derivative {finite_difference:.6e}"
+    )
+
+
+def _build_switching(ws, well_rate):
+    """Three periods with the lake free, then constant, then free again."""
+    ws = pl.Path(ws)
+    if ws.exists():
+        shutil.rmtree(ws)
+    sim = flopy.mf6.MFSimulation(sim_name="lk", sim_ws=str(ws), exe_name=str(mf6_bin))
+    flopy.mf6.ModflowTdis(sim, nper=3, perioddata=[(100.0, 1, 1.0)] * 3)
+    flopy.mf6.ModflowIms(sim, outer_dvclose=1e-11, inner_dvclose=1e-12)
+    gwf = flopy.mf6.ModflowGwf(sim, modelname="lk", save_flows=True)
+    idomain = np.ones((NLAY, NROW, NCOL), dtype=int)
+    for k, i, j in _lake_cells():
+        idomain[k, i, j] = 0
+    flopy.mf6.ModflowGwfdis(
+        gwf,
+        nlay=NLAY,
+        nrow=NROW,
+        ncol=NCOL,
+        delr=DELRC,
+        delc=DELRC,
+        top=10.0,
+        botm=[0.0, -10.0],
+        idomain=idomain,
+    )
+    flopy.mf6.ModflowGwfic(gwf, strt=STRT)
+    flopy.mf6.ModflowGwfnpf(gwf, k=10.0, k33=1.0, icelltype=0)
+    flopy.mf6.ModflowGwfsto(gwf, ss=1e-5, sy=0.2, transient={0: True})
+    spd = []
+    for k in range(NLAY):
+        for i in range(NROW):
+            spd.append([(k, i, 0), STRT + 0.5, 1000.0])
+            spd.append([(k, i, NCOL - 1), STRT - 0.5, 1000.0])
+    flopy.mf6.ModflowGwfghb(gwf, stress_period_data=spd, pname="ghb-edge")
+    flopy.mf6.ModflowGwfwel(
+        gwf, stress_period_data=[[WELL_CELL, well_rate]], pname="wel-1"
+    )
+    conn = [
+        [0, n, (1, i, j), "vertical", BEDLEAK, 0.0, 0.0, 0.0, 0.0]
+        for n, (_, i, j) in enumerate(_lake_cells())
+    ]
+    flopy.mf6.ModflowGwflak(
+        gwf,
+        nlakes=1,
+        noutlets=0,
+        ntables=0,
+        packagedata=[[0, LAKE_STAGE, len(conn)]],
+        connectiondata=conn,
+        perioddata={
+            0: [[0, "status", "active"]],
+            1: [[0, "status", "constant"]],
+            2: [[0, "status", "active"]],
+        },
+        pname="lak-1",
+    )
+    flopy.mf6.ModflowGwfoc(gwf, head_filerecord="lk.hds", saverecord=[("HEAD", "ALL")])
+    sim.write_simulation(silent=True)
+    sim.run_simulation(silent=True)
+    return ws
+
+
+def test_stage_switches_between_periods(function_tmpdir):
+    """Lake state must not leak across a period where the stage is held fixed.
+
+    The backward sweep meets the free periods either side of a constant one. If
+    the constant period passes the later period's lake carry on to the earlier
+    one, the earlier period's sensitivities are wrong.
+    """
+    dq = -5.0
+    cells = [(1, i, j) for _, i, j in _lake_cells()]
+
+    def measure(ws, rate):
+        _build_switching(ws, rate)
+        path = pl.Path(ws) / "test.adj"
+        with open(path, "w") as f:
+            f.write("begin performance_measure pm\n")
+            for k, i, j in cells:
+                f.write(f"3 1 {k + 1} {i + 1} {j + 1} lak-1 direct 1.0 -1.0e+30\n")
+            f.write("end performance_measure\n")
+        _solve(ws, path)
+        return _measure_value(ws, "lak-1")
+
+    ws_base = function_tmpdir / "base"
+    base = measure(ws_base, WELL_RATE)
+    pert = measure(function_tmpdir / "pert", WELL_RATE + dq)
+    finite_difference = (pert - base) / dq
+
+    with h5py.File(ws_base / "adjoint_solution_pm.hd5", "r") as hf:
+        adjoint = float(hf["composite"]["wel6_q"][WELL_CELL])
+
+    assert np.isclose(adjoint, finite_difference, rtol=1e-2), (
+        f"adjoint {adjoint:.6e} does not match the finite-difference total "
+        f"derivative {finite_difference:.6e}"
+    )
+
+
+def _build_multi_period(ws, well_rate, nper=10):
+    """A transient model with the lake stage free in every period."""
+    ws = pl.Path(ws)
+    if ws.exists():
+        shutil.rmtree(ws)
+    sim = flopy.mf6.MFSimulation(sim_name="lk", sim_ws=str(ws), exe_name=str(mf6_bin))
+    flopy.mf6.ModflowTdis(sim, nper=nper, perioddata=[(50.0, 1, 1.0)] * nper)
+    flopy.mf6.ModflowIms(sim, outer_dvclose=1e-11, inner_dvclose=1e-12)
+    gwf = flopy.mf6.ModflowGwf(sim, modelname="lk", save_flows=True)
+    idomain = np.ones((NLAY, NROW, NCOL), dtype=int)
+    for k, i, j in _lake_cells():
+        idomain[k, i, j] = 0
+    flopy.mf6.ModflowGwfdis(
+        gwf,
+        nlay=NLAY,
+        nrow=NROW,
+        ncol=NCOL,
+        delr=DELRC,
+        delc=DELRC,
+        top=10.0,
+        botm=[0.0, -10.0],
+        idomain=idomain,
+    )
+    flopy.mf6.ModflowGwfic(gwf, strt=STRT)
+    flopy.mf6.ModflowGwfnpf(gwf, k=10.0, k33=1.0, icelltype=0)
+    flopy.mf6.ModflowGwfsto(
+        gwf, ss=1e-5, sy=0.2, transient=dict.fromkeys(range(nper), True)
+    )
+    spd = []
+    for k in range(NLAY):
+        for i in range(NROW):
+            spd.append([(k, i, 0), STRT + 0.5, 1000.0])
+            spd.append([(k, i, NCOL - 1), STRT - 0.5, 1000.0])
+    flopy.mf6.ModflowGwfghb(gwf, stress_period_data=spd, pname="ghb-edge")
+    flopy.mf6.ModflowGwfwel(
+        gwf, stress_period_data={0: [[WELL_CELL, well_rate]]}, pname="wel-1"
+    )
+    conn = [
+        [0, n, (1, i, j), "vertical", BEDLEAK, 0.0, 0.0, 0.0, 0.0]
+        for n, (_, i, j) in enumerate(_lake_cells())
+    ]
+    flopy.mf6.ModflowGwflak(
+        gwf,
+        nlakes=1,
+        noutlets=0,
+        ntables=0,
+        packagedata=[[0, LAKE_STAGE, len(conn)]],
+        connectiondata=conn,
+        pname="lak-1",
+    )
+    flopy.mf6.ModflowGwfoc(gwf, head_filerecord="lk.hds", saverecord=[("HEAD", "ALL")])
+    sim.write_simulation(silent=True)
+    sim.run_simulation(silent=True)
+    return ws
+
+
+def test_multi_period_carry(function_tmpdir):
+    """A lake free through several periods reproduces the total derivative.
+
+    The measure is taken at the last period, so the lake storage has to be
+    carried backward through all nine earlier periods. A single-period model
+    never exercises that term, and a long chain compounds any error in it.
+    """
+    dq = -5.0
+    nper = 10
+    cells = [(1, i, j) for _, i, j in _lake_cells()]
+
+    def measure(ws, rate):
+        _build_multi_period(ws, rate, nper=nper)
+        path = pl.Path(ws) / "test.adj"
+        with open(path, "w") as f:
+            f.write("begin performance_measure pm\n")
+            for k, i, j in cells:
+                f.write(f"{nper} 1 {k + 1} {i + 1} {j + 1} lak-1 direct 1.0 -1.0e+30\n")
+            f.write("end performance_measure\n")
+        _solve(ws, path)
+        return _measure_value(ws, "lak-1")
+
+    ws_base = function_tmpdir / "base"
+    base = measure(ws_base, WELL_RATE)
+    pert = measure(function_tmpdir / "pert", WELL_RATE + dq)
+    finite_difference = (pert - base) / dq
+
+    with h5py.File(ws_base / "adjoint_solution_pm.hd5", "r") as hf:
+        adjoint = float(hf["composite"]["wel6_q"][WELL_CELL])
+
+    assert np.isclose(adjoint, finite_difference, rtol=1e-2), (
+        f"adjoint {adjoint:.6e} does not match the finite-difference total "
+        f"derivative {finite_difference:.6e}"
+    )
+
+
+def _build_outlet(ws, well_rate, couttype, invert=9.0):
+    """A lake draining through one outlet of the given rating type."""
+    ws = pl.Path(ws)
+    if ws.exists():
+        shutil.rmtree(ws)
+    sim = flopy.mf6.MFSimulation(sim_name="lk", sim_ws=str(ws), exe_name=str(mf6_bin))
+    flopy.mf6.ModflowTdis(sim, nper=1, perioddata=[(100.0, 1, 1.0)])
+    flopy.mf6.ModflowIms(
+        sim,
+        outer_dvclose=1e-11,
+        inner_dvclose=1e-12,
+        outer_maximum=500,
+        inner_maximum=300,
+        complexity="complex",
+    )
+    gwf = flopy.mf6.ModflowGwf(sim, modelname="lk", save_flows=True)
+    idomain = np.ones((NLAY, NROW, NCOL), dtype=int)
+    for k, i, j in _lake_cells():
+        idomain[k, i, j] = 0
+    flopy.mf6.ModflowGwfdis(
+        gwf,
+        nlay=NLAY,
+        nrow=NROW,
+        ncol=NCOL,
+        delr=DELRC,
+        delc=DELRC,
+        top=10.0,
+        botm=[0.0, -10.0],
+        idomain=idomain,
+    )
+    flopy.mf6.ModflowGwfic(gwf, strt=STRT)
+    flopy.mf6.ModflowGwfnpf(gwf, k=10.0, k33=1.0, icelltype=0)
+    flopy.mf6.ModflowGwfsto(gwf, ss=1e-5, sy=0.2, transient={0: True})
+    spd = []
+    for k in range(NLAY):
+        for i in range(NROW):
+            spd.append([(k, i, 0), STRT + 0.5, 1000.0])
+            spd.append([(k, i, NCOL - 1), STRT - 0.5, 1000.0])
+    flopy.mf6.ModflowGwfghb(gwf, stress_period_data=spd, pname="ghb-edge")
+    flopy.mf6.ModflowGwfwel(
+        gwf, stress_period_data=[[WELL_CELL, well_rate]], pname="wel-1"
+    )
+    conn = [
+        [0, n, (1, i, j), "vertical", BEDLEAK, 0.0, 0.0, 0.0, 0.0]
+        for n, (_, i, j) in enumerate(_lake_cells())
+    ]
+    flopy.mf6.ModflowGwflak(
+        gwf,
+        nlakes=1,
+        noutlets=1,
+        ntables=0,
+        packagedata=[[0, LAKE_STAGE, len(conn)]],
+        connectiondata=conn,
+        outlets=[[0, 0, -1, couttype, invert, 100.0, 0.02, 0.01]],
+        pname="lak-1",
+    )
+    flopy.mf6.ModflowGwfoc(gwf, head_filerecord="lk.hds", saverecord=[("HEAD", "ALL")])
+    sim.write_simulation(silent=True)
+    success, buff = sim.run_simulation(silent=True)
+    assert success, "\n".join(buff[-15:])
+    return ws
+
+
+@pytest.mark.parametrize("couttype", ["specified", "manning", "weir"])
+def test_lak_outlets(function_tmpdir, couttype):
+    """A lake outlet's dependence on stage belongs in the lake water balance."""
+    dq = -5.0
+    cells = [(1, i, j) for _, i, j in _lake_cells()]
+
+    def measure(ws, rate):
+        _build_outlet(ws, rate, couttype)
+        _solve(ws, _write_adj(ws, cells, "lak-1", name="pm"))
+        return _measure_value(ws, "lak-1")
+
+    ws_base = function_tmpdir / "base"
+    base = measure(ws_base, WELL_RATE)
+    pert = measure(function_tmpdir / "pert", WELL_RATE + dq)
+    finite_difference = (pert - base) / dq
+
+    with h5py.File(ws_base / "adjoint_solution_pm.hd5", "r") as hf:
+        adjoint = float(hf["composite"]["wel6_q"][WELL_CELL])
+
+    assert np.isclose(adjoint, finite_difference, rtol=1e-2), (
+        f"{couttype} outlet: adjoint {adjoint:.6e} does not match the "
+        f"finite-difference total derivative {finite_difference:.6e}"
+    )
+
+
+def _build_table_lake(ws, well_rate, evaporation=0.005):
+    """A lake whose storage and surface follow a stage-volume-area table."""
+    ws = pl.Path(ws)
+    if ws.exists():
+        shutil.rmtree(ws)
+    table = [
+        [8.0, 0.0, 20000.0, 20000.0],
+        [9.0, 30000.0, 40000.0, 40000.0],
+        [10.0, 80000.0, 60000.0, 60000.0],
+        [11.0, 150000.0, 80000.0, 80000.0],
+    ]
+    sim = flopy.mf6.MFSimulation(sim_name="lk", sim_ws=str(ws), exe_name=str(mf6_bin))
+    flopy.mf6.ModflowTdis(sim, nper=1, perioddata=[(100.0, 1, 1.0)])
+    flopy.mf6.ModflowIms(
+        sim,
+        outer_dvclose=1e-11,
+        inner_dvclose=1e-12,
+        outer_maximum=500,
+        complexity="complex",
+    )
+    gwf = flopy.mf6.ModflowGwf(sim, modelname="lk", save_flows=True)
+    idomain = np.ones((NLAY, NROW, NCOL), dtype=int)
+    for k, i, j in _lake_cells():
+        idomain[k, i, j] = 0
+    flopy.mf6.ModflowGwfdis(
+        gwf,
+        nlay=NLAY,
+        nrow=NROW,
+        ncol=NCOL,
+        delr=DELRC,
+        delc=DELRC,
+        top=10.0,
+        botm=[0.0, -10.0],
+        idomain=idomain,
+    )
+    flopy.mf6.ModflowGwfic(gwf, strt=STRT)
+    flopy.mf6.ModflowGwfnpf(gwf, k=10.0, k33=1.0, icelltype=0)
+    flopy.mf6.ModflowGwfsto(gwf, ss=1e-5, sy=0.2, transient={0: True})
+    spd = []
+    for k in range(NLAY):
+        for i in range(NROW):
+            spd.append([(k, i, 0), STRT + 0.5, 1000.0])
+            spd.append([(k, i, NCOL - 1), STRT - 0.5, 1000.0])
+    flopy.mf6.ModflowGwfghb(gwf, stress_period_data=spd, pname="ghb-edge")
+    flopy.mf6.ModflowGwfwel(
+        gwf, stress_period_data=[[WELL_CELL, well_rate]], pname="wel-1"
+    )
+    conn = [
+        [0, n, (1, i, j), "vertical", BEDLEAK, 0.0, 0.0, 0.0, 0.0]
+        for n, (_, i, j) in enumerate(_lake_cells())
+    ]
+    flopy.mf6.ModflowGwflak(
+        gwf,
+        nlakes=1,
+        noutlets=0,
+        ntables=1,
+        packagedata=[[0, LAKE_STAGE, len(conn)]],
+        connectiondata=conn,
+        tables=[[0, "lak_table.txt"]],
+        perioddata={0: [[0, "evaporation", evaporation], [0, "rainfall", 0.002]]},
+        pname="lak-1",
+    )
+    flopy.mf6.ModflowGwfoc(gwf, head_filerecord="lk.hds", saverecord=[("HEAD", "ALL")])
+    sim.write_simulation(silent=True)
+    with open(ws / "lak_table.txt", "w") as f:
+        f.write("begin dimensions\n  nrow 4\n  ncol 4\nend dimensions\n\n")
+        f.write("begin table\n")
+        for row in table:
+            f.write("  " + "  ".join(str(v) for v in row) + "\n")
+        f.write("end table\n")
+    success, buff = sim.run_simulation(silent=True)
+    assert success, "\n".join(buff[-12:])
+    return ws
+
+
+def test_table_lake(function_tmpdir):
+    """A lake with a table stores against the table, not its connection areas.
+
+    The connection areas total 40000 while the table gives a much larger
+    storage against stage, so using the connection areas is badly wrong. The
+    lake also rains and evaporates over a surface that grows with stage.
+    """
+    dq = -5.0
+    cells = [(1, i, j) for _, i, j in _lake_cells()]
+
+    def measure(ws, rate):
+        _build_table_lake(ws, rate)
+        _solve(ws, _write_adj(ws, cells, "lak-1", name="pm"))
+        return _measure_value(ws, "lak-1")
+
+    ws_base = function_tmpdir / "base"
+    base = measure(ws_base, WELL_RATE)
+    pert = measure(function_tmpdir / "pert", WELL_RATE + dq)
+    finite_difference = (pert - base) / dq
+
+    with h5py.File(ws_base / "adjoint_solution_pm.hd5", "r") as hf:
+        adjoint = float(hf["composite"]["wel6_q"][WELL_CELL])
+
+    assert np.isclose(adjoint, finite_difference, rtol=1e-3), (
+        f"adjoint {adjoint:.6e} does not match the finite-difference total "
+        f"derivative {finite_difference:.6e}"
+    )
+
+
+def _write_adj_form(ws, cells, pm_type, form, kpers, name="pm"):
+    """Write a performance measure of a given form over several periods."""
+    path = pl.Path(ws) / "test.adj"
+    with open(path, "w") as f:
+        f.write(f"begin performance_measure {name}\n")
+        for kper in kpers:
+            for k, i, j in cells:
+                f.write(
+                    f"{kper} 1 {k + 1} {i + 1} {j + 1} {pm_type} {form} 1.0 -1.0e+30\n"
+                )
+        f.write("end performance_measure\n")
+    return path
+
+
+def test_instantaneous_measure_with_lake(function_tmpdir):
+    """An instantaneous measure keeps the lake storage, and drops only the carry.
+
+    Over a single transient step there is no later step to carry anything from,
+    and the instantaneous average is over that one step, so an instantaneous
+    measure has to return exactly what a direct one does. It only does that if
+    the lake keeps its storage on the diagonal, which belongs to the step
+    itself rather than to the link between steps.
+    """
+    cells = [(1, i, j) for _, i, j in _lake_cells()]
+
+    def solve(ws, form):
+        sim, _ = _build_model(ws, boundary="lak", constant_stage=False)
+        sim.run_simulation(silent=True)
+        return _solve(ws, _write_adj_form(ws, cells, "lak-1", form, [1]))["pm"]
+
+    direct = solve(function_tmpdir / "direct", "direct")
+    instantaneous = solve(function_tmpdir / "inst", "instantaneous")
+
+    for column in ("wel6_q", "k11", "lak-1_stage"):
+        assert np.allclose(
+            instantaneous[column].values, direct[column].values, rtol=1e-8
+        ), (
+            f"'{column}' differs between an instantaneous and a direct measure "
+            f"over one step by up to "
+            f"{np.abs(instantaneous[column].values - direct[column].values).max()}"
+        )
+
+
+def test_steady_state_lake(function_tmpdir):
+    """A steady free lake passes its inflow straight through to the aquifer.
+
+    With no storage to draw on, the lake's balance forces its total leakage to
+    equal its inflow whatever the aquifer does, so that measure does not
+    respond to pumping at all. The adjoint has to return zero, and it is the
+    lake equation in the bordered system that makes it do so.
+    """
+    ws = function_tmpdir / "steady"
+    if ws.exists():
+        shutil.rmtree(ws)
+    sim = flopy.mf6.MFSimulation(sim_name="lk", sim_ws=str(ws), exe_name=str(mf6_bin))
+    flopy.mf6.ModflowTdis(sim, nper=1, perioddata=[(1.0, 1, 1.0)])
+    flopy.mf6.ModflowIms(
+        sim,
+        outer_dvclose=1e-11,
+        inner_dvclose=1e-12,
+        outer_maximum=500,
+        complexity="complex",
+    )
+    gwf = flopy.mf6.ModflowGwf(sim, modelname="lk", save_flows=True)
+    idomain = np.ones((NLAY, NROW, NCOL), dtype=int)
+    for k, i, j in _lake_cells():
+        idomain[k, i, j] = 0
+    flopy.mf6.ModflowGwfdis(
+        gwf,
+        nlay=NLAY,
+        nrow=NROW,
+        ncol=NCOL,
+        delr=DELRC,
+        delc=DELRC,
+        top=10.0,
+        botm=[0.0, -10.0],
+        idomain=idomain,
+    )
+    flopy.mf6.ModflowGwfic(gwf, strt=STRT)
+    flopy.mf6.ModflowGwfnpf(gwf, k=10.0, k33=1.0, icelltype=0)
+    flopy.mf6.ModflowGwfsto(gwf, ss=1e-5, sy=0.2, steady_state={0: True})
+    spd = []
+    for k in range(NLAY):
+        for i in range(NROW):
+            spd.append([(k, i, 0), STRT + 0.5, 1000.0])
+            spd.append([(k, i, NCOL - 1), STRT - 0.5, 1000.0])
+    flopy.mf6.ModflowGwfghb(gwf, stress_period_data=spd, pname="ghb-edge")
+    flopy.mf6.ModflowGwfwel(
+        gwf, stress_period_data=[[WELL_CELL, WELL_RATE]], pname="wel-1"
+    )
+    conn = [
+        [0, n, (1, i, j), "vertical", BEDLEAK, 0.0, 0.0, 0.0, 0.0]
+        for n, (_, i, j) in enumerate(_lake_cells())
+    ]
+    # an inflow keeps the stage off its own zero-leakage equilibrium
+    flopy.mf6.ModflowGwflak(
+        gwf,
+        nlakes=1,
+        noutlets=0,
+        ntables=0,
+        packagedata=[[0, LAKE_STAGE, len(conn)]],
+        connectiondata=conn,
+        perioddata={0: [[0, "inflow", 500.0]]},
+        pname="lak-1",
+    )
+    flopy.mf6.ModflowGwfoc(gwf, head_filerecord="lk.hds", saverecord=[("HEAD", "ALL")])
+    sim.write_simulation(silent=True)
+    success, buff = sim.run_simulation(silent=True)
+    assert success, "\n".join(buff[-12:])
+
+    cells = [(1, i, j) for _, i, j in _lake_cells()]
+    _solve(ws, _write_adj(ws, cells, "lak-1", name="pm"))
+    leakage = _measure_value(ws, "lak-1")
+
+    with h5py.File(ws / "adjoint_solution_pm.hd5", "r") as hf:
+        sensitivity = hf["composite"]["wel6_q"][:]
+
+    assert np.all(np.isfinite(sensitivity))
+    assert np.isclose(abs(leakage), 500.0, rtol=1e-6), (
+        f"the lake should pass its inflow through, but leaks {leakage}"
+    )
+    assert np.abs(sensitivity).max() < 1e-9, (
+        "a measure pinned by the lake's own balance must not respond to "
+        f"pumping, but the largest sensitivity is {np.abs(sensitivity).max()}"
+    )
+
+
+def test_two_lake_packages(function_tmpdir):
+    """Two lake packages in one model each get their own bordered equation.
+
+    The columns are keyed by package and lake, so a measure on one package must
+    not pick up the other's stage.
+    """
+    dq = -5.0
+    first = [(2, 2), (2, 3)]
+    second = [(5, 5), (5, 6)]
+
+    def build(ws, rate):
+        ws = pl.Path(ws)
+        if ws.exists():
+            shutil.rmtree(ws)
+        sim = flopy.mf6.MFSimulation(
+            sim_name="lk", sim_ws=str(ws), exe_name=str(mf6_bin)
+        )
+        flopy.mf6.ModflowTdis(sim, nper=1, perioddata=[(100.0, 1, 1.0)])
+        flopy.mf6.ModflowIms(
+            sim,
+            outer_dvclose=1e-11,
+            inner_dvclose=1e-12,
+            outer_maximum=500,
+            complexity="complex",
+        )
+        gwf = flopy.mf6.ModflowGwf(sim, modelname="lk", save_flows=True)
+        idomain = np.ones((NLAY, NROW, NCOL), dtype=int)
+        for i, j in first + second:
+            idomain[0, i, j] = 0
+        flopy.mf6.ModflowGwfdis(
+            gwf,
+            nlay=NLAY,
+            nrow=NROW,
+            ncol=NCOL,
+            delr=DELRC,
+            delc=DELRC,
+            top=10.0,
+            botm=[0.0, -10.0],
+            idomain=idomain,
+        )
+        flopy.mf6.ModflowGwfic(gwf, strt=STRT)
+        flopy.mf6.ModflowGwfnpf(gwf, k=10.0, k33=1.0, icelltype=0)
+        flopy.mf6.ModflowGwfsto(gwf, ss=1e-5, sy=0.2, transient={0: True})
+        spd = []
+        for k in range(NLAY):
+            for i in range(NROW):
+                spd.append([(k, i, 0), STRT + 0.5, 1000.0])
+                spd.append([(k, i, NCOL - 1), STRT - 0.5, 1000.0])
+        flopy.mf6.ModflowGwfghb(gwf, stress_period_data=spd, pname="ghb-edge")
+        flopy.mf6.ModflowGwfwel(
+            gwf, stress_period_data=[[WELL_CELL, rate]], pname="wel-1"
+        )
+        for name, cells in (("lak-a", first), ("lak-b", second)):
+            conn = [
+                [0, n, (1, i, j), "vertical", BEDLEAK, 0.0, 0.0, 0.0, 0.0]
+                for n, (i, j) in enumerate(cells)
+            ]
+            flopy.mf6.ModflowGwflak(
+                gwf,
+                nlakes=1,
+                noutlets=0,
+                ntables=0,
+                packagedata=[[0, LAKE_STAGE, len(conn)]],
+                connectiondata=conn,
+                pname=name,
+                filename=f"lk.{name}.lak",
+            )
+        flopy.mf6.ModflowGwfoc(
+            gwf, head_filerecord="lk.hds", saverecord=[("HEAD", "ALL")]
+        )
+        sim.write_simulation(silent=True)
+        success, buff = sim.run_simulation(silent=True)
+        assert success, "\n".join(buff[-12:])
+        measured = [(1, i, j) for i, j in first]
+        _solve(ws, _write_adj(ws, measured, "lak-a", name="pm"))
+        return _measure_value(ws, "lak-a")
+
+    ws_base = function_tmpdir / "base"
+    base = build(ws_base, WELL_RATE)
+    pert = build(function_tmpdir / "pert", WELL_RATE + dq)
+    finite_difference = (pert - base) / dq
+
+    with h5py.File(ws_base / "adjoint_solution_pm.hd5", "r") as hf:
+        adjoint = float(hf["composite"]["wel6_q"][WELL_CELL])
+        columns = sorted(c for c in hf["composite"] if c.startswith("lak-"))
+
+    assert columns == ["lak-a_cond", "lak-a_stage", "lak-b_cond", "lak-b_stage"], (
+        f"each package should report its own parameters, got {columns}"
+    )
+    assert np.isclose(adjoint, finite_difference, rtol=1e-2), (
+        f"adjoint {adjoint:.6e} does not match the finite-difference total "
+        f"derivative {finite_difference:.6e}"
+    )
+
+
+def test_perched_lake(function_tmpdir):
+    """A perched lake's leakage does not depend on the head beneath it.
+
+    Once the water table drops below the lakebed the exchange is set by the
+    bed rather than by the aquifer, and MODFLOW marks that by leaving hcof at
+    zero. Taking the conductance from the bound array instead would couple the
+    lake to a head it no longer responds to, and report a sensitivity where
+    there is none.
+    """
+    dq = -5.0
+    ghb_head = -5.0  # layer 2 spans 0 to -10, so this leaves it half saturated
+    perched_stage = 5.0
+    well = (1, 6, 6)
+
+    def build(ws, rate):
+        ws = pl.Path(ws)
+        if ws.exists():
+            shutil.rmtree(ws)
+        sim = flopy.mf6.MFSimulation(
+            sim_name="lk", sim_ws=str(ws), exe_name=str(mf6_bin)
+        )
+        flopy.mf6.ModflowTdis(sim, nper=1, perioddata=[(100.0, 1, 1.0)])
+        flopy.mf6.ModflowIms(
+            sim,
+            outer_dvclose=1e-11,
+            inner_dvclose=1e-12,
+            outer_maximum=1000,
+            inner_maximum=500,
+            complexity="complex",
+            linear_acceleration="bicgstab",
+        )
+        gwf = flopy.mf6.ModflowGwf(
+            sim, modelname="lk", save_flows=True, newtonoptions="under_relaxation"
+        )
+        idomain = np.ones((NLAY, NROW, NCOL), dtype=int)
+        for k, i, j in _lake_cells():
+            idomain[k, i, j] = 0
+        flopy.mf6.ModflowGwfdis(
+            gwf,
+            nlay=NLAY,
+            nrow=NROW,
+            ncol=NCOL,
+            delr=DELRC,
+            delc=DELRC,
+            top=10.0,
+            botm=[0.0, -10.0],
+            idomain=idomain,
+        )
+        flopy.mf6.ModflowGwfic(gwf, strt=ghb_head)
+        flopy.mf6.ModflowGwfnpf(gwf, k=10.0, k33=1.0, icelltype=1)
+        flopy.mf6.ModflowGwfsto(gwf, ss=1e-5, sy=0.2, iconvert=1, transient={0: True})
+        spd = []
+        for i in range(NROW):
+            spd.append([(1, i, 0), ghb_head + 0.5, 1000.0])
+            spd.append([(1, i, NCOL - 1), ghb_head - 0.5, 1000.0])
+        flopy.mf6.ModflowGwfghb(gwf, stress_period_data=spd, pname="ghb-edge")
+        flopy.mf6.ModflowGwfwel(gwf, stress_period_data=[[well, rate]], pname="wel-1")
+        conn = [
+            [0, n, (1, i, j), "vertical", BEDLEAK, 0.0, 0.0, 0.0, 0.0]
+            for n, (_, i, j) in enumerate(_lake_cells())
+        ]
+        flopy.mf6.ModflowGwflak(
+            gwf,
+            nlakes=1,
+            noutlets=0,
+            ntables=0,
+            packagedata=[[0, perched_stage, len(conn)]],
+            connectiondata=conn,
+            perioddata={0: [[0, "inflow", 200.0]]},
+            pname="lak-1",
+        )
+        flopy.mf6.ModflowGwfoc(
+            gwf, head_filerecord="lk.hds", saverecord=[("HEAD", "ALL")]
+        )
+        sim.write_simulation(silent=True)
+        success, buff = sim.run_simulation(silent=True)
+        assert success, "\n".join(buff[-12:])
+        cells = [(1, i, j) for _, i, j in _lake_cells()]
+        _solve(ws, _write_adj(ws, cells, "lak-1", name="pm"))
+        return ws
+
+    ws_base = build(function_tmpdir / "base", -200.0)
+    ws_pert = build(function_tmpdir / "pert", -200.0 + dq)
+    finite_difference = (
+        _measure_value(ws_pert, "lak-1") - _measure_value(ws_base, "lak-1")
+    ) / dq
+
+    path = sorted(ws_base.glob("lk_*.hd5"))[-1]
+    with h5py.File(path, "r") as hf:
+        key = [k for k in hf if k.startswith("solution_")][-1]
+        hcof = hf[key]["lak-1"]["hcof"][:]
+    assert np.allclose(hcof, 0.0), f"the lake should be perched, but hcof is {hcof[:4]}"
+
+    with h5py.File(ws_base / "adjoint_solution_pm.hd5", "r") as hf:
+        adjoint = float(hf["composite"]["wel6_q"][well])
+
+    assert np.isclose(adjoint, finite_difference, atol=1e-9), (
+        f"adjoint {adjoint:.6e} does not match the finite-difference total "
+        f"derivative {finite_difference:.6e}"
+    )
+
+
+def _disv_grid(nrow, ncol, delrc):
+    """Return vertices and cells for a rectangular grid stated as a vertex grid."""
+    verts, vid = [], {}
+    for i in range(nrow + 1):
+        for j in range(ncol + 1):
+            vid[(i, j)] = len(verts)
+            verts.append([len(verts), j * delrc, (nrow - i) * delrc])
+    cell2d = []
+    for i in range(nrow):
+        for j in range(ncol):
+            corners = [
+                vid[(i, j)],
+                vid[(i, j + 1)],
+                vid[(i + 1, j + 1)],
+                vid[(i + 1, j)],
+            ]
+            cell2d.append(
+                [i * ncol + j, (j + 0.5) * delrc, (nrow - i - 0.5) * delrc, 4, *corners]
+            )
+    return verts, cell2d
+
+
+def test_disv_lake_matches_structured(function_tmpdir):
+    """The same lake on a vertex grid gives the same sensitivity.
+
+    The model is the structured one restated cell for cell as a vertex grid, so
+    every sensitivity has to come out the same. It exercises the node mapping,
+    which differs between the two grid types.
+    """
+    ncpl = NROW * NCOL
+    well = (1, WELL_CELL[1] * NCOL + WELL_CELL[2])
+    lake = [(i, j) for i in LAKE_ROWS for j in LAKE_COLS]
+
+    ws_struct = function_tmpdir / "structured"
+    sim, _ = _build_model(ws_struct, boundary="lak", constant_stage=False)
+    sim.run_simulation(silent=True)
+    cells = [(1, i, j) for _, i, j in _lake_cells()]
+    _solve(ws_struct, _write_adj(ws_struct, cells, "lak-1", name="pm"))
+    with h5py.File(ws_struct / "adjoint_solution_pm.hd5", "r") as hf:
+        structured = float(hf["composite"]["wel6_q"][WELL_CELL])
+
+    ws = function_tmpdir / "disv"
+    if ws.exists():
+        shutil.rmtree(ws)
+    verts, cell2d = _disv_grid(NROW, NCOL, DELRC)
+    sim = flopy.mf6.MFSimulation(sim_name="lk", sim_ws=str(ws), exe_name=str(mf6_bin))
+    flopy.mf6.ModflowTdis(sim, nper=1, perioddata=[(100.0, 1, 1.0)])
+    flopy.mf6.ModflowIms(
+        sim,
+        outer_dvclose=1e-11,
+        inner_dvclose=1e-12,
+        outer_maximum=500,
+        complexity="complex",
+    )
+    gwf = flopy.mf6.ModflowGwf(sim, modelname="lk", save_flows=True)
+    idomain = np.ones((NLAY, ncpl), dtype=int)
+    for i, j in lake:
+        idomain[0, i * NCOL + j] = 0
+    flopy.mf6.ModflowGwfdisv(
+        gwf,
+        nlay=NLAY,
+        ncpl=ncpl,
+        nvert=len(verts),
+        top=10.0,
+        botm=[0.0, -10.0],
+        vertices=verts,
+        cell2d=cell2d,
+        idomain=idomain,
+    )
+    flopy.mf6.ModflowGwfic(gwf, strt=STRT)
+    flopy.mf6.ModflowGwfnpf(gwf, k=10.0, k33=1.0, icelltype=0)
+    flopy.mf6.ModflowGwfsto(gwf, ss=1e-5, sy=0.2, transient={0: True})
+    spd = []
+    for k in range(NLAY):
+        for i in range(NROW):
+            spd.append([(k, i * NCOL + 0), STRT + 0.5, 1000.0])
+            spd.append([(k, i * NCOL + NCOL - 1), STRT - 0.5, 1000.0])
+    flopy.mf6.ModflowGwfghb(gwf, stress_period_data=spd, pname="ghb-edge")
+    flopy.mf6.ModflowGwfwel(gwf, stress_period_data=[[well, WELL_RATE]], pname="wel-1")
+    conn = [
+        [0, n, (1, i * NCOL + j), "vertical", BEDLEAK, 0.0, 0.0, 0.0, 0.0]
+        for n, (i, j) in enumerate(lake)
+    ]
+    flopy.mf6.ModflowGwflak(
+        gwf,
+        nlakes=1,
+        noutlets=0,
+        ntables=0,
+        packagedata=[[0, LAKE_STAGE, len(conn)]],
+        connectiondata=conn,
+        pname="lak-1",
+    )
+    flopy.mf6.ModflowGwfoc(gwf, head_filerecord="lk.hds", saverecord=[("HEAD", "ALL")])
+    sim.write_simulation(silent=True)
+    success, buff = sim.run_simulation(silent=True)
+    assert success, "\n".join(buff[-12:])
+
+    path = pl.Path(ws) / "test.adj"
+    with open(path, "w") as f:
+        f.write("begin performance_measure pm\n")
+        for i, j in lake:
+            f.write(f"1 1 2 {i * NCOL + j + 1} lak-1 direct 1.0 -1.0e+30\n")
+        f.write("end performance_measure\n")
+    _solve(ws, path)
+
+    with h5py.File(ws / "adjoint_solution_pm.hd5", "r") as hf:
+        vertex = float(hf["composite"]["wel6_q"][:].ravel()[well[0] * ncpl + well[1]])
+
+    assert np.isclose(vertex, structured, rtol=1e-8), (
+        f"the vertex grid gives {vertex:.6e} where the structured grid gives "
+        f"{structured:.6e}"
+    )
+
+
+def test_disu_lake(function_tmpdir):
+    """A lake on an unstructured grid reproduces the total derivative.
+
+    An unstructured grid carries its own connectivity and node numbering, which
+    the lake terms have to follow just as they do on a structured grid.
+    """
+    dq = -5.0
+    nrow, ncol, delrc = 8, 8, 100.0
+    lake = [(2, 2), (2, 3), (3, 2), (3, 3)]
+    well = 6 * ncol + 6
+
+    def connectivity():
+        iac, ja, ihc, cl12, hwva = [], [], [], [], []
+        for i in range(nrow):
+            for j in range(ncol):
+                pairs = []
+                for di, dj in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    ii, jj = i + di, j + dj
+                    if 0 <= ii < nrow and 0 <= jj < ncol:
+                        pairs.append((ii * ncol + jj, (1, delrc / 2.0, delrc)))
+                # MODFLOW requires the connections of a row to be sorted
+                pairs.sort(key=lambda pair: pair[0])
+                iac.append(len(pairs) + 1)
+                ja.extend([i * ncol + j] + [pair[0] for pair in pairs])
+                ihc.extend([0] + [pair[1][0] for pair in pairs])
+                cl12.extend([0.0] + [pair[1][1] for pair in pairs])
+                hwva.extend([0.0] + [pair[1][2] for pair in pairs])
+        return iac, ja, ihc, cl12, hwva
+
+    def build(ws, rate):
+        ws = pl.Path(ws)
+        if ws.exists():
+            shutil.rmtree(ws)
+        iac, ja, ihc, cl12, hwva = connectivity()
+        sim = flopy.mf6.MFSimulation(
+            sim_name="lk", sim_ws=str(ws), exe_name=str(mf6_bin)
+        )
+        flopy.mf6.ModflowTdis(sim, nper=1, perioddata=[(100.0, 1, 1.0)])
+        flopy.mf6.ModflowIms(
+            sim,
+            outer_dvclose=1e-11,
+            inner_dvclose=1e-12,
+            outer_maximum=500,
+            complexity="complex",
+        )
+        gwf = flopy.mf6.ModflowGwf(sim, modelname="lk", save_flows=True)
+        flopy.mf6.ModflowGwfdisu(
+            gwf,
+            nodes=nrow * ncol,
+            nja=len(ja),
+            top=0.0,
+            bot=-20.0,
+            area=delrc * delrc,
+            iac=iac,
+            ja=ja,
+            ihc=ihc,
+            cl12=cl12,
+            hwva=hwva,
+        )
+        flopy.mf6.ModflowGwfic(gwf, strt=2.0)
+        flopy.mf6.ModflowGwfnpf(gwf, k=10.0, k33=1.0, icelltype=0)
+        flopy.mf6.ModflowGwfsto(gwf, ss=1e-5, sy=0.2, transient={0: True})
+        spd = []
+        for i in range(nrow):
+            spd.append([(i * ncol + 0,), 2.5, 1000.0])
+            spd.append([(i * ncol + ncol - 1,), 1.5, 1000.0])
+        flopy.mf6.ModflowGwfghb(gwf, stress_period_data=spd, pname="ghb-edge")
+        flopy.mf6.ModflowGwfwel(
+            gwf, stress_period_data=[[(well,), rate]], pname="wel-1"
+        )
+        conn = [
+            [0, n, (i * ncol + j,), "vertical", 0.05, 0.0, 0.0, 0.0, 0.0]
+            for n, (i, j) in enumerate(lake)
+        ]
+        flopy.mf6.ModflowGwflak(
+            gwf,
+            nlakes=1,
+            noutlets=0,
+            ntables=0,
+            packagedata=[[0, 5.0, len(conn)]],
+            connectiondata=conn,
+            pname="lak-1",
+        )
+        flopy.mf6.ModflowGwfoc(
+            gwf, head_filerecord="lk.hds", saverecord=[("HEAD", "ALL")]
+        )
+        sim.write_simulation(silent=True)
+        success, buff = sim.run_simulation(silent=True)
+        assert success, "\n".join(buff[-12:])
+        path = pl.Path(ws) / "test.adj"
+        with open(path, "w") as f:
+            f.write("begin performance_measure pm\n")
+            for i, j in lake:
+                f.write(f"1 1 {i * ncol + j + 1} lak-1 direct 1.0 -1.0e+30\n")
+            f.write("end performance_measure\n")
+        _solve(ws, path)
+        return ws
+
+    ws_base = build(function_tmpdir / "base", -300.0)
+    ws_pert = build(function_tmpdir / "pert", -300.0 + dq)
+    finite_difference = (
+        _measure_value(ws_pert, "lak-1") - _measure_value(ws_base, "lak-1")
+    ) / dq
+
+    with h5py.File(ws_base / "adjoint_solution_pm.hd5", "r") as hf:
+        adjoint = float(hf["composite"]["wel6_q"][:].ravel()[well])
+
+    assert np.isclose(adjoint, finite_difference, rtol=1e-3), (
+        f"adjoint {adjoint:.6e} does not match the finite-difference total "
+        f"derivative {finite_difference:.6e}"
     )
