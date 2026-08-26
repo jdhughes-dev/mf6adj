@@ -29,6 +29,14 @@ Cases:
                        MODFLOW lets it, still carries a leakage derivative.
   - sfr_cross_section: a stream whose reaches carry a cross section, whose
                        conductance follows the depth as well as the stage.
+  - diversion_rule   : the derivative of each diversion rule is recovered from
+                       the flows, in both regimes of the piecewise ones.
+  - diversion_unknown: flows that leave two rules diverting the same amount
+                       are reported as undetermined rather than guessed at.
+  - diversion_warned : an undetermined rule is reported on whichever time step
+                       it arises, and named, and reported only once.
+  - sfr_diversion    : a stream carrying a diversion under each of the four
+                       rules.
 """
 
 import glob
@@ -48,11 +56,13 @@ except ImportError:
     sys.path.insert(0, str(pl.Path("../").resolve()))
     import mf6adj
 
+import mf6adj.advanced_packages.sfr
 from mf6adj.advanced_packages.sfr import leakage_ratio
 from mf6adj.advanced_packages.sfr_cross_section import (
     mannings_section,
     wetted_perimeter,
 )
+from mf6adj.advanced_packages.sfr_diversion import diversion_derivative
 
 mf6_bin, lib_name = mf6adj.get_conda_mf6_paths()
 
@@ -85,6 +95,11 @@ WALLED_SECTION = [
 ]
 
 
+# the reach the diversion is taken from, and the row the diverted reach sits in
+DIVERT_FROM = 3
+DIVERT_ROW = REACH_ROW + 2
+
+
 def _build_model(
     ws,
     well_rate,
@@ -94,6 +109,7 @@ def _build_model(
     man=0.03,
     cross_section=False,
     section=None,
+    diversion=None,
 ):
     """Build a single-layer model with a chain of reaches across it."""
     ws = pl.Path(ws)
@@ -134,6 +150,10 @@ def _build_model(
     packagedata, connectiondata = [], []
     for n in range(NCOL):
         nconn = 1 if n in (0, NCOL - 1) else 2
+        ndv = 0
+        if diversion is not None and n == DIVERT_FROM:
+            nconn += 1
+            ndv = 1
         packagedata.append(
             [
                 n,
@@ -147,7 +167,7 @@ def _build_model(
                 man,
                 nconn,
                 1.0,
-                0,
+                ndv,
             ]
         )
         conn = [n]
@@ -156,7 +176,33 @@ def _build_model(
         if n < NCOL - 1:
             # a downstream connection is given as a negative reach number
             conn.append(-(n + 1))
+        if ndv:
+            conn.append(-NCOL)
         connectiondata.append(conn)
+
+    diversions = None
+    if diversion is not None:
+        rule = diversion[0]
+        packagedata.append(
+            [
+                NCOL,
+                (0, DIVERT_ROW, DIVERT_FROM),
+                DELRC,
+                5.0,
+                rgrd,
+                STRTOP - 0.01 * DIVERT_FROM,
+                1.0,
+                rhk,
+                man,
+                1,
+                # a diverted reach takes what the diversion gives it rather
+                # than a share, so MODFLOW requires an upstream fraction of zero
+                0.0,
+                0,
+            ]
+        )
+        connectiondata.append([NCOL, DIVERT_FROM])
+        diversions = [[DIVERT_FROM, 0, NCOL, rule]]
     crosssections = None
     if cross_section:
         crosssections = []
@@ -171,13 +217,17 @@ def _build_model(
                 pname=name,
             )
             crosssections.append([n, f"{name}.txt"])
+    perioddata = [[0, "inflow", inflow]]
+    if diversion is not None:
+        perioddata.append([DIVERT_FROM, "diversion", 0, diversion[1]])
     flopy.mf6.ModflowGwfsfr(
         gwf,
-        nreaches=NCOL,
+        nreaches=NCOL + (0 if diversion is None else 1),
         packagedata=packagedata,
         connectiondata=connectiondata,
         crosssections=crosssections,
-        perioddata={0: [[0, "inflow", inflow]]},
+        diversions=diversions,
+        perioddata={0: perioddata},
         unit_conversion=128390.0,
         pname="sfr-1",
     )
@@ -188,13 +238,18 @@ def _build_model(
     return ws
 
 
-def _write_adj(ws):
+def _write_adj(ws, diversion=None):
     """Measure the exchange between every reach and the aquifer."""
     path = pl.Path(ws) / "test.adj"
     with open(path, "w") as f:
         f.write("begin performance_measure pm\n")
         for n in range(NCOL):
             f.write(f"1 1 1 {REACH_ROW + 1} {n + 1} sfr-1 direct 1.0 -1.0e+30\n")
+        if diversion is not None:
+            # the diverted reach carries exchange of its own
+            f.write(
+                f"1 1 1 {DIVERT_ROW + 1} {DIVERT_FROM + 1} sfr-1 direct 1.0 -1.0e+30\n"
+            )
         f.write("end performance_measure\n")
     return path
 
@@ -221,10 +276,10 @@ def _compare(tmpdir, **kwargs):
     """Return the adjoint sensitivity and its finite-difference counterpart."""
     dq = -50.0
     base = _build_model(tmpdir / "base", WELL_RATE, **kwargs)
-    _write_adj(base)
+    _write_adj(base, diversion=kwargs.get("diversion"))
     _solve(base)
     pert = _build_model(tmpdir / "pert", WELL_RATE + dq, **kwargs)
-    _write_adj(pert)
+    _write_adj(pert, diversion=kwargs.get("diversion"))
     _solve(pert)
 
     finite_difference = (_measure_value(pert) - _measure_value(base)) / dq
@@ -794,3 +849,95 @@ def test_xs_negative_perimeter():
     assert ratio[0] == pytest.approx(expected)
     # the conductance alone would be the answer only if the section were flat
     assert ratio[0] != pytest.approx(1.0)
+
+
+@pytest.mark.parametrize(
+    "available, requested, taken, expected",
+    [
+        # FRACTION takes a share of whatever it is given
+        (4000.0, 0.25, 1000.0, 0.25),
+        # EXCESS passes the first `requested` on and takes the rest
+        (4000.0, 3000.0, 1000.0, 1.0),
+        (2000.0, 3000.0, 0.0, 0.0),
+        # UPTO takes what it asks for until there is less than that
+        (4000.0, 500.0, 500.0, 0.0),
+        (300.0, 500.0, 300.0, 1.0),
+        # THRESHOLD takes all or nothing, and moves with neither
+        (4000.0, 1000.0, 1000.0, 0.0),
+        (800.0, 1000.0, 0.0, 0.0),
+    ],
+)
+def test_diversion_rule(available, requested, taken, expected):
+    """The flows determine how a diverted flow follows the flow available."""
+    derivative, determined = diversion_derivative(available, requested, taken)
+    assert determined
+    assert derivative == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    "available, requested, taken",
+    [
+        # EXCESS passes on the rate and takes the rest, so where the flow is
+        # exactly twice the rate it takes the rate itself, as UPTO and
+        # THRESHOLD do, and the three do not agree on how that would change
+        (2000.0, 1000.0, 1000.0),
+        # FRACTION takes the rate itself where the flow available is one
+        (1.0, 0.4, 0.4),
+    ],
+)
+def test_diversion_unknown(available, requested, taken):
+    """Flows that leave the rule open are reported rather than guessed at."""
+    derivative, determined = diversion_derivative(available, requested, taken)
+    assert not determined
+    assert derivative == 0.0
+
+
+@pytest.mark.parametrize(
+    "rule, rate",
+    [
+        ("FRACTION", 0.25),
+        ("UPTO", 9000.0),
+        ("EXCESS", 3000.0),
+        ("THRESHOLD", 1000.0),
+    ],
+)
+def test_sfr_diversion(tmp_path, rule, rate):
+    """A diversion scales the flow the reaches below it are routed."""
+    adjoint, finite_difference = _compare(tmp_path, diversion=(rule, rate))
+    assert abs(adjoint - finite_difference) < 5.0e-5 * abs(finite_difference), (
+        f"{rule} adjoint {adjoint} against a finite difference of {finite_difference}"
+    )
+
+
+def test_diversion_warned():
+    """An undetermined rule is reported on the step it arises, and named once."""
+
+    class Recorder:
+        def __init__(self):
+            self.messages = []
+
+        def warning(self, message):
+            self.messages.append(message)
+
+    log = Recorder()
+    coupling = mf6adj.advanced_packages.sfr.SfrCoupling(logger=log)
+    clean = {
+        "reach_flow_limited": np.zeros(9, dtype=int),
+        "reach_undetermined_diversion": np.zeros(9, dtype=int),
+    }
+    tied = dict(clean)
+    tied["reach_undetermined_diversion"] = np.array(
+        [0, 0, 0, 1, 0, 0, 0, 0, 0], dtype=int
+    )
+
+    # the sweep meets a step with nothing to report before the one that has it
+    coupling._warn_once("sfr-1", clean)
+    assert not log.messages
+
+    coupling._warn_once("sfr-1", tied)
+    assert len(log.messages) == 1
+    assert "reach 4" in log.messages[0]
+
+    # and the same condition is not reported again on later steps
+    coupling._warn_once("sfr-1", tied)
+    assert len(log.messages) == 1
