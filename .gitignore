@@ -143,3 +143,17 @@ autotest/*_test*/
 .figures/
 
 .temp/
+# supplemental technical information build artifacts
+docs/SuppInfo/*.aux
+docs/SuppInfo/*.bbl
+docs/SuppInfo/*.blg
+docs/SuppInfo/*.log
+docs/SuppInfo/*.out
+docs/SuppInfo/*.toc
+docs/SuppInfo/*.lof
+docs/SuppInfo/*.lot
+docs/SuppInfo/*.fls
+docs/SuppInfo/*.fdb_latexmk
+docs/SuppInfo/*.synctex.gz
+docs/SuppInfo/mf6adjsuppinfo.pdf
+docs/SuppInfo/Figures/*.png
