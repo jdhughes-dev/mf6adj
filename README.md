@@ -61,7 +61,7 @@ print(sensitivity_dfs["head_obs"])
 ## Documentation
 
 Full documentation, including API reference and example notebooks, is available
-at [mf6adj.readthedocs.io](https://md6adj.readthedocs.io).
+at [md6adj.readthedocs.io](https://md6adj.readthedocs.io).
 
 ## How to cite
 
