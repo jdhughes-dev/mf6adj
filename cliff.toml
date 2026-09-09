@@ -1,0 +1,59 @@
+# Configuration for git-cliff, which writes the changelog entry for a release.
+#
+# The entry is built from the commits on main since the last tag. Every pull
+# request is squash merged, so one commit is one pull request and its subject
+# is the pull request title, which is written as the changelog line.
+#
+# What reaches the entry is decided by the conventional commit type in that
+# title. A type that is not listed below is dropped, so a title written without
+# one is dropped as well.
+
+[changelog]
+# Keep a Changelog, and the heading the release workflow looks for when it
+# takes this version's entry out of the file for the release notes.
+body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] - {{ now() | date(format="%Y-%m-%d") }}
+{% else %}\
+## [unreleased]
+{% endif %}
+### Changes
+{% for commit in commits %}
+- {{ commit.message | split(pat="\n") | first | trim }}\
+{% endfor %}
+"""
+trim = true
+
+[git]
+# The type is matched against the whole subject below rather than parsed, so
+# the message stays as written and the line is the pull request title.
+conventional_commits = false
+filter_unconventional = false
+# a commit no parser gives a group to is dropped
+filter_commits = true
+split_commits = false
+commit_preprocessors = [
+    { pattern = "^ *", replace = "" },
+]
+commit_parsers = [
+    # kept: the work a reader of the release notes came for. `build` is here
+    # because a change to what the package requires is a change a user feels,
+    # and `docs` because a document can itself be a deliverable.
+    { message = "(?i)^feat", group = "changes" },
+    { message = "(?i)^fix", group = "changes" },
+    { message = "(?i)^perf", group = "changes" },
+    { message = "(?i)^refactor", group = "changes" },
+    { message = "(?i)^build", group = "changes" },
+    { message = "(?i)^doc", group = "changes" },
+    # dropped: work on the repository rather than on what it installs
+    { message = "(?i)^ci", skip = true },
+    { message = "(?i)^test", skip = true },
+    { message = "(?i)^styl", skip = true },
+    { message = "(?i)^chore", skip = true },
+    { message = "(?i)^release", skip = true },
+    # and anything else, including a title written without a type
+    { message = ".*", skip = true },
+]
+protect_breaking_commits = false
+tag_pattern = "v[0-9]*"
+sort_commits = "oldest"

@@ -65,8 +65,8 @@ The **Prepare release** job runs on `main` and:
 1. Resolves the new version from the current one and the bump.
 2. Updates `mf6adj/version.py`, and `CITATION.cff` to the version being
    released.
-3. Generates the `changelog/CHANGELOG.md` entry from the pull requests merged
-   since the last tag.
+3. Generates the `changelog/CHANGELOG.md` entry with git-cliff, from the
+   commits merged since the last tag.
 4. Builds the package, checks it with `twine`, and smoke tests both the wheel
    and the source distribution by importing them and asserting the version.
 5. Pushes a `v<version>` branch and opens a **draft** pull request against
@@ -91,28 +91,27 @@ release just made. Merging its pull request is all it needs.
 To see the entry before starting a release:
 
 ```bash
-pixi run python scripts/generate_changelog.py --version 1.4.0 --dry-run
+pixi run changelog --version 1.4.0 --dry-run
 ```
 
 ---
 
 ## Step 3 — Write the breaking changes, then merge
 
-The generated entry has a `### Changes` section and nothing else. Two things
-are added by hand on the release branch, editing
-`changelog/CHANGELOG.md` directly on GitHub:
+The generated entry has a `### Changes` section and nothing else. A
+`### Breaking changes` section is written by hand above it, editing
+`changelog/CHANGELOG.md` directly on GitHub. It is the part of the release
+notes that is read most and the part no tool can write. A change belongs there
+if it stops something working, or if it changes a number a previous release
+reported: someone holding results from an earlier version needs to know whether
+to run them again, and how far out they were.
 
-- **A `### Breaking changes` section**, above `### Changes`. This is the part
-  of the release notes that is read most and the part no tool can write. A
-  change belongs here if it stops something working, or if it changes a number
-  a previous release reported: someone holding results from an earlier version
-  needs to know whether to run them again, and how far out they were.
-- **Removing the chores.** The generator lists every merged pull request, so
-  the entry arrives carrying dependabot bumps, continuous integration changes
-  and the development-cycle commit. Keep `feat`, `fix`, `refactor` and `build`;
-  drop `ci`, `test`, `style` and `chore`, and the unprefixed dependabot titles.
-  `docs` is usually a chore, but not when it adds a document that is itself a
-  deliverable.
+The chores are already gone, because git-cliff selects on the conventional
+commit type in each pull request title. It keeps `feat`, `fix`, `perf`,
+`refactor`, `build` and `docs`, and drops everything else, including a title
+written with no type at all. `docs` is kept because a document can itself be a
+deliverable, so a documentation change that is housekeeping is the one entry
+that may still want deleting. The lists are in `cliff.toml`.
 
 Then check `mf6adj/version.py`, mark the pull request **Ready for review**, and
 merge it into `main`.
@@ -178,7 +177,7 @@ pull request it opens. See step 2.
 
 - [ ] **Release** run from the Actions tab with the right bump
 - [ ] Prep commit visible on the `v<version>` branch
-- [ ] `### Breaking changes` written, chores removed from the entry
+- [ ] `### Breaking changes` written, and the entry reads right
 - [ ] `mf6adj/version.py` shows the right version
 - [ ] Draft pull request merged into `main`
 - [ ] Draft GitHub release reviewed and published

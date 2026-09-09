@@ -73,6 +73,9 @@ default = ["py311"]
 py312 = ["py312"]
 
 [pypi-dependencies]
+# conda-forge is several versions behind on git-cliff everywhere but macOS,
+# and PyPI has a wheel for every platform this project is solved for
+git-cliff = ">=2.13,<3"
 hatchling = ">=1.27.0,<2"
 hatch-fancy-pypi-readme = "*"
 rtds-action = "*"
@@ -122,6 +125,11 @@ clean-tests = { cmd = "rm -rf *_test", cwd = "autotest" }
 
 # coverage report
 coverage-report = { cmd = "coverage report", cwd = "autotest"}
+
+# release
+# The version being cut has to be given, and --dry-run prints the entry rather
+# than writing it: pixi run changelog --version 1.4.0 --dry-run
+changelog = { cmd = "python scripts/generate_changelog.py" }
 
 # docs
 docs-install = { cmd = "pip install --no-deps --disable-pip-version-check -e '.[doc]'" }
