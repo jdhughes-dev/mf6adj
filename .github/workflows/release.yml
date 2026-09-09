@@ -161,8 +161,6 @@ jobs:
         # a cycle is opened with nothing merged behind it, so an entry for it
         # would be empty
         if: ${{ steps.version.outputs.cycle != 'true' }}
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           uv run scripts/generate_changelog.py --version ${{ steps.version.outputs.version }}
 
