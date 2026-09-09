@@ -144,10 +144,14 @@ def read_adj_file(
     """
     hdf5_name = None if current_hdf5_name is None else pl.Path(current_hdf5_name)
 
+    # built once for the file; searching NODEUSER for each entry is one pass
+    # over the model per entry
+    reduced = build_reduced_map(nuser)
+
     if is_hdf5(adj_filename):
         return read_adj_hdf5(
             adj_filename,
-            nuser,
+            reduced,
             nstp,
             nper,
             ncpl,
@@ -185,7 +189,7 @@ def read_adj_file(
                     f,
                     line,
                     count,
-                    nuser,
+                    reduced,
                     nstp,
                     nper,
                     ncpl,
@@ -354,24 +358,47 @@ def validate_pm_type(
         )
 
 
+def build_reduced_map(nuser: np.ndarray) -> Optional[np.ndarray]:
+    """Return the inverse of ``NODEUSER``, or None when nodes are not reduced.
+
+    MODFLOW 6 omits inactive cells from its internal node numbering, and
+    ``NODEUSER`` gives the full-grid node of each reduced one. The inverse is
+    built once for a file rather than searched for each entry, which would be
+    one pass over the model per entry.
+
+    Parameters
+    ----------
+    nuser : ndarray
+        Zero-based ``NODEUSER`` array from MODFLOW 6.
+
+    Returns
+    -------
+    ndarray or None
+        Reduced node of each full-grid node, -1 where there is none, or None
+        when the model does not reduce its nodes.
+    """
+    if len(nuser) <= 1:
+        return None
+
+    inverse = np.full(int(nuser.max()) + 1, -1, dtype=np.int64)
+    inverse[nuser] = np.arange(nuser.size, dtype=np.int64)
+    return inverse
+
+
 def map_reduced_node(
     inode: int,
-    nuser: np.ndarray,
+    reduced: Optional[np.ndarray],
     kij: Optional[list[int]] = None,
     logger=None,
 ) -> int:
     """Map a full-grid node number to the reduced MODFLOW 6 node index.
 
-    MODFLOW 6 may omit inactive cells from internal node numbering. This
-    helper converts a full-grid node number into the corresponding index in
-    the reduced node list used by the API.
-
     Parameters
     ----------
     inode : int
         Zero-based full-grid node number.
-    nuser : ndarray
-        Zero-based ``NODEUSER`` array from MODFLOW 6.
+    reduced : ndarray or None
+        Map from `build_reduced_map`, or None when nodes are not reduced.
     kij : list[int], optional
         Structured-grid layer-row-column indices used only for additional
         debug context when a mapping fails.
@@ -383,22 +410,22 @@ def map_reduced_node(
     int
         Zero-based reduced node index.
     """
-    if len(nuser) <= 1:
+    if reduced is None:
         return inode
 
-    nn = np.where(nuser == inode)[0]
-    if nn.shape[0] != 1:
+    node = -1 if inode > reduced.size - 1 else int(reduced[inode])
+    if node < 0:
         if logger is not None:
-            logger.info(f"{nuser} {nn}")
+            logger.info(f"{inode}")
             if kij is not None:
                 logger.info(f"{kij}")
         raise Exception(f"node num {inode} not in reduced node num")
-    return int(nn[0])
+    return node
 
 
 def map_reduced_nodes(
     inodes: np.ndarray,
-    nuser: np.ndarray,
+    reduced: Optional[np.ndarray],
     logger=None,
 ) -> np.ndarray:
     """Map full-grid node numbers to the reduced MODFLOW 6 node indices.
@@ -407,8 +434,8 @@ def map_reduced_nodes(
     ----------
     inodes : ndarray
         Zero-based full-grid node numbers.
-    nuser : ndarray
-        Zero-based ``NODEUSER`` array from MODFLOW 6.
+    reduced : ndarray or None
+        Map from `build_reduced_map`, or None when nodes are not reduced.
     logger : logging.Logger, optional
         Optional logger used to emit debug context before raising.
 
@@ -418,28 +445,24 @@ def map_reduced_nodes(
         Zero-based reduced node indices.
     """
     inodes = np.asarray(inodes, dtype=np.int64)
-    if len(nuser) <= 1:
+    if reduced is None:
         return inodes
 
-    # the inverse of nuser, built once, so a lookup does not scan the model
-    inverse = np.full(int(nuser.max()) + 1, -1, dtype=np.int64)
-    inverse[nuser] = np.arange(nuser.size, dtype=np.int64)
-
-    outside = inodes > inverse.size - 1
-    reduced = np.where(outside, -1, inverse[np.where(outside, 0, inodes)])
-    missing = reduced < 0
+    outside = inodes > reduced.size - 1
+    nodes = np.where(outside, -1, reduced[np.where(outside, 0, inodes)])
+    missing = nodes < 0
     if missing.any():
         if logger is not None:
             logger.info(f"{inodes[missing]}")
         raise Exception(f"node num {int(inodes[missing][0])} not in reduced node num")
-    return reduced
+    return nodes
 
 
 def parse_pm_location(
     raw: list[str],
     count: int,
     line2: str,
-    nuser: np.ndarray,
+    reduced: Optional[np.ndarray],
     ncpl: Optional[int],
     is_structured: bool,
     unstructured_type: Optional[str],
@@ -462,8 +485,8 @@ def parse_pm_location(
         Source line number used in error messages.
     line2 : str
         Raw source line used in error messages.
-    nuser : ndarray
-        Zero-based ``NODEUSER`` array from MODFLOW 6.
+    reduced : ndarray or None
+        Map from `build_reduced_map`, or None when nodes are not reduced.
     ncpl : int, optional
         Number of cells per layer for ``DISV`` and ``DISU`` parsing.
     is_structured : bool
@@ -496,7 +519,7 @@ def parse_pm_location(
                 )
         k, i, j = kij[0], kij[1], kij[2]
         inode = get_node(shape, [kij])[0]
-        inode = map_reduced_node(inode, nuser, kij=kij, logger=logger)
+        inode = map_reduced_node(inode, reduced, kij=kij, logger=logger)
         return inode, k, i, j
 
     if unstructured_type == "disv":
@@ -517,7 +540,7 @@ def parse_pm_location(
         if ncpl is None:
             raise Exception("ncpl is None for disv parsing")
         inode = ((ncpl * (lay - 1)) + node) - 1
-        inode = map_reduced_node(inode, nuser, kij=None, logger=logger)
+        inode = map_reduced_node(inode, reduced, kij=None, logger=logger)
         return inode, k, i, j
 
     if unstructured_type == "disu":
@@ -525,7 +548,7 @@ def parse_pm_location(
             inode = int(raw[2]) - 1
         except Exception as e:
             print(f"{e}\n\nerror casting node info on line {count}: '{line2}'")
-        inode = map_reduced_node(inode, nuser, kij=None, logger=logger)
+        inode = map_reduced_node(inode, reduced, kij=None, logger=logger)
         return inode, k, i, j
 
     raise Exception(
@@ -588,7 +611,7 @@ def parse_performance_measure_block(
     f,
     line: str,
     count: int,
-    nuser: np.ndarray,
+    reduced: Optional[np.ndarray],
     nstp: np.ndarray,
     nper: int,
     ncpl: Optional[int],
@@ -609,8 +632,8 @@ def parse_performance_measure_block(
         The `begin performance_measure ...` line.
     count : int
         Current source-line counter.
-    nuser : ndarray
-        Reduced-node user mapping.
+    reduced : ndarray or None
+        Map from `build_reduced_map`, or None when nodes are not reduced.
     nstp : ndarray
         Number of time steps per stress period.
     nper : int
@@ -684,7 +707,7 @@ def parse_performance_measure_block(
             raw,
             count,
             line2,
-            nuser,
+            reduced,
             ncpl,
             is_structured,
             unstructured_type,
@@ -718,7 +741,7 @@ def parse_performance_measure_block(
 
 def read_adj_hdf5(
     adj_filename: PathLike,
-    nuser: np.ndarray,
+    reduced: Optional[np.ndarray],
     nstp: np.ndarray,
     nper: int,
     ncpl: Optional[int],
@@ -740,8 +763,8 @@ def read_adj_hdf5(
     ----------
     adj_filename : PathLike
         Adjoint input filename.
-    nuser : ndarray
-        Reduced-node user mapping.
+    reduced : ndarray or None
+        Map from `build_reduced_map`, or None when nodes are not reduced.
     nstp : ndarray
         Number of time steps per stress period.
     nper : int
@@ -810,7 +833,7 @@ def read_adj_hdf5(
             )
         else:
             inode = np.asarray(columns["node"], dtype=np.int64)
-        inode = map_reduced_nodes(inode, nuser, logger=logger)
+        inode = map_reduced_nodes(inode, reduced, logger=logger)
 
         for pm_type in np.unique(columns["pm_type"]):
             validate_pm_type(
