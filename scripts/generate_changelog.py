@@ -49,7 +49,7 @@ def build_entry(version):
     if command is None:
         raise SystemExit(
             f"git-cliff was not found, and neither was uvx to run it with.\n"
-            f"Install it with `pixi install`, or `uv tool install {_requirement}`."
+            f'Install it with `pixi install`, or `uv tool install "{_requirement}"`.'
         )
 
     result = subprocess.run(
