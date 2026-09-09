@@ -4,6 +4,11 @@ from typing import Callable, Optional
 import numpy as np
 
 from .utils_modflow import SUPPORTED_PACKAGE_TYPES, get_node
+from .utils_pm_write import (
+    LOCATION_COLUMNS,
+    is_hdf5,
+    read_performance_measures,
+)
 
 PathLike = str | pl.Path
 
@@ -138,6 +143,23 @@ def read_adj_file(
         package) also cannot be mixed within a single performance measure.
     """
     hdf5_name = None if current_hdf5_name is None else pl.Path(current_hdf5_name)
+
+    if is_hdf5(adj_filename):
+        return read_adj_hdf5(
+            adj_filename,
+            nuser,
+            nstp,
+            nper,
+            ncpl,
+            is_structured=is_structured,
+            unstructured_type=unstructured_type,
+            shape=shape,
+            gwf_package_dict=gwf_package_dict,
+            record_factory=record_factory,
+            add_performance_measure=add_performance_measure,
+            current_hdf5_name=hdf5_name,
+            logger=logger,
+        )
 
     with pl.Path(adj_filename).open("r") as f:
         count = 0
@@ -372,6 +394,45 @@ def map_reduced_node(
                 logger.info(f"{kij}")
         raise Exception(f"node num {inode} not in reduced node num")
     return int(nn[0])
+
+
+def map_reduced_nodes(
+    inodes: np.ndarray,
+    nuser: np.ndarray,
+    logger=None,
+) -> np.ndarray:
+    """Map full-grid node numbers to the reduced MODFLOW 6 node indices.
+
+    Parameters
+    ----------
+    inodes : ndarray
+        Zero-based full-grid node numbers.
+    nuser : ndarray
+        Zero-based ``NODEUSER`` array from MODFLOW 6.
+    logger : logging.Logger, optional
+        Optional logger used to emit debug context before raising.
+
+    Returns
+    -------
+    ndarray
+        Zero-based reduced node indices.
+    """
+    inodes = np.asarray(inodes, dtype=np.int64)
+    if len(nuser) <= 1:
+        return inodes
+
+    # the inverse of nuser, built once, so a lookup does not scan the model
+    inverse = np.full(int(nuser.max()) + 1, -1, dtype=np.int64)
+    inverse[nuser] = np.arange(nuser.size, dtype=np.int64)
+
+    outside = inodes > inverse.size - 1
+    reduced = np.where(outside, -1, inverse[np.where(outside, 0, inodes)])
+    missing = reduced < 0
+    if missing.any():
+        if logger is not None:
+            logger.info(f"{inodes[missing]}")
+        raise Exception(f"node num {int(inodes[missing][0])} not in reduced node num")
+    return reduced
 
 
 def parse_pm_location(
@@ -653,3 +714,145 @@ def parse_performance_measure_block(
         )
 
     return count, pm_name, pm_entries
+
+
+def read_adj_hdf5(
+    adj_filename: PathLike,
+    nuser: np.ndarray,
+    nstp: np.ndarray,
+    nper: int,
+    ncpl: Optional[int],
+    is_structured: bool,
+    unstructured_type: Optional[str],
+    shape: Optional[tuple[int, ...]],
+    gwf_package_dict: dict[str, list[str]],
+    record_factory: Callable[..., object],
+    add_performance_measure: Callable[[str, list], None],
+    current_hdf5_name: Optional[PathLike] = None,
+    logger=None,
+) -> Optional[pl.Path]:
+    """Read an adjoint input file written as hdf5.
+
+    The entries are held as columns, so the locations and times are checked and
+    mapped for the whole measure at once rather than one line at a time.
+
+    Parameters
+    ----------
+    adj_filename : PathLike
+        Adjoint input filename.
+    nuser : ndarray
+        Reduced-node user mapping.
+    nstp : ndarray
+        Number of time steps per stress period.
+    nper : int
+        Number of stress periods.
+    ncpl : int, optional
+        Cells per layer for `disv`.
+    is_structured : bool
+        Whether the model discretization is structured.
+    unstructured_type : str, optional
+        Unstructured discretization type (`disv` or `disu`).
+    shape : tuple[int, ...], optional
+        Structured-grid shape used to convert layer-row-column locations.
+    gwf_package_dict : dict[str, list[str]]
+        Mapping of package types to package names.
+    record_factory : callable
+        Constructor used to create PM record objects.
+    add_performance_measure : callable
+        Callback used to store each parsed performance measure.
+    current_hdf5_name : PathLike, optional
+        Existing hdf5 name to preserve unless overridden by options.
+    logger : logging.Logger, optional
+        Optional logger for progress and debug context.
+
+    Returns
+    -------
+    pathlib.Path or None
+        Output hdf5 filename from the options, if one is set.
+    """
+    measures, options = read_performance_measures(adj_filename)
+    if not measures:
+        raise Exception("no PMs found in adj file")
+
+    hdf5_name = None if current_hdf5_name is None else pl.Path(current_hdf5_name)
+    for key, value in options.items():
+        if key != "hdf5_name":
+            raise Exception(f"unrecognized option: {key}")
+        hdf5_name = pl.Path(str(value))
+
+    grid = "dis" if is_structured else unstructured_type
+    for name, columns in measures.items():
+        expected = LOCATION_COLUMNS[grid]
+        if any(column not in columns for column in expected):
+            raise Exception(
+                f"performance measure '{name}' does not hold the locations a "
+                f"{grid} model needs, which are {', '.join(expected)}"
+            )
+
+        kper = np.asarray(columns["kper"], dtype=np.int64)
+        kstp = np.asarray(columns["kstp"], dtype=np.int64)
+        if (kper > nper - 1).any():
+            raise Exception(f"kper > nper -1 in performance measure '{name}'")
+        if (kstp > nstp[kper] - 1).any():
+            raise Exception(f"kstp > nstp[kper] -1 in performance measure '{name}'")
+
+        if is_structured:
+            if shape is None:
+                raise Exception("shape is None for structured PM location parsing")
+            inode = np.ravel_multi_index(
+                tuple(np.asarray(columns[c], dtype=np.int64) for c in expected), shape
+            )
+        elif unstructured_type == "disv":
+            if ncpl is None:
+                raise Exception("ncpl is None for disv parsing")
+            inode = ncpl * np.asarray(columns["layer"], dtype=np.int64) + np.asarray(
+                columns["cell2d"], dtype=np.int64
+            )
+        else:
+            inode = np.asarray(columns["node"], dtype=np.int64)
+        inode = map_reduced_nodes(inode, nuser, logger=logger)
+
+        for pm_type in np.unique(columns["pm_type"]):
+            validate_pm_type(
+                str(pm_type), gwf_package_dict=gwf_package_dict, logger=logger
+            )
+
+        if is_structured:
+            kij = list(zip(*(columns[c].tolist() for c in expected)))
+        else:
+            kij = [(None, None, None)] * kper.size
+
+        entries = [
+            record_factory(
+                entry_kper,
+                entry_kstp,
+                entry_node,
+                entry_type,
+                entry_form,
+                entry_weight,
+                entry_obsval,
+                *entry_kij,
+            )
+            for (
+                entry_kper,
+                entry_kstp,
+                entry_node,
+                entry_type,
+                entry_form,
+                entry_weight,
+                entry_obsval,
+                entry_kij,
+            ) in zip(
+                kper.tolist(),
+                kstp.tolist(),
+                inode.tolist(),
+                columns["pm_type"].tolist(),
+                columns["pm_form"].tolist(),
+                columns["weight"].tolist(),
+                columns["obsval"].tolist(),
+                kij,
+            )
+        ]
+        add_performance_measure(name, entries)
+
+    return hdf5_name

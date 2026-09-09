@@ -117,6 +117,63 @@ the same file; the adjoint is solved independently for each.
            f.write(f"{kper + 1} 1 2 4 1 sfr_1 direct 1.0 -1.0e+30\n")
        f.write("end performance_measure\n")
 
+Writing a performance measure
+------------------------------
+
+The blocks above can be written with
+:func:`~mf6adj.write_performance_measures` rather than by hand.  It takes the
+measures as a dict of columns, a numpy recarray, or a
+:class:`pandas.DataFrame`, so cell identifiers can come straight from flopy:
+
+.. code-block:: python
+
+   from mf6adj import write_performance_measures
+
+   ghb = gwf.get_package("ghb-1").stress_period_data.get_data()[0]
+
+   write_performance_measures(
+       "model.adj",
+       {
+           "swgw": {
+               "cellid": ghb["cellid"],       # zero-based, as flopy gives it
+               "times": range(nper),          # crossed with the cells
+               "pm_type": "ghb-1",
+               "pm_form": "direct",
+               "weight": 1.0,
+               "obsval": -1.0e30,
+           },
+       },
+       options={"hdf5_name": "out.h5"},
+   )
+
+Indices are zero-based, as they are in flopy; the file itself is one-based and
+the conversion is made on the way out.  ``times`` is crossed with the cells,
+the time varying slowest.  A period holding several time steps is given as a
+``(kper, kstp)`` pair, which :func:`~mf6adj.all_times` builds from the time
+steps per period::
+
+   "times": all_times(sim.tdis.nstp.array)
+
+``kper`` and ``kstp`` may be given instead of ``times``, in which case they are
+one value per entry.  ``weight`` and ``obsval`` are a single value, one value
+per cell, or one value per entry.
+
+A measure with one entry per active cell of a large model makes a sizeable
+file, and ``format="hdf5"`` writes the same measure as compressed columns,
+roughly nine times smaller.  Ascii is the default, since it is the format
+MODFLOW 6 input is written in and is readable in a text editor.
+
+:func:`~mf6adj.read_performance_measures` reads either format, returning the
+measures and the options block in the form the writer accepts, so a file can
+be converted or edited and written back:
+
+.. code-block:: python
+
+   from mf6adj import read_performance_measures, write_performance_measures
+
+   measures, options = read_performance_measures("model.adj")
+   write_performance_measures("model.h5", measures, options=options, format="hdf5")
+
 Solving the forward model and adjoint
 --------------------------------------
 
