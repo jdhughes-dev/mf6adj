@@ -125,3 +125,25 @@ def describe(report: dict, kper: int, kstp: int) -> str:
         f"its diagonal, so a sensitivity reported there may be far larger "
         f"than the flow model can support. Worst nodes, zero based: {rows}."
     )
+
+
+# square root of machine precision, MODFLOW 6's DPRECSQRT
+DPRECSQRT = float(np.sqrt(np.finfo(float).eps))
+
+
+def dry_cells(saturation, tol: float = DPRECSQRT) -> np.ndarray:
+    """Return the cells holding no water.
+
+    Parameters
+    ----------
+    saturation : ndarray
+        Cell saturation.
+    tol : float
+        Saturation below which a cell holds no water.
+
+    Returns
+    -------
+    ndarray
+        Indices of the cells holding none.
+    """
+    return np.flatnonzero(np.asarray(saturation).ravel() < tol)
