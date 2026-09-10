@@ -25,6 +25,12 @@ from .advanced_packages import LakeCoupling, MawCoupling, SfrCoupling
 from .packages import head_dependent, hfb, npf, recharge, well
 from .packages.head_dependent import DRAIN_CORNER_TOL, drop_corner_entries
 from .utils.utils import SolverCallback
+from .utils.utils_conditioning import (
+    LOOSE_RESIDUAL,
+    describe,
+    diagonal_report,
+    solve_residual,
+)
 from .utils.utils_fileio import _write_group_to_hdf
 from .utils.utils_logger import _LoggerUtil
 from .utils.utils_modflow import (
@@ -1021,6 +1027,14 @@ class PerfMeas:
                 + f"with solver options: {_linear_solver_kwargs}"
             )
 
+            # a row whose diagonal has fallen away carries a state that goes as
+            # one over it, which is where a sensitivity too large for the flow
+            # model to support comes from. Reading the diagonal is one pass, so
+            # it runs on every model rather than on request.
+            report = diagonal_report(amat)
+            if report is not None:
+                self.logger.logger.warning(describe(report, int(kk[0]), int(kk[1])))
+
             # solve the system of equations
             if linear_solver == "direct":
                 lamb = _linear_solver(amat, rhs, **_linear_solver_kwargs)
@@ -1093,6 +1107,20 @@ class PerfMeas:
                     self.logger.logger.error("Solver parameter breakdown")
                 elif info > 0:
                     self.logger.logger.warning("Solver convergence not achieved")
+
+            # the residual next to the right-hand side it was solved against,
+            # which says whether the solution stands rather than how large its
+            # numbers are. The direct solver reports nothing of its own, and a
+            # nearly singular matrix can return from it without complaint.
+            relative = solve_residual(amat, lamb, rhs)
+            if relative > LOOSE_RESIDUAL:
+                self.logger.logger.warning(
+                    f"the adjoint solve for stress period {int(kk[0]) + 1}, "
+                    + f"time step {int(kk[1]) + 1} left a residual "
+                    + f"{relative:.3e} times its right-hand side, so the "
+                    + "sensitivities from this step are not a solution of the "
+                    + "equations they were formed from."
+                )
 
             if self._sfr.columns:
                 # the reach depths come off first, being the outer border
