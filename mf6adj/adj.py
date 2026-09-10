@@ -68,8 +68,9 @@ class Mf6Adj:
         MODFLOW 6 shared library path.
     logging_level : str or int, optional
         Logging level (``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, or ``CRITICAL``).
-    logging_filename : str or pl.Path, optional
-        Log filename. If omitted, the stem of ``adj_filename`` is used.
+    logging_filename : str, pl.Path, or bool, optional
+        Log filename. If omitted, the stem of ``adj_filename`` is used. Pass
+        ``False`` to write no log file.
     working_directory : str or pl.Path, optional
         Working directory. If omitted, the current directory is used.
     """
@@ -79,7 +80,7 @@ class Mf6Adj:
         adj_filename: str,
         lib_name: str,
         logging_level: Union[int, str] = "INFO",
-        logging_filename: Optional[PathLike] = None,
+        logging_filename: Optional[Union[PathLike, bool]] = None,
         working_directory: Optional[PathLike] = None,
     ):
         """Initialize the MODFLOW 6 adjoint helper."""
@@ -95,10 +96,13 @@ class Mf6Adj:
             self.adj_filename = adj_filename
 
             # setup logger. A run without a named log file still writes one,
-            # so what it reported survives the console it was written to
+            # so what it reported survives the console it was written to.
+            # False is how a run asks for none
             logger_name = f"{self.__class__.__name__}-{adj_filename.stem}"
             if logging_filename is None:
                 logging_filename = f"{adj_filename.stem}.log"
+            elif logging_filename is False:
+                logging_filename = None
             self.logger = _LoggerUtil(
                 logger_name,
                 logging_level,

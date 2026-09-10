@@ -78,7 +78,12 @@ class _LoggerUtil:
                 file_formatter = logging.Formatter(
                     "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
                 )
-                file_handler = logging.FileHandler(self.file_name, mode="w")
+                # appended to rather than written over. A run that reported
+                # something is commonly rerun to look into it, and opening
+                # the file to write would erase the report being looked for.
+                # Each run is named by its own instance in every line it
+                # writes, so the runs stay apart in one file
+                file_handler = logging.FileHandler(self.file_name, mode="a")
                 file_handler.setFormatter(file_formatter)
                 file_handler.setLevel(self.level)
                 self.logger.addHandler(file_handler)

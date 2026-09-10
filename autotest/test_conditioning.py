@@ -32,6 +32,9 @@ Cases:
                                    rows and the log file holds them all.
   - test_a_row_is_named_as_the_model_names_it : a row of the matrix is
                                    reported as the cell it came from.
+  - test_the_log_file_is_written_unless_it_is_refused : a run writes one
+                                   without being asked, keeps what an earlier
+                                   run wrote, and writes none when refused.
 """
 
 import pathlib as pl
@@ -540,3 +543,43 @@ def test_a_row_is_named_as_the_model_names_it():
     nodeuser = np.array([0, 5, 13])
     assert cellid(2, nodeuser, (2, 10)) == "layer 2, cell 4"
     assert cellid(2, nodeuser, None) == "node 14"
+
+
+def test_the_log_file_is_written_unless_it_is_refused(function_tmpdir):
+    """A run writes a log file, keeps what an earlier one wrote, and can be
+    refused.
+
+    A run that reported something is commonly rerun to look into it, so the
+    file is appended to rather than written over.
+    """
+    ws = _forward_file(function_tmpdir / "run")
+
+    # a run writes one without being asked, taking the stem of its own file
+    adj = mf6adj.Mf6Adj(
+        "pm.dat", lib_name, logging_level="INFO", working_directory=str(ws)
+    )
+    adj.finalize()
+    assert (ws / "pm.log").exists(), "a run wrote no log file"
+    first = (ws / "pm.log").read_text()
+    assert first, "the log file a run wrote holds nothing"
+
+    # a second run keeps what the first one wrote
+    adj = mf6adj.Mf6Adj(
+        "pm.dat", lib_name, logging_level="INFO", working_directory=str(ws)
+    )
+    adj.finalize()
+    second = (ws / "pm.log").read_text()
+    assert second.startswith(first), "a rerun wrote over what the last one wrote"
+    assert len(second) > len(first), "a rerun added nothing to the log file"
+
+    # and a run that refuses one writes none
+    (ws / "pm.log").unlink()
+    adj = mf6adj.Mf6Adj(
+        "pm.dat",
+        lib_name,
+        logging_level="INFO",
+        logging_filename=False,
+        working_directory=str(ws),
+    )
+    adj.finalize()
+    assert not (ws / "pm.log").exists(), "a run that refused a log file wrote one"
