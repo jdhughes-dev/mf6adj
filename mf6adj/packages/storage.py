@@ -9,8 +9,10 @@ approximating it.
 
 import numpy as np
 
-# default SATOMEGA of the MODFLOW 6 storage package
-SATOMEGA = 1.0e-6
+# the storage package's SATOMEGA where it cannot be read. MODFLOW 6 leaves it
+# at zero and sets it only under the Newton-Raphson formulation, so with no
+# rounding the saturation follows the head over the whole cell.
+SATOMEGA = 0.0
 
 from ..utils.utils_modflow import get_ptr_from_gwf
 
@@ -170,7 +172,8 @@ def smoothed_saturation_slope(head, top, bot, satomega: float = SATOMEGA):
     top, bot : ndarray
         Top and bottom of each cell.
     satomega : float
-        Fraction of the cell the rounding covers.
+        Fraction of the cell the rounding covers. MODFLOW leaves this at zero
+        outside the Newton-Raphson formulation.
 
     Returns
     -------
@@ -185,6 +188,11 @@ def smoothed_saturation_slope(head, top, bot, satomega: float = SATOMEGA):
         where=thickness > 0.0,
     )
     fraction = np.clip(over, 0.0, 1.0)
+    # with no rounding the saturation follows the head over the whole cell, so
+    # the slope is one inside it and nothing at either end
+    if satomega <= 0.0:
+        return np.where((fraction > 0.0) & (fraction < 1.0), 1.0, 0.0)
+
     scale = 1.0 / (1.0 - satomega) if satomega < 1.0 else 1.0
     return np.where(
         fraction < satomega,
@@ -272,6 +280,13 @@ def drhsdh(
     sy_term = area * sy / dt
     # a cell that never converts releases nothing through specific yield,
     # whatever its head
-    sy_scale = np.where(iconvert == 0, 0.0, smoothed_saturation_slope(head, top, bot))
+    # MODFLOW rounds the saturation only under Newton-Raphson, so the width of
+    # that rounding is read from the package rather than assumed
+    satomega = float(
+        np.asarray(get_ptr_from_gwf(gwf_name, "STO", "SATOMEGA", gwf)).ravel()[0]
+    )
+    sy_scale = np.where(
+        iconvert == 0, 0.0, smoothed_saturation_slope(head, top, bot, satomega)
+    )
 
     return -1.0 * (ss_term * ss_scale + sy_term * sy_scale)
