@@ -30,6 +30,7 @@ from .utils.utils_conditioning import (
     describe,
     diagonal_report,
     dry_cells,
+    flagged_nodes,
     solve_residual,
 )
 from .utils.utils_fileio import _write_group_to_hdf
@@ -40,6 +41,15 @@ from .utils.utils_modflow import (
 )
 
 PathLike = Union[str, pl.Path]
+
+
+class AdjointSolveError(Exception):
+    """An adjoint solve that returned values which are not numbers."""
+
+    def __init__(self, message: str, kper: int, kstp: int):
+        super().__init__(message)
+        self.kper = kper
+        self.kstp = kstp
 
 
 class PerfMeasRecord:
@@ -614,6 +624,16 @@ class PerfMeas:
             )
             self.logger.logger.info(f"Structured grid found, shape: {grid_shape}")
 
+        # a disv grid names a cell by its layer and the cell within it, which
+        # is the shape a report of one is written against. It is not the shape
+        # the solution is written against, which stays the grid's own
+        cell_shape = grid_shape
+        if grid_shape is None and "ncpl" in hdf["gwf_info"].keys():
+            cell_shape = (
+                int(hdf["gwf_info"]["nlay"][0]),
+                int(hdf["gwf_info"]["ncpl"][0]),
+            )
+
         ia = hdf["gwf_info"]["ia"][:]
         ja = hdf["gwf_info"]["ja"][:]
         # the sparsity that locates the entries of the assembled matrix;
@@ -1034,7 +1054,14 @@ class PerfMeas:
             # it runs on every model rather than on request.
             report = diagonal_report(amat)
             if report is not None:
-                self.logger.logger.warning(describe(report, int(kk[0]), int(kk[1])))
+                self.logger.logger.warning(
+                    describe(report, int(kk[0]), int(kk[1]), nodeuser, cell_shape)
+                )
+                # the console names the worst few, which is all it holds. The
+                # whole list goes to the log file, where it is read later
+                self.logger.to_file(
+                    flagged_nodes(report, int(kk[0]), int(kk[1]), nodeuser, cell_shape)
+                )
 
             # solve the system of equations
             if linear_solver == "direct":
@@ -1113,6 +1140,36 @@ class PerfMeas:
             # which says whether the solution stands rather than how large its
             # numbers are. The direct solver reports nothing of its own, and a
             # nearly singular matrix can return from it without complaint.
+            # a matrix with no solution returns one that is not a number, and
+            # every comparison against it is false, so it passes a check on
+            # the size of the residual without tripping it. The state is
+            # carried into the right side of every earlier step, so a sound
+            # matrix later in the recursion returns no number either
+            if not np.isfinite(lamb).all():
+                msg = (
+                    f"the adjoint solve for stress period {int(kk[0]) + 1}, "
+                    + f"time step {int(kk[1]) + 1} returned "
+                    + f"{int((~np.isfinite(lamb)).sum())} values that are not "
+                    + "numbers, so the matrix holds no solution. The state is "
+                    + "carried back into every earlier step, so the run is "
+                    + "stopped here rather than solved on."
+                )
+                self.logger.logger.error(msg)
+                # the state is written before the run stops, so the cells
+                # holding no number can be read off the adjoint solution the
+                # way any other step is read
+                _write_group_to_hdf(
+                    adf,
+                    sol_key,
+                    {"lambda": lamb},
+                    nodeuser=nodeuser,
+                    grid_shape=grid_shape,
+                    nodereduced=nodereduced,
+                    logger=self.logger.logger,
+                )
+                adf.close()
+                raise AdjointSolveError(msg, int(kk[0]) + 1, int(kk[1]) + 1)
+
             relative = solve_residual(amat, lamb, rhs)
             if relative > LOOSE_RESIDUAL:
                 self.logger.logger.warning(
@@ -1165,13 +1222,6 @@ class PerfMeas:
             elif nsln != nnode:
                 lamb = lamb[:nnode]
 
-            if np.any(np.isnan(lamb)):
-                self.logger.logger.warning(
-                    (
-                        f"Adjoint states for pm {self.name} contain nans "
-                        + f"at (kper,kstp) ({int(kk[0] + 1)}, {int(kk[1] + 1)})"
-                    )
-                )
             self.logger.logger.info(
                 (
                     "Solving for lambda took: "

@@ -50,8 +50,8 @@ def diagonal_report(amat, threshold: float = SMALL_DIAGONAL) -> Optional[dict]:
     Returns
     -------
     dict or None
-        ``nzero``, ``nsmall``, the median diagonal, and the worst rows with
-        their diagonals, or None when every row is sound.
+        ``nzero``, ``nsmall``, the median diagonal, the worst rows with their
+        diagonals, and every flagged row, or None when every row is sound.
     """
     diagonal = np.abs(np.asarray(amat.diagonal()))
     if diagonal.size == 0:
@@ -74,13 +74,16 @@ def diagonal_report(amat, threshold: float = SMALL_DIAGONAL) -> Optional[dict]:
         return None
 
     flagged = np.flatnonzero(zero | small)
-    worst = flagged[np.argsort(diagonal[flagged])][:WORST]
+    order = flagged[np.argsort(diagonal[flagged])]
+    worst = order[:WORST]
     return {
         "nzero": int(zero.sum()),
         "nsmall": int(small.sum()),
         "median": median,
         "rows": worst,
         "diagonals": diagonal[worst],
+        "flagged": order,
+        "flagged_diagonals": diagonal[order],
     }
 
 
@@ -107,10 +110,44 @@ def solve_residual(amat, lamb, rhs) -> float:
     return residual / scale if scale > 0.0 else residual
 
 
-def describe(report: dict, kper: int, kstp: int) -> str:
+def cellid(node: int, nodeuser=None, grid_shape=None) -> str:
+    """Return the cell of a row of the adjoint matrix, as the model names it.
+
+    The matrix is assembled over the nodes left after the model drops the
+    cells it does not solve, so a row of it is not a cell of the grid the user
+    wrote. ``nodeuser`` carries a row back to the node it came from, and the
+    shape of a structured grid carries that node to a layer, row and column.
+
+    Parameters
+    ----------
+    node : int
+        Zero-based row of the matrix.
+    nodeuser : ndarray of int, optional
+        Zero-based reduced node to user node map.
+    grid_shape : tuple of int, optional
+        ``(nlay, nrow, ncol)`` of a structured grid, or ``(nlay, ncpl)`` of a
+        grid of vertices. A grid of neither is named by its node.
+
+    Returns
+    -------
+    str
+        One-based cell identifier.
+    """
+    node = int(node)
+    user = int(nodeuser[node]) if nodeuser is not None else node
+    if grid_shape is not None and len(grid_shape) == 3:
+        k, i, j = np.unravel_index(user, grid_shape)
+        return f"layer {int(k) + 1}, row {int(i) + 1}, column {int(j) + 1}"
+    if grid_shape is not None and len(grid_shape) == 2:
+        k, n = np.unravel_index(user, grid_shape)
+        return f"layer {int(k) + 1}, cell {int(n) + 1}"
+    return f"node {user + 1}"
+
+
+def describe(report: dict, kper: int, kstp: int, nodeuser=None, grid_shape=None) -> str:
     """Return the message for a matrix whose rows cannot support a solution."""
-    rows = ", ".join(
-        f"{int(node)} ({value:.3e})"
+    rows = "; ".join(
+        f"{cellid(node, nodeuser, grid_shape)} ({value:.3e})"
         for node, value in zip(report["rows"], report["diagonals"])
     )
     what = []
@@ -123,7 +160,7 @@ def describe(report: dict, kper: int, kstp: int) -> str:
         f"{kstp + 1} holds {' and '.join(what)}, against a median of "
         f"{report['median']:.3e}. The state at such a node goes as one over "
         f"its diagonal, so a sensitivity reported there may be far larger "
-        f"than the flow model can support. Worst nodes, zero based: {rows}."
+        f"than the flow model can support. Worst cells: {rows}."
     )
 
 
@@ -147,3 +184,22 @@ def dry_cells(saturation, tol: float = DPRECSQRT) -> np.ndarray:
         Indices of the cells holding none.
     """
     return np.flatnonzero(np.asarray(saturation).ravel() < tol)
+
+
+def flagged_nodes(
+    report: dict, kper: int, kstp: int, nodeuser=None, grid_shape=None
+) -> str:
+    """Return every cell of a report, one to a line, for the log file.
+
+    The console names the worst few. A model of a few million nodes can flag
+    more than a console holds, so the whole list is kept where it is read
+    later rather than watched.
+    """
+    lines = [
+        f"cells the adjoint matrix for stress period {kper + 1}, time step "
+        + f"{kstp + 1} cannot carry a sensitivity through:"
+    ]
+    for node, diagonal in zip(report["flagged"], report["flagged_diagonals"]):
+        where = cellid(node, nodeuser, grid_shape)
+        lines.append(f"  {where}, diagonal {float(diagonal):.6e}")
+    return "\n".join(lines)
