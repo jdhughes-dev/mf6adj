@@ -117,6 +117,32 @@ the same file; the adjoint is solved independently for each.
            f.write(f"{kper + 1} 1 2 4 1 sfr_1 direct 1.0 -1.0e+30\n")
        f.write("end performance_measure\n")
 
+Choosing the form
+------------------
+
+``direct`` sums the measure over the entries it is given, and its sensitivity
+is the total derivative: what a parameter does to the measure over the whole
+run.  A measure with entries at one time step gives the derivative at that
+time, and reproduces a finite-difference derivative exactly.
+
+``residual`` is the same, on the squared difference from the observed value.
+
+``instantaneous`` holds the earlier time steps fixed rather than letting them
+feed back, so what it reports is a property of the model **and of the time
+discretization together**.  The same model run with more time steps reports a
+smaller sensitivity: on a three-period model measuring leakage to a stream,
+5 time steps a period gave a value 1.4 percent below the derivative taken by
+re-running the flow model, and 20 gave one 5.8 percent below it.
+
+.. note::
+
+   Use ``direct`` for a **streamflow capture fraction**, one measure per time
+   the fraction is wanted at.  Capture at a time cannot exceed 1, and only the
+   total derivative at a single time step carries that meaning.  A ``direct``
+   measure whose entries span several time steps sums them, so it returns as
+   many times the fraction as it holds times, and ``instantaneous`` returns a
+   number that moves when the time stepping changes.
+
 Writing a performance measure
 ------------------------------
 
@@ -129,6 +155,7 @@ measures as a dict of columns, a numpy recarray, or a
 
    from mf6adj import write_performance_measures
 
+   nstp = sim.tdis.nstp.array
    ghb = gwf.get_package("ghb-1").stress_period_data.get_data()[0]
 
    write_performance_measures(
@@ -136,7 +163,8 @@ measures as a dict of columns, a numpy recarray, or a
        {
            "swgw": {
                "cellid": ghb["cellid"],       # zero-based, as flopy gives it
-               "times": range(nper),          # crossed with the cells
+               "kper": nper - 1,              # one time, so one derivative
+               "kstp": nstp[nper - 1] - 1,    # the last step of that period
                "pm_type": "ghb-1",
                "pm_form": "direct",
                "weight": 1.0,
@@ -173,6 +201,45 @@ be converted or edited and written back:
 
    measures, options = read_performance_measures("model.adj")
    write_performance_measures("model.h5", measures, options=options, format="hdf5")
+
+Streamflow capture
+-------------------
+
+Capture is the derivative of the leakage to a stream with respect to a well
+rate, so it is the ``wel6_q`` result of a measure holding every stream cell.
+It is wanted at a time, and a measure sums the entries it is given, so each
+time wanted is its own measure:
+
+.. code-block:: python
+
+   from mf6adj import write_performance_measures
+
+   nstp = sim.tdis.nstp.array
+   drn = gwf.get_package("drn-1").stress_period_data.get_data()[0]["cellid"]
+   ghb = gwf.get_package("ghb-1").stress_period_data.get_data()[0]["cellid"]
+
+   measures = {}
+   for kper, n in enumerate(nstp):
+       measures[f"capture_{kper + 1:03d}"] = {
+           "cellid": list(drn) + list(ghb),
+           "kper": kper,                              # this period
+           "kstp": n - 1,                             # its own last step
+           "pm_type": ["drn-1"] * len(drn) + ["ghb-1"] * len(ghb),
+           "pm_form": "direct",
+           "weight": 1.0,
+           "obsval": -1.0e30,
+       }
+
+   write_performance_measures("model.adj", measures)
+
+Both packages belong to one measure, because the leakage is the sum over all of
+the cells the stream occupies.  ``kstp`` is taken from ``nstp`` for that period
+rather than written as a constant: where the periods hold different numbers of
+time steps a constant lands part way through some of them, which is accepted
+and is not the time meant.
+
+The adjoint is solved once for each measure, so this costs one backward solve
+per period.
 
 Solving the forward model and adjoint
 --------------------------------------
