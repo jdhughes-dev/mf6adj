@@ -151,14 +151,17 @@ def test_freyberg_quadtree():
     prep_run = True
     run_adj = True
 
-    sim = flopy.mf6.MFSimulation.load(sim_ws=org_d)
-    m = sim.get_model()
-
     if prep_run:
         if new_dir.exists():
             shutil.rmtree(new_d)
         shutil.copytree(org_d, new_d)
         flopy.run_model(exe_name=mf6_bin, namefile=None, model_ws=new_d)
+
+    # the copy and never the original. Setting an array of a loaded model
+    # writes the file it was read from, and the arrays set below would write
+    # the ones this test is run against
+    sim = flopy.mf6.MFSimulation.load(sim_ws=new_d)
+    m = sim.get_model()
 
     if run_adj:
         df = pd.read_csv(
