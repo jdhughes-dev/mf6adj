@@ -49,6 +49,12 @@ PathLike = Union[str, pl.Path]
 # carries the same failure into the preconditioner
 BLOCK_SIZE = 20000
 
+# rows to a block above which the preconditioner is reported. A block of
+# 40,000 did not converge on the CONUS model whose full factorization is
+# singular, a block growing toward the whole matrix carrying that failure
+# into the preconditioner
+BLOCK_SIZE_LIMIT = 40000
+
 
 class AdjointSolveError(Exception):
     """An adjoint solve that returned values which are not numbers."""
@@ -330,6 +336,15 @@ class PerfMeas:
         """
         n = amat.shape[0]
         block_size = min(int(block_size), n)
+        if block_size > BLOCK_SIZE_LIMIT:
+            self.logger.logger.warning(
+                f"the block Jacobi preconditioner holds {block_size:,} rows to "
+                + f"a block, above the {BLOCK_SIZE_LIMIT:,} a block was "
+                + "measured to solve at. A block growing toward the whole "
+                + "matrix carries the failure of the whole factorization into "
+                + "the preconditioner, and a solve that does not converge is "
+                + "what that looks like."
+            )
         self.logger.logger.debug(
             f"Setup block Jacobi preconditioner with {block_size:,} block size "
             + f"for matrix with {n:,} rows"
@@ -1019,9 +1034,9 @@ class PerfMeas:
                         except Exception as e:
                             msg = (
                                 "Failed to form preconditioner - "
-                                + f"using Jacobi preconditioned {linear_solver} "
-                                + "solver and reset maxiter to "
-                                + f"{_linear_solver_kwargs['maxiter']}"
+                                + "using point Jacobi preconditioned "
+                                + f"{linear_solver} solver and reset maxiter "
+                                + f"to {_linear_solver_kwargs['maxiter']}"
                             )
                             self.logger.logger.info(msg)
 

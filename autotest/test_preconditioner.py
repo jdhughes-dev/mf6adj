@@ -15,8 +15,11 @@ Cases:
                                    to be the faster of the two.
   - test_the_fallback_solves     : the solve that falls back still reaches an
                                    answer.
+  - test_a_block_that_is_too_large_is_reported : a block above the size one
+                                   was measured to solve at is reported.
 """
 
+import logging
 import pathlib as pl
 import shutil
 import sys
@@ -31,7 +34,7 @@ except ImportError:
     sys.path.insert(0, str(pl.Path("../").resolve()))
     import mf6adj
 
-from mf6adj.pm import BLOCK_SIZE, PerfMeas
+from mf6adj.pm import BLOCK_SIZE, BLOCK_SIZE_LIMIT, PerfMeas
 
 mf6_bin, lib_name = mf6adj.get_conda_mf6_paths()
 
@@ -154,3 +157,34 @@ def test_the_fallback_solves(function_tmpdir, monkeypatch):
         state = np.asarray(f[keys[-1]]["lambda"][:])
     assert np.isfinite(state).all(), "the fallback solve returned no number"
     assert np.abs(state).max() > 0.0, "the fallback solve returned nothing"
+
+
+def test_a_block_that_is_too_large_is_reported(caplog):
+    """A block above the size one was measured to solve at is reported.
+
+    A block growing toward the whole matrix carries the failure of the whole
+    factorization into the preconditioner.
+    """
+
+    class Shim:
+        logger = type("L", (), {"logger": logging.getLogger("pre")})()
+
+    amat = _matrix(BLOCK_SIZE_LIMIT + 100)
+
+    with caplog.at_level("WARNING"):
+        PerfMeas._setup_block_jacobi_preconditioner(
+            Shim(), amat, block_size=BLOCK_SIZE_LIMIT + 100
+        )
+    assert [r for r in caplog.records if "rows to a block" in r.message], (
+        "a block above the size measured was not reported"
+    )
+
+    # and the size that is the default is not reported
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        PerfMeas._setup_block_jacobi_preconditioner(
+            Shim(), _matrix(BLOCK_SIZE + 100), block_size=BLOCK_SIZE
+        )
+    assert not [r for r in caplog.records if "rows to a block" in r.message], (
+        "the block size the solve uses was reported"
+    )
