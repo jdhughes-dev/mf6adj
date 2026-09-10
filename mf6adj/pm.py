@@ -695,6 +695,8 @@ class PerfMeas:
                     for idx, aname in bnd_dict[ptype].items():
                         comp_bnd_results[pname + "_" + aname] = np.zeros(nnodes)
 
+        # length of the step already solved, which is the one being carried back
+        dt_next = None
         for itime, kk in enumerate(kperkstp[::-1]):
             # For an instantaneous measure, a time step with no observation
             # adds nothing, so skip it. The average below then uses only the
@@ -742,7 +744,10 @@ class PerfMeas:
             # as "value" and the divide by wsum at the end is skipped. Only an
             # instantaneous measure uses a real weight (the length of the time
             # step, dt) so its result can be averaged over time.
-            w = float(hdf[sol_key].attrs["dt"]) if is_instantaneous else 1.0
+            dt = float(hdf[sol_key].attrs["dt"])
+            dt_carry = dt if dt_next is None else dt_next
+            dt_next = dt
+            w = dt if is_instantaneous else 1.0
             wsum += w
 
             if iss == 0 and not is_instantaneous:  # transient
@@ -751,7 +756,12 @@ class PerfMeas:
                 # that result backward in time into this step.
                 drhsdh = hdf[sol_key]["drhsdh"][:]
                 data["drhsdh"] = drhsdh
-                rhs = (drhsdh * lamb) - dfdh
+                # drhsdh already holds this step's saturation, which is the
+                # one the next step sees as old, but it is formed over this
+                # step's length. The coefficient with which the next step's
+                # equation holds this head is over that step's length, and the
+                # term goes as one over it, so carry it across.
+                rhs = (drhsdh * (dt / dt_carry) * lamb) - dfdh
             else:
                 # Either steady state or an instantaneous measure. In both
                 # cases there is no carryover from the later time step, so each
@@ -776,7 +786,6 @@ class PerfMeas:
             # the well's own equation is already a row of amat and only its
             # right-hand side is formed here. The rows sit after the aquifer's,
             # and the lake and reach rows border whatever they leave.
-            dt = float(hdf[sol_key].attrs["dt"])
             maw_blocks = self._maw.blocks(hdf[sol_key], gwf_package_dict, is_newton)
             rhs = np.concatenate((rhs, np.zeros(nsln - nnode)))
             unclaimed = set(range(nnode, nsln)) - self._maw.claimed_rows(maw_blocks)
