@@ -1238,6 +1238,9 @@ class Mf6Adj:
         except Exception as e:
             print(f"{e}\n\nCould not execute finalize()")
         self._gwf = None
+        # the log file is one of the handles, and a file still held cannot be
+        # removed on every platform
+        self.logger.close()
 
     def perturbation_method(self, pert_mult: float = 1.01) -> pd.DataFrame:
         """Calculate finite-difference perturbation sensitivities.

@@ -88,6 +88,16 @@ class _LoggerUtil:
                 file_handler.setLevel(self.level)
                 self.logger.addHandler(file_handler)
 
+    def close(self):
+        """Close the handlers and let go of the files they hold.
+
+        A file a handler still holds cannot be removed on every platform, so
+        the run lets go of its log file when it finishes with it.
+        """
+        for handler in list(self.logger.handlers):
+            self.logger.removeHandler(handler)
+            handler.close()
+
     def to_file(self, message, level=logging.WARNING):
         """Write a message to the log file and not to the console.
 

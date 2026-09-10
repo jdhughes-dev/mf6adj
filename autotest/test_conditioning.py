@@ -550,7 +550,8 @@ def test_the_log_file_is_written_unless_it_is_refused(function_tmpdir):
     refused.
 
     A run that reported something is commonly rerun to look into it, so the
-    file is appended to rather than written over.
+    file is appended to rather than written over, and the run lets go of the
+    file when it finishes with it.
     """
     ws = _forward_file(function_tmpdir / "run")
 
@@ -562,6 +563,11 @@ def test_the_log_file_is_written_unless_it_is_refused(function_tmpdir):
     assert (ws / "pm.log").exists(), "a run wrote no log file"
     first = (ws / "pm.log").read_text()
     assert first, "the log file a run wrote holds nothing"
+
+    # a run that finished holds no handle on it. A file still held cannot be
+    # removed on every platform, so a run that kept one would leave a
+    # workspace that cannot be cleaned up
+    assert not adj.logger.logger.handlers, "a run that finished holds its log file"
 
     # a second run keeps what the first one wrote
     adj = mf6adj.Mf6Adj(
