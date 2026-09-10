@@ -29,6 +29,7 @@ from .utils.utils_conditioning import (
     LOOSE_RESIDUAL,
     describe,
     diagonal_report,
+    dry_cells,
     solve_residual,
 )
 from .utils.utils_fileio import _write_group_to_hdf
@@ -1186,6 +1187,15 @@ class PerfMeas:
                     chd_nodelist.extend(nodelist)
             chd_nodelist = np.array(chd_nodelist, dtype=int)
             lamb[chd_nodelist] = 0.0
+
+            # zero out the adj state for dry cells, as for chd. Nothing flows
+            # through a cell holding no water, and its diagonal can fall below
+            # the storage term carrying the state back, which multiplies it
+            parched = dry_cells(hdf[sol_key]["sat"][:])
+            parched = parched[parched < lamb.shape[0]]
+            if parched.size:
+                self.logger.logger.debug(f"holding {parched.size} dry cells at zero")
+                lamb[parched] = 0.0
 
             start = datetime.now()
             self.logger.logger.debug("Formulating lam_dresdk_h")
