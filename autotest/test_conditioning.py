@@ -21,10 +21,17 @@ Cases:
   - test_dry_cells_are_not_reported : cells that go dry under the
                                    Newton-Raphson formulation are not such
                                    rows, and are not reported.
-  - test_a_matrix_with_no_solution_is_reported : a solve that returns values
-                                   which are not numbers says so.
+  - test_a_matrix_with_no_solution_stops_the_run : a solve that returns
+                                   values which are not numbers stops the run.
   - test_a_solve_that_stops_short_is_reported : a solve the accelerator did
                                    not finish says how far it got.
+  - test_a_measure_that_stops_leaves_the_rest : a measure that reached such a
+                                   step is named at the end of the run, and
+                                   the measures beside it are still solved.
+  - test_every_flagged_node_reaches_the_log : the console names the worst few
+                                   rows and the log file holds them all.
+  - test_a_row_is_named_as_the_model_names_it : a row of the matrix is
+                                   reported as the cell it came from.
 """
 
 import pathlib as pl
@@ -34,6 +41,7 @@ import sys
 import flopy
 import h5py
 import numpy as np
+import pytest
 import scipy.sparse as sps
 
 try:
@@ -42,9 +50,12 @@ except ImportError:
     sys.path.insert(0, str(pl.Path("../").resolve()))
     import mf6adj
 
+from mf6adj.pm import AdjointSolveError, PerfMeas
 from mf6adj.utils.utils_conditioning import (
+    cellid,
     describe,
     diagonal_report,
+    flagged_nodes,
     solve_residual,
 )
 
@@ -338,14 +349,16 @@ def _forward_file(ws):
     return ws
 
 
-def test_a_matrix_with_no_solution_is_reported(function_tmpdir, caplog):
-    """A solve that returns values which are not numbers says so.
+def test_a_matrix_with_no_solution_stops_the_run(function_tmpdir):
+    """A solve that returns values which are not numbers stops the run.
 
     No model this size leaves a matrix with no solution, so the forward file of
     one is edited into it: a row is emptied, which is what a cell the model has
     taken out of the solution would leave. The solve then returns values that
     are not numbers, and every comparison against those is false, so a check on
-    the size of the residual passes over them without tripping.
+    the size of the residual passes over them without tripping. The state is
+    carried into the right side of every earlier step, so nothing later in the
+    recursion returns a number either and the run is stopped.
     """
     ws = _forward_file(function_tmpdir / "run")
     adj = mf6adj.Mf6Adj(
@@ -363,14 +376,20 @@ def test_a_matrix_with_no_solution_is_reported(function_tmpdir, caplog):
             amat[ia[3] : ia[4]] = 0.0
             f[key]["amat"][...] = amat
 
-    with caplog.at_level("WARNING"):
+    with pytest.raises(Exception, match="values that are not numbers"):
         adj._performance_measures[0].solve_adjoint(
             ws / "sing.hd5", hdf5_adjoint_solution_fname=str(ws / "sing_adj.hd5")
         )
     adj.finalize()
 
-    reported = [r.message for r in caplog.records if "not numbers" in r.message]
-    assert reported, "a solve that returned no numbers was not reported"
+    # the step that stopped the run is written, so the cells holding no number
+    # can be read from it, and the report of it survives in the log file
+    with h5py.File(ws / "sing_adj.hd5", "r") as f:
+        keys = sorted(k for k in f if k.startswith("solution_kper"))
+        assert keys, "the step that stopped the run was not written"
+        state = np.asarray(f[keys[-1]]["lambda"][:])
+    assert np.isnan(state).any(), "no cell of the state written is without a number"
+    assert "values that are not numbers" in (ws / "pm.log").read_text()
 
 
 def test_a_solve_that_stops_short_is_reported(function_tmpdir, caplog):
@@ -400,3 +419,124 @@ def test_a_solve_that_stops_short_is_reported(function_tmpdir, caplog):
 
     reported = [r.message for r in caplog.records if "left a residual" in r.message]
     assert reported, "a solve that stopped short was not reported"
+
+
+def test_a_measure_that_stops_leaves_the_rest(function_tmpdir, caplog, monkeypatch):
+    """A measure that stopped is named at the end, and the rest are solved.
+
+    The measures of a run share one matrix, so a step with no solution ends
+    every one of them. One is stopped at the call instead, which is where the
+    solve reports it, leaving the others to be solved as they would be.
+    """
+    ws = _forward_file(function_tmpdir / "run")
+    with open(ws / "pm.dat", "w") as f:
+        for name in ("obs", "gone"):
+            f.write(f"begin performance_measure {name}\n")
+            f.write("  1 2 1 1 4 head direct 1.0 -1.0e+30\n")
+            f.write("end performance_measure\n")
+
+    adj = mf6adj.Mf6Adj(
+        "pm.dat", lib_name, logging_level="WARNING", working_directory=str(ws)
+    )
+    adj.solve_forward_model(hdf5_name="fwd.hd5")
+
+    solve_adjoint = PerfMeas.solve_adjoint
+
+    def stop_one(self, *args, **kwargs):
+        if self.name == "gone":
+            raise AdjointSolveError("values that are not numbers", 1, 2)
+        return solve_adjoint(self, *args, **kwargs)
+
+    monkeypatch.setattr(PerfMeas, "solve_adjoint", stop_one)
+
+    with caplog.at_level("ERROR"):
+        dfs = adj.solve_adjoint()
+    adj.finalize()
+
+    assert "obs" in dfs, "a measure beside the one that stopped was not solved"
+    assert "gone" not in dfs, "a measure that stopped came back with a summary"
+
+    reported = [r.message for r in caplog.records if "were not solved" in r.message]
+    assert reported, "a measure that stopped was not named at the end of the run"
+    assert "gone (stress period 1, time step 2)" in reported[0]
+
+
+def test_every_flagged_node_reaches_the_log(function_tmpdir, caplog):
+    """The console names the worst few rows, and the log file holds them all.
+
+    A model of a few million nodes can flag more rows than a console holds, so
+    the whole list is written where it is read later rather than watched.
+    """
+    diagonal = [10.0] * 20
+    for node in (3, 7, 11, 13, 15, 17, 19):
+        diagonal[node] = 0.0
+    report = diagonal_report(_matrix(diagonal))
+    assert report is not None
+    assert report["nzero"] == 7
+
+    # the console names the worst five of them
+    named = describe(report, 0, 0)
+    assert len(report["rows"]) == 5
+
+    # the log file holds every one, and names the cell the model does
+    listed = flagged_nodes(report, 0, 0, grid_shape=(1, 4, 5))
+    for node in (3, 7, 11, 13, 15, 17, 19):
+        row, column = divmod(node, 5)
+        assert f"layer 1, row {row + 1}, column {column + 1}," in listed
+    assert named.count(",") < listed.count(",")
+
+
+def test_the_flagged_nodes_are_not_written_to_the_console(function_tmpdir, capsys):
+    """The list of flagged nodes goes to the log file and not the console."""
+    ws = _forward_file(function_tmpdir / "run")
+    adj = mf6adj.Mf6Adj(
+        "pm.dat", lib_name, logging_level="WARNING", working_directory=str(ws)
+    )
+    adj.solve_forward_model(hdf5_name="fwd.hd5")
+
+    shutil.copy(ws / "fwd.hd5", ws / "sing.hd5")
+    with h5py.File(ws / "sing.hd5", "r+") as f:
+        ia = np.asarray(f["gwf_info"]["sln_ia"][:]).astype(int)
+        if ia.min() == 1:
+            ia = ia - 1
+        for key in [k for k in f if k.startswith("solution_kper")]:
+            amat = np.asarray(f[key]["amat"][:])
+            amat[ia[3] : ia[4]] = 0.0
+            f[key]["amat"][...] = amat
+
+    with pytest.raises(Exception, match="values that are not numbers"):
+        adj._performance_measures[0].solve_adjoint(
+            ws / "sing.hd5", hdf5_adjoint_solution_fname=str(ws / "sing_adj.hd5")
+        )
+    adj.finalize()
+
+    written = (ws / "pm.log").read_text()
+    console = capsys.readouterr().err
+    assert "row 1, column 4" in written, "the log file holds no list of cells"
+    assert "diagonal 0.000000e+00" not in console
+    # the console still carries the report naming the worst few, which is
+    # what makes the check above a check
+    assert "Worst cells" in console, "the console carried no report at all"
+
+
+def test_a_row_is_named_as_the_model_names_it():
+    """A row of the matrix is reported as the cell the model names.
+
+    The matrix is assembled over the nodes left after the model drops the
+    cells it does not solve, so a row of it is not a cell of the grid the user
+    wrote.
+    """
+    # a structured grid is a layer, a row and a column
+    assert cellid(3, None, (1, 1, 10)) == "layer 1, row 1, column 4"
+    assert cellid(13, None, (2, 3, 5)) == "layer 1, row 3, column 4"
+
+    # a grid of vertices is a layer and the cell within it
+    assert cellid(13, None, (2, 10)) == "layer 2, cell 4"
+
+    # a grid of neither is named by its node
+    assert cellid(13, None, None) == "node 14"
+
+    # a row of a reduced matrix is carried back to the cell it came from
+    nodeuser = np.array([0, 5, 13])
+    assert cellid(2, nodeuser, (2, 10)) == "layer 2, cell 4"
+    assert cellid(2, nodeuser, None) == "node 14"

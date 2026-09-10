@@ -20,7 +20,7 @@ from .advanced_packages import (
 )
 from .packages import hfb, storage
 from .packages.head_dependent import DRAIN_CORNER_TOL
-from .pm import PerfMeas, PerfMeasRecord
+from .pm import AdjointSolveError, PerfMeas, PerfMeasRecord
 from .utils.utils import _utils_cd
 from .utils.utils_fileio import _write_group_to_hdf
 from .utils.utils_logger import _LoggerUtil
@@ -69,7 +69,7 @@ class Mf6Adj:
     logging_level : str or int, optional
         Logging level (``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, or ``CRITICAL``).
     logging_filename : str or pl.Path, optional
-        Optional log filename. If omitted, logging is limited to the console.
+        Log filename. If omitted, the stem of ``adj_filename`` is used.
     working_directory : str or pl.Path, optional
         Working directory. If omitted, the current directory is used.
     """
@@ -94,8 +94,11 @@ class Mf6Adj:
                 raise Exception(f"adj_filename '{adj_filename}' not found")
             self.adj_filename = adj_filename
 
-            # setup logger
+            # setup logger. A run without a named log file still writes one,
+            # so what it reported survives the console it was written to
             logger_name = f"{self.__class__.__name__}-{adj_filename.stem}"
+            if logging_filename is None:
+                logging_filename = f"{adj_filename.stem}.log"
             self.logger = _LoggerUtil(
                 logger_name,
                 logging_level,
@@ -505,6 +508,13 @@ class Mf6Adj:
             data_dict["nrow"] = nrow
             ncol = get_ptr_from_gwf(gwf_name, dis_pak, "NCOL", gwf)
             data_dict["ncol"] = ncol
+        elif self.unstructured_type == "disv":
+            # the layer and the cell within it, which is how a disv grid names
+            # a cell. A disu grid names one by its node, and needs neither
+            nlay = get_ptr_from_gwf(gwf_name, dis_pak, "NLAY", gwf)
+            data_dict["nlay"] = nlay
+            ncpl = get_ptr_from_gwf(gwf_name, dis_pak, "NCPL", gwf)
+            data_dict["ncpl"] = ncpl
 
         _write_group_to_hdf(
             hdf,
@@ -1109,10 +1119,13 @@ class Mf6Adj:
         -------
         dict[str, DataFrame]
             Composite sensitivity summaries keyed by performance-measure name.
+            A measure that reached a step whose matrix holds no solution is
+            absent, and is named in an error at the end of the run.
         """
         generate_name = hdf5_adjoint_solution_fname is None
 
         dfs = {}
+        failed = {}
         with _utils_cd(self.working_directory):
             if self._hdf5_name is None or not pl.Path(self._hdf5_name).exists():
                 raise Exception("need to call solve_forward_model() first")
@@ -1126,23 +1139,45 @@ class Mf6Adj:
                         path / f"adjoint_solution_{pm.name}{extension}"
                     )
 
-                df = pm.solve_adjoint(
-                    hdf5_forward_solution_fname=self._hdf5_name,
-                    hdf5_adjoint_solution_fname=hdf5_adjoint_solution_fname,
-                    csv_summary=csv_summary,
-                    linear_solver=linear_solver,
-                    linear_solver_kwargs=linear_solver_kwargs,
-                    jacobi_preconditioner=jacobi_preconditioner,
-                    use_precon=use_precon,
-                    precon_kwargs=precon_kwargs,
-                    singular_test=singular_test,
-                    tikhonov=tikhonov,
-                    dvclose=dvclose,
-                    rclose=rclose,
-                    dvscale=dvscale,
-                    drain_corner_tol=drain_corner_tol,
-                )
+                # a step with no solution ends this measure, since the state
+                # is carried into the right side of every earlier step. The
+                # measures are independent, so the rest are still solved
+                try:
+                    df = pm.solve_adjoint(
+                        hdf5_forward_solution_fname=self._hdf5_name,
+                        hdf5_adjoint_solution_fname=hdf5_adjoint_solution_fname,
+                        csv_summary=csv_summary,
+                        linear_solver=linear_solver,
+                        linear_solver_kwargs=linear_solver_kwargs,
+                        jacobi_preconditioner=jacobi_preconditioner,
+                        use_precon=use_precon,
+                        precon_kwargs=precon_kwargs,
+                        singular_test=singular_test,
+                        tikhonov=tikhonov,
+                        dvclose=dvclose,
+                        rclose=rclose,
+                        dvscale=dvscale,
+                        drain_corner_tol=drain_corner_tol,
+                    )
+                except AdjointSolveError as error:
+                    failed[pm.name] = (error.kper, error.kstp)
+                    continue
                 dfs[pm.name] = df
+
+            if failed:
+                steps = ", ".join(
+                    f"{name} (stress period {kper}, time step {kstp})"
+                    for name, (kper, kstp) in failed.items()
+                )
+                self.logger.logger.error(
+                    f"{len(failed)} of {len(self._performance_measures)} "
+                    + "performance measures were not solved, having reached a "
+                    + f"step whose matrix holds no solution: {steps}. The step "
+                    + "that stopped each of them was written, so the cells "
+                    + "holding no number can be read from the state of that "
+                    + "step in the adjoint solution, and the steps later in "
+                    + "time than it are solved and were written as well."
+                )
         return dfs
 
     def _initialize_gwf(self, lib_name: str, sim_ws: PathLike) -> modflowapi.ModflowApi:

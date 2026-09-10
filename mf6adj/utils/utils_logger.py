@@ -83,6 +83,29 @@ class _LoggerUtil:
                 file_handler.setLevel(self.level)
                 self.logger.addHandler(file_handler)
 
+    def to_file(self, message, level=logging.WARNING):
+        """Write a message to the log file and not to the console.
+
+        Parameters
+        ----------
+        message : str
+            Message to record.
+        level : int, optional
+            Level to record it at.
+        """
+        handlers = [
+            handler
+            for handler in self.logger.handlers
+            if isinstance(handler, logging.FileHandler)
+        ]
+        if not handlers:
+            return
+        record = self.logger.makeRecord(
+            self.logger.name, level, __file__, 0, message, None, None
+        )
+        for handler in handlers:
+            handler.handle(record)
+
     @property
     def isDebugLogger(self):
         """Return whether the logger is configured to emit debug messages.
