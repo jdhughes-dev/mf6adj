@@ -28,6 +28,7 @@ import shutil
 import sys
 
 import flopy
+import h5py
 import numpy as np
 import scipy.sparse as sps
 
@@ -296,3 +297,73 @@ def test_dry_cells_are_not_reported(function_tmpdir, caplog):
     ]
     assert not reported, f"a model with dry cells reported {reported}"
     assert np.nanmax(np.abs(results["obs"]["k11"].to_numpy())) < 1.0
+
+
+def _forward_file(ws):
+    """Return the forward file of a small transient model."""
+    ws = pl.Path(ws)
+    if ws.exists():
+        shutil.rmtree(ws)
+    ws.mkdir(parents=True)
+
+    sim = flopy.mf6.MFSimulation(sim_name="sing", sim_ws=str(ws), exe_name=mf6_bin)
+    flopy.mf6.ModflowTdis(sim, nper=1, perioddata=[(100.0, 2, 1.0)])
+    flopy.mf6.ModflowIms(sim, complexity="simple")
+    gwf = flopy.mf6.ModflowGwf(sim, modelname="sing", save_flows=True)
+    flopy.mf6.ModflowGwfdis(
+        gwf, nlay=1, nrow=1, ncol=10, delr=100.0, delc=100.0, top=10.0, botm=0.0
+    )
+    flopy.mf6.ModflowGwfic(gwf, strt=10.0)
+    flopy.mf6.ModflowGwfnpf(gwf, icelltype=0, k=10.0)
+    flopy.mf6.ModflowGwfsto(gwf, iconvert=0, ss=1.0e-5, transient={0: True})
+    flopy.mf6.ModflowGwfdrn(
+        gwf, stress_period_data=[[(0, 0, 0), 5.0, 1000.0]], pname="drn-1"
+    )
+    flopy.mf6.ModflowGwfchd(gwf, stress_period_data=[[(0, 0, 9), 10.0]], pname="chd-1")
+    flopy.mf6.ModflowGwfoc(
+        gwf, head_filerecord="sing.hds", saverecord=[("HEAD", "ALL")]
+    )
+    sim.write_simulation(silent=True)
+    success, buff = sim.run_simulation(silent=True)
+    assert success, "\n".join(buff[-20:])
+
+    with open(ws / "pm.dat", "w") as f:
+        f.write("begin performance_measure obs\n")
+        f.write("  1 2 1 1 4 head direct 1.0 -1.0e+30\n")
+        f.write("end performance_measure\n")
+    return ws
+
+
+def test_a_matrix_with_no_solution_is_reported(function_tmpdir, caplog):
+    """A solve that returns values which are not numbers says so.
+
+    No model this size leaves a matrix with no solution, so the forward file of
+    one is edited into it: a row is emptied, which is what a cell the model has
+    taken out of the solution would leave. The solve then returns values that
+    are not numbers, and every comparison against those is false, so a check on
+    the size of the residual passes over them without tripping.
+    """
+    ws = _forward_file(function_tmpdir / "run")
+    adj = mf6adj.Mf6Adj(
+        "pm.dat", lib_name, logging_level="WARNING", working_directory=str(ws)
+    )
+    adj.solve_forward_model(hdf5_name="fwd.hd5")
+
+    shutil.copy(ws / "fwd.hd5", ws / "sing.hd5")
+    with h5py.File(ws / "sing.hd5", "r+") as f:
+        ia = np.asarray(f["gwf_info"]["sln_ia"][:]).astype(int)
+        if ia.min() == 1:
+            ia = ia - 1
+        for key in [k for k in f if k.startswith("solution_kper")]:
+            amat = np.asarray(f[key]["amat"][:])
+            amat[ia[3] : ia[4]] = 0.0
+            f[key]["amat"][...] = amat
+
+    with caplog.at_level("WARNING"):
+        adj._performance_measures[0].solve_adjoint(
+            ws / "sing.hd5", hdf5_adjoint_solution_fname=str(ws / "sing_adj.hd5")
+        )
+    adj.finalize()
+
+    reported = [r.message for r in caplog.records if "not numbers" in r.message]
+    assert reported, "a solve that returned no numbers was not reported"

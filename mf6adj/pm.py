@@ -1113,6 +1113,18 @@ class PerfMeas:
             # which says whether the solution stands rather than how large its
             # numbers are. The direct solver reports nothing of its own, and a
             # nearly singular matrix can return from it without complaint.
+            # a matrix with no solution returns one that is not a number, and
+            # every comparison against it is false, so it passes a check on
+            # the size of the residual without tripping it
+            if not np.isfinite(lamb).all():
+                self.logger.logger.warning(
+                    f"the adjoint solve for stress period {int(kk[0]) + 1}, "
+                    + f"time step {int(kk[1]) + 1} returned "
+                    + f"{int((~np.isfinite(lamb)).sum())} values that are not "
+                    + "numbers, so the matrix holds no solution and the "
+                    + "sensitivities from this step are meaningless."
+                )
+
             relative = solve_residual(amat, lamb, rhs)
             if relative > LOOSE_RESIDUAL:
                 self.logger.logger.warning(
