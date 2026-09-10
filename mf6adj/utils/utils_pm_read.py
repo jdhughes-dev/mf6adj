@@ -138,6 +138,23 @@ def read_adj_file(
         instead of the plain sum used for ``direct`` and ``residual`` measures.
         An ``instantaneous`` form works for both ``head`` and flux measures.
 
+        Holding the earlier time steps fixed is what makes the result depend on
+        how the run is discretized in time. What a parameter does during one
+        time step is a smaller part of what it does over the run the shorter
+        that step is, so the same model run with more time steps reports a
+        smaller sensitivity. On a three-period model measuring the leakage to a
+        stream, going from 5 time steps a period to 20 moved the result from
+        1.4 to 5.8 percent below the same quantity taken by running the flow
+        model again, and the gap grew rather than settling. Two runs of one
+        model that differ only in ``nstp`` therefore disagree.
+
+        A quantity that belongs to the flow model alone wants a ``direct``
+        measure at a single time step, whose sensitivity is the total
+        derivative at that time and which reproduces a finite difference
+        exactly. A streamflow capture fraction is such a quantity, and is
+        written as one ``direct`` measure for each time it is wanted at, each
+        holding every stream cell at that one time step.
+
         At present, forms (``direct``, ``residual``, ``instantaneous``) cannot be
         mixed within a single performance measure, and types (``head`` vs flux
         package) also cannot be mixed within a single performance measure.
