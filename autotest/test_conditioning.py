@@ -21,6 +21,10 @@ Cases:
   - test_dry_cells_are_not_reported : cells that go dry under the
                                    Newton-Raphson formulation are not such
                                    rows, and are not reported.
+  - test_a_matrix_with_no_solution_is_reported : a solve that returns values
+                                   which are not numbers says so.
+  - test_a_solve_that_stops_short_is_reported : a solve the accelerator did
+                                   not finish says how far it got.
 """
 
 import pathlib as pl
@@ -367,3 +371,32 @@ def test_a_matrix_with_no_solution_is_reported(function_tmpdir, caplog):
 
     reported = [r.message for r in caplog.records if "not numbers" in r.message]
     assert reported, "a solve that returned no numbers was not reported"
+
+
+def test_a_solve_that_stops_short_is_reported(function_tmpdir, caplog):
+    """A solve the accelerator did not finish says how far it got.
+
+    The direct solver solves exactly, so the residual reaches the threshold
+    only where an iterative solver stops short. A preconditioner finishes this
+    model in one iteration, so the solve is run without one.
+    """
+    ws = _forward_file(function_tmpdir / "run")
+    adj = mf6adj.Mf6Adj(
+        "pm.dat", lib_name, logging_level="WARNING", working_directory=str(ws)
+    )
+    adj.solve_forward_model(hdf5_name="fwd.hd5")
+
+    with caplog.at_level("WARNING"):
+        adj._performance_measures[0].solve_adjoint(
+            ws / "fwd.hd5",
+            hdf5_adjoint_solution_fname=str(ws / "short_adj.hd5"),
+            linear_solver="bicgstab",
+            linear_solver_kwargs={"maxiter": 1},
+            use_precon=False,
+            dvclose=None,
+            rclose=None,
+        )
+    adj.finalize()
+
+    reported = [r.message for r in caplog.records if "left a residual" in r.message]
+    assert reported, "a solve that stopped short was not reported"

@@ -1177,13 +1177,6 @@ class PerfMeas:
             elif nsln != nnode:
                 lamb = lamb[:nnode]
 
-            if np.any(np.isnan(lamb)):
-                self.logger.logger.warning(
-                    (
-                        f"Adjoint states for pm {self.name} contain nans "
-                        + f"at (kper,kstp) ({int(kk[0] + 1)}, {int(kk[1] + 1)})"
-                    )
-                )
             self.logger.logger.info(
                 (
                     "Solving for lambda took: "
