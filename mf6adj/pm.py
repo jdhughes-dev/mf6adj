@@ -42,6 +42,13 @@ from .utils.utils_modflow import (
 
 PathLike = Union[str, pl.Path]
 
+# rows to a block of the block Jacobi preconditioner. Measured over the CONUS
+# models, a block of this size solves in two thirds the time one of 5,000
+# does, and one of 40,000 does not converge at all on the model whose full
+# factorization is singular: a block that grows toward the whole matrix
+# carries the same failure into the preconditioner
+BLOCK_SIZE = 20000
+
 
 class AdjointSolveError(Exception):
     """An adjoint solve that returned values which are not numbers."""
@@ -304,7 +311,7 @@ class PerfMeas:
             return 0.0
         return float(sum(dt_dict[kk] * val for kk, val in per_step.items()) / wsum)
 
-    def _setup_block_jacobi_preconditioner(self, amat, block_size=5000):
+    def _setup_block_jacobi_preconditioner(self, amat, block_size=BLOCK_SIZE):
         """Setup a block Jacobi preconditioner
 
         Parameters
@@ -312,7 +319,8 @@ class PerfMeas:
         amat : scipy.sparse.spmatrix
             Sparse matrix for which to create the block Jacobi preconditioner.
         block_size : int
-            Size of the blocks for the block Jacobi preconditioner.
+            Size of the blocks for the block Jacobi preconditioner. A matrix
+            with fewer rows than this is one block.
 
         Returns
         -------
@@ -321,6 +329,7 @@ class PerfMeas:
 
         """
         n = amat.shape[0]
+        block_size = min(int(block_size), n)
         self.logger.logger.debug(
             f"Setup block Jacobi preconditioner with {block_size:,} block size "
             + f"for matrix with {n:,} rows"
@@ -1029,9 +1038,14 @@ class PerfMeas:
                             else:
                                 _linear_solver_kwargs["maxiter"] = 10000
 
+                            # point rather than block. Measured on the
+                            # models this falls back on, block Jacobi cuts
+                            # the iterations and loses the time it saved to
+                            # the block solves, taking two to three times as
+                            # long overall
                             m = self._setup_jacobi_preconditioner(
                                 amat,
-                                jacobi_type="block",
+                                jacobi_type="point",
                                 precon_kwargs=_precon_kwargs,
                             )
 
