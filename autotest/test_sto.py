@@ -159,8 +159,12 @@ def test_confined_only_drops_partial_cells(function_tmpdir):
     dt = 400.0 / NSTP
     partial = sat < 1.0
     assert partial.any(), "the model has to leave cells partly drained"
-    # below full saturation only the specific-yield term survives
-    expected = -area * sy / dt
+    # Below full saturation only the specific-yield term survives. It carries
+    # the slope of the smoothed saturation, which MODFLOW 6 puts at
+    # 1 / (1 - satomega) rather than at one where the saturation follows the
+    # head, so the term is larger than the plain capacity by that much.
+    satomega = 1.0e-6
+    expected = -area * sy / dt / (1.0 - satomega)
     assert np.allclose(drhsdh[partial], expected, rtol=1e-8), (
         "specific storage is still applied where MODFLOW 6 drops it"
     )
