@@ -655,7 +655,14 @@ class Mf6Adj:
                     )
                     nodekchange[:] = 1
 
-                # apply any boundary condition perturbation info
+                # apply any boundary condition perturbation info. It is
+                # written into the memory MODFLOW solves from, which nothing
+                # puts back: the value it replaced is kept here and restored
+                # once the step has been solved, so the perturbation is of this
+                # step alone. MODFLOW rereads a boundary only where the stress
+                # period data gives it again, so without this the perturbation
+                # runs on to the end of the simulation.
+                pert_restore = []
                 if sp_pert_dict is not None:
                     if sp_pert_dict["kperkstp"] == kperkstp:
                         for pert_item in self._gwf_boundary_attr_dict[
@@ -685,6 +692,7 @@ class Mf6Adj:
                                 raise Exception(
                                     "sp pert dict node not found :" + str(sp_pert_dict)
                                 )
+                            pert_restore.append((bnd_ptr, idx, bnd_ptr[idx].copy()))
                             bnd_ptr[idx] = sp_pert_dict[pert_item]
 
                 if presolve_func_ptr is not None:
@@ -727,6 +735,12 @@ class Mf6Adj:
                     print(f"{e}\n\nCould not execute finalize_solve()")
 
                 self._gwf.finalize_time_step()
+
+                # put back what the perturbation replaced, so it is of this
+                # step and not of every step after it
+                for bnd_ptr, idx, original in pert_restore:
+                    bnd_ptr[idx] = original
+
                 if postsolve_func_ptr is not None:
                     postsolve_func_ptr(self._gwf)
                 # update current sim time
