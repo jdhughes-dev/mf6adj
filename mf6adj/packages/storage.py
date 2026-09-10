@@ -9,6 +9,9 @@ approximating it.
 
 import numpy as np
 
+# default SATOMEGA of the MODFLOW 6 storage package
+SATOMEGA = 1.0e-6
+
 from ..utils.utils_modflow import get_ptr_from_gwf
 
 
@@ -146,12 +149,61 @@ def dresdsy_h(
     return result
 
 
+def smoothed_saturation_slope(head, top, bot, satomega: float = SATOMEGA):
+    """Return the thickness times the slope of the smoothed saturation.
+
+    MODFLOW 6 does not let the saturation follow the head linearly all the way
+    to the ends of a cell. It rounds both corners over a fraction ``satomega``
+    of the thickness, so the slope falls away to nothing as the cell empties or
+    fills. This is sQuadraticSaturationDerivative of SmoothingFunctions.f90,
+    taken over the thickness, so it is one where the saturation follows the
+    head and zero at either end.
+
+    It is formed from the head rather than from the saturation, as MODFLOW
+    forms it: the two do not agree inside the rounding, where the saturation is
+    quadratic in the head.
+
+    Parameters
+    ----------
+    head : ndarray
+        Head the saturation is taken at.
+    top, bot : ndarray
+        Top and bottom of each cell.
+    satomega : float
+        Fraction of the cell the rounding covers.
+
+    Returns
+    -------
+    ndarray
+        Slope over the linear slope, between zero and one.
+    """
+    thickness = np.asarray(top - bot, dtype=float)
+    over = np.divide(
+        np.asarray(head, dtype=float) - bot,
+        thickness,
+        out=np.zeros_like(thickness),
+        where=thickness > 0.0,
+    )
+    fraction = np.clip(over, 0.0, 1.0)
+    scale = 1.0 / (1.0 - satomega) if satomega < 1.0 else 1.0
+    return np.where(
+        fraction < satomega,
+        scale * fraction / satomega,
+        np.where(
+            fraction < 1.0 - satomega,
+            scale,
+            np.where(fraction < 1.0, scale * (1.0 - fraction) / satomega, 0.0),
+        ),
+    )
+
+
 def drhsdh(
     gwf,
     gwf_name: str,
     logger,
     dt: float,
     sat_old: np.ndarray,
+    head: np.ndarray,
 ) -> np.ndarray:
     """Return the previous-head derivative of the storage right-hand side.
 
@@ -166,6 +218,9 @@ def drhsdh(
         Length of the current solution step in model time.
     sat_old : ndarray
         Saturation from the previous solution step.
+    head : ndarray
+        Head the saturation is taken at, which the slope of the smoothed
+        saturation is formed from.
 
     Returns
     -------
@@ -208,7 +263,15 @@ def drhsdh(
 
     # specific yield, which enters only through the saturation and so
     # vanishes once the cell is full or dry
+    # The previous head enters the specific-yield term through the saturation
+    # it sets, so the derivative carries the slope of that saturation. MODFLOW
+    # rounds the saturation at both ends of the cell and the slope falls away
+    # there, so a cell that has emptied passes almost nothing back rather than
+    # the whole term: at a saturation of 1e-19 the two differ by a million, and
+    # the adjoint state grows by that ratio once per time step.
     sy_term = area * sy / dt
-    sy_scale = np.where((sat_old_mod > 0.0) & (sat_old_mod < 1.0), 1.0, 0.0)
+    # a cell that never converts releases nothing through specific yield,
+    # whatever its head
+    sy_scale = np.where(iconvert == 0, 0.0, smoothed_saturation_slope(head, top, bot))
 
     return -1.0 * (ss_term * ss_scale + sy_term * sy_scale)

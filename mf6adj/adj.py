@@ -831,7 +831,12 @@ class Mf6Adj:
                     )
                     data_dict["dresdsy_h"] = dresdsy_h
                     drhsdh = storage.drhsdh(
-                        self._gwf, self._gwf_name, self.logger.logger, dt1, sat_old
+                        self._gwf,
+                        self._gwf_name,
+                        self.logger.logger,
+                        dt1,
+                        sat_old,
+                        head,
                     )
                     data_dict["drhsdh"] = drhsdh
                 else:
