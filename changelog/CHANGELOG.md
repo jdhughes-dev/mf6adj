@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.0] - 2026-09-11
 
+### Breaking changes
+
+- The adjoint state grew without bound backward in time on a model holding a
+  cell that had gone dry. On a CONUS subdomain over four stress periods the
+  composite well sensitivity came back as 3.0e+25, where a streamflow capture
+  fraction cannot exceed 1. The previous head enters the specific-yield term
+  through the saturation it sets, so the derivative carries the slope of that
+  saturation, and MODFLOW 6 rounds the saturation at both ends of a cell where
+  that slope falls away. The term asked only whether the saturation was above
+  zero. A cell emptied to 3.3e-08 m above the bottom of a cell 20 m thick holds
+  a saturation of 3e-19, which is above zero, and was handed the whole coupling
+  of 16.2 against a matrix diagonal of 3e-04. The slope is now used.
+
+- A cell holding no water then still carried a state of its own. Nothing flows
+  through such a cell, so no sensitivity reaches through it, but under the
+  Newton-Raphson formulation its row keeps a coefficient for every neighbor
+  while losing its diagonal. The state was multiplied by the ratio of the
+  storage term to that diagonal once per time step, 6.57 at the cell this was
+  found on, and the composite came back as 1.5548 where the largest value
+  anywhere else in the model was exactly 1.0000. The state is held at zero
+  there now, as it already was for a constant head. With both terms corrected
+  the composite on that subdomain is 1.0000. A sensitivity from an earlier
+  release, for a transient model with cells that go dry, should be run again.
+
+- The storage term that carries the adjoint state backward in time was formed
+  over the length of the step being solved rather than the step it comes from,
+  so a sensitivity was wrong wherever the time step changes length. Against a
+  central difference of -0.54945055 taken by re-running the flow model, a run
+  with a `tsmult` of 10 reported -0.55567957. A run that uses one time-step
+  length throughout is unaffected, which is every case the tests had covered.
+
+- `perturbation_method` moved a boundary value and did not put it back.
+  MODFLOW 6 rereads a boundary only where the stress period data gives it
+  again, so a rate given once and carried forward kept the perturbed value from
+  the step it was made at through to the end of the run, and each step answered
+  for every step after it. Over two time steps the method reported -1.097837
+  against an independent difference of -0.549449, which is twice the right
+  answer and grows with the number of steps. A single-step run is unaffected.
+
+- A measure that reaches a time step whose matrix holds no solution stops there
+  rather than solving on. The state of such a step is carried into the right
+  side of every earlier one, so a sound matrix later in the recursion returns
+  no number either, and a run used to write a whole file of values that are not
+  numbers with nothing said. The measures of a run are independent, so the rest
+  are still solved. The ones that stopped are named at the end of the run with
+  the stress period and time step each reached, the step that stopped them is
+  written so the cells holding no number can be read from it, and they are
+  absent from the dictionary `solve_adjoint` returns.
+
+- A run writes a log file where it wrote none before, taking the stem of the
+  adjoint file when `logging_filename` is not given, and appends to that file
+  rather than opening it to write. A run that reported something is commonly
+  rerun to look into it, and opening the file to write erased the report being
+  looked for. Pass `logging_filename=False` for no log file.
+
 ### Changes
 
 - docs(release): describe the release process the workflow actually has (#130)
