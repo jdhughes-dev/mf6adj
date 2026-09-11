@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-09-11
+
+### Changes
+
+- docs(release): describe the release process the workflow actually has (#130)
+- feat(pm): write and read a performance measure from columns (#135)
+- fix(pm): map a measure onto the reduced nodes without scanning the model (#136)
+- docs: point the documentation links at the site that serves them (#137)
+- fix(pm): carry the adjoint storage term over the next step's length (#142)
+- feat(pm): report an adjoint matrix that cannot carry a sensitivity (#143)
+- fix(sto): carry the storage term back with the slope of the smoothed saturation (#148)
+- fix(adj): put back what a perturbation replaced, once the step is solved (#144)
+- fix(pm): hold the adjoint state at zero where a cell holds no water (#150)
+- docs(pm): say which form carries a quantity of the flow model alone (#146)
+- fix(pm): report an adjoint solve that returned no numbers (#151)
+- perf(pm): fall back on the point Jacobi preconditioner, not the block (#152)
+- docs(examples): build the performance measures with the writer (#154)
+
 ## [1.3.0] - 2026-09-09
 
 ### Breaking changes
