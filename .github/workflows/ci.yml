@@ -90,6 +90,15 @@ jobs:
             task: autotest-quick
             run-type: std
             test-path: "."
+          # the last MODFLOW 6 release that holds the LAK and SFR input arrays
+          # in the model rather than the input context, tested on one platform
+          # until support for 6.8.1 and earlier is removed
+          - os: ubuntu-latest
+            environment: default
+            task: autotest-base
+            run-type: std
+            test-path: "."
+            modflow-release: "6.8.1"
     defaults:
       run:
         shell: bash
@@ -119,6 +128,13 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}    
       run: |
         pixi run -e ${{ matrix.environment }} install-executables        
+
+    - name: Install MODFLOW 6 ${{ matrix.modflow-release }}
+      if: matrix.modflow-release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        pixi run -e ${{ matrix.environment }} get-modflow --repo modflow6 --release-id ${{ matrix.modflow-release }} :python
 
     - name: Autotest ${{ matrix.os }}-${{ matrix.environment }}
       run: |
