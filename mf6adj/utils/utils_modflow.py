@@ -32,6 +32,11 @@ UNSUPPORTED_STRESS_TYPES = (
     "mvr6",
 )
 
+# the MODFLOW 6 release that moved the LAK and SFR input arrays into the input
+# context, and the oldest release that will be supported once support for
+# earlier ones is removed; development builds of it hold them in either place
+INPUT_CONTEXT_RELEASE = (6, 9, 0)
+
 # a token is a quoted string, which may hold spaces, or a run of non-blank
 # characters
 _TOKEN = re.compile(r"'[^']*'|\"[^\"]*\"|\S+")
@@ -337,6 +342,101 @@ def get_ptr_from_gwf(gwf_name, pak_name, prop_name, gwf) -> Any:
     """
     addr = gwf.get_var_address(prop_name, gwf_name, pak_name)
     return gwf.get_value_ptr(addr)
+
+
+def parse_mf6_version(version) -> tuple[tuple[int, int, int], bool]:
+    """Return the release of a MODFLOW 6 version and whether it is a development build.
+
+    Parameters
+    ----------
+    version : str
+        MODFLOW 6 version string reported by the API.
+
+    Returns
+    -------
+    release : tuple of int
+        Major, minor, and patch numbers, or ``(0, 0, 0)`` if `version` cannot
+        be read.
+    is_dev : bool
+        True for a development build.
+    """
+    match = re.match(r"(\d+)\.(\d+)\.(\d+)(\.dev)?", version)
+    if match is None:
+        return (0, 0, 0), False
+    release = tuple(int(v) for v in match.groups()[:3])
+    return release, match.group(4) is not None
+
+
+def is_deprecated_mf6_version(version) -> bool:
+    """Return whether support for a MODFLOW 6 version is deprecated.
+
+    Parameters
+    ----------
+    version : str
+        MODFLOW 6 version string reported by the API.
+
+    Returns
+    -------
+    bool
+        True for a release older than 6.9.0, or a version that cannot be read.
+    """
+    release, _ = parse_mf6_version(version)
+    return release < INPUT_CONTEXT_RELEASE
+
+
+def get_input_context_address(gwf_name, pak_name, prop_name) -> str:
+    """Return the address of a package input array in the MODFLOW 6 input context.
+
+    Parameters
+    ----------
+    gwf_name : str
+        Name of the groundwater-flow instance.
+    pak_name : str
+        Package name from the GWF name file.
+    prop_name : str
+        Input array name in `pak_name`.
+
+    Returns
+    -------
+    str
+        Input-context address of `prop_name`.
+    """
+    return f"__INPUT__/{gwf_name.upper()}/{pak_name.upper()}/{prop_name.upper()}"
+
+
+def has_input_context(gwf_name, pak_name, prop_name, gwf) -> bool:
+    """Return whether a package reads `prop_name` from the MODFLOW 6 input context.
+
+    A release is decided by its version; a development build of the release
+    that moved the LAK and SFR input arrays is checked for `prop_name` directly.
+
+    Parameters
+    ----------
+    gwf_name : str
+        Name of the groundwater-flow instance.
+    pak_name : str
+        Package name from the GWF name file.
+    prop_name : str
+        Input array name in `pak_name`.
+    gwf : modflowapi.ModflowApi
+        MODFLOW 6 groundwater-flow API instance.
+
+    Returns
+    -------
+    bool
+        True if `prop_name` is read from the input context.
+    """
+    # get_version overruns the version buffer in MODFLOW 6 6.7.0 and earlier,
+    # which can raise an access violation on Windows
+    try:
+        version = gwf.get_version()
+    except OSError:
+        return False
+    release, is_dev = parse_mf6_version(version)
+    if release != INPUT_CONTEXT_RELEASE or not is_dev:
+        return release >= INPUT_CONTEXT_RELEASE
+    addr = get_input_context_address(gwf_name, pak_name, prop_name)
+    return addr in gwf.get_input_var_names()
 
 
 def get_node(shape, lrc_list) -> list[int]:
